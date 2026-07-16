@@ -69,7 +69,14 @@ export default function NutritionLogger() {
       <main>
         <h1>Health Tracker</h1>
         <p style={{ color: "var(--muted)" }}>Sign in to log nutrition and view your data.</p>
-        <button onClick={() => signIn()}>Sign in with Google</button>
+        <button
+          onClick={() =>
+            signIn().catch((err) => setError(String(err instanceof Error ? err.message : err)))
+          }
+        >
+          Sign in with Google
+        </button>
+        {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
       </main>
     );
   }
