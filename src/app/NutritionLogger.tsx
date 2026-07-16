@@ -82,6 +82,9 @@ export default function NutritionLogger() {
           <Link href="/dashboard" style={{ color: "var(--accent)" }}>
             Dashboard →
           </Link>
+          <Link href="/settings" style={{ color: "var(--accent)" }}>
+            Settings
+          </Link>
           <button onClick={() => signOutUser()} style={{ background: "none", color: "var(--muted)" }}>
             Sign out ({user.displayName ?? user.email})
           </button>

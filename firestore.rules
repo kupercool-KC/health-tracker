@@ -11,5 +11,19 @@ service cloud.firestore {
       // server-side via API routes. Loosen deliberately if you add client writes.
       allow write: if false;
     }
+
+    // The users/{uid} document itself (not matched by the wildcard above)
+    // holds healthTokenHash — never exposed to clients, only the Admin SDK
+    // (via /api/settings/health-token) reads/writes it.
+    match /users/{userId} {
+      allow read, write: if false;
+    }
+
+    // Reverse lookup from a Health Sync token's hash to its owning uid.
+    // Only ever touched by the Admin SDK (createHealthToken /
+    // resolveUidFromHealthToken), never by a client.
+    match /healthTokens/{hash} {
+      allow read, write: if false;
+    }
   }
 }

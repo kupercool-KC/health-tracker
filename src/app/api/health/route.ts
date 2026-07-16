@@ -1,17 +1,18 @@
 /**
  * POST /api/health
  * Ingest endpoint for Apple Health workouts pushed from an iOS Shortcut.
- * Auth: shared secret via `Authorization: Bearer <HEALTH_INGEST_TOKEN>`.
+ * Auth: personal Health Sync token via `Authorization: Bearer <token>`,
+ * minted per-user from /api/settings/health-token. The token itself
+ * identifies the owning user — the Shortcut no longer needs to send a
+ * userId, so a stolen/misconfigured token can't be pointed at someone else's
+ * account.
  *
- * The Shortcut must include the target userId in the body (the device knows
- * whose data it is; there's no interactive login on that side).
- *
- * Body: { userId: string, workouts: Workout[] }
+ * Body: { workouts: Workout[] }
  * Workouts are deduped on externalId (HKWorkout UUID) so re-runs are safe.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isValidHealthToken } from "@/lib/auth";
+import { resolveUidFromHealthToken } from "@/lib/healthToken";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Workout } from "@/lib/types";
 
@@ -27,12 +28,14 @@ const workoutSchema = z.object({
 });
 
 const bodySchema = z.object({
-  userId: z.string().min(1),
   workouts: z.array(workoutSchema).min(1),
 });
 
 export async function POST(req: Request) {
-  if (!isValidHealthToken(req)) {
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const userId = token ? await resolveUidFromHealthToken(token) : null;
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -44,7 +47,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { userId, workouts } = parsed.data;
+  const { workouts } = parsed.data;
   const now = new Date().toISOString();
   const col = adminDb.collection("users").doc(userId).collection("workouts");
 
