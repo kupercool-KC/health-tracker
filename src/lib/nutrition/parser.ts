@@ -29,6 +29,15 @@ const parsedSchema = z.object({
 
 const SYSTEM_PROMPT = `You are a nutrition estimator. Given a text description and/or a photo of food,
 estimate the total calories (kcal) and protein (grams) for the portion shown.
+
+Work deterministically:
+1. Identify each distinct food item and its portion size in standard units (grams, cups, pieces).
+2. Look up typical USDA-style per-100g calorie/protein values for each item from memory.
+3. Scale by the estimated portion size and sum.
+4. Round calories to the nearest 10 and protein to the nearest 1g — do not report false precision.
+Two runs on the same image of the same food should produce the same numbers; do not vary your
+estimate for stylistic reasons across runs.
+
 Respond ONLY with JSON matching:
 { "description": string, "calories": number, "protein": number, "confidence": number }
 - description: a short human summary of what was logged.
@@ -56,6 +65,12 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   const completion = await getClient().chat.completions.create({
     model: MODEL,
     response_format: { type: "json_object" },
+    // Minimize run-to-run variance for the same input. Not a hard guarantee
+    // of determinism (OpenAI notes seed/temperature reduce but don't
+    // eliminate drift, especially across model version changes), but this
+    // is the closest the API gets.
+    temperature: 0,
+    seed: 42,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content },
