@@ -15,6 +15,14 @@ export default function Settings() {
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyToken() {
+    if (!token) return;
+    await navigator.clipboard.writeText(token);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function generate() {
     setError(null);
@@ -30,6 +38,7 @@ export default function Settings() {
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const data: { token: string } = await res.json();
       setToken(data.token);
+      setCopied(false);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -103,18 +112,21 @@ export default function Settings() {
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
 
       {token && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 12,
-            borderRadius: 8,
-            background: "var(--panel)",
-            border: "1px solid var(--border)",
-            wordBreak: "break-all",
-            fontFamily: "monospace",
-          }}
-        >
-          {token}
+        <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <div
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 8,
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              wordBreak: "break-all",
+              fontFamily: "monospace",
+            }}
+          >
+            {token}
+          </div>
+          <button onClick={copyToken}>{copied ? "Copied!" : "Copy"}</button>
         </div>
       )}
       {token && (
