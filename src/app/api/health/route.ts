@@ -1,14 +1,18 @@
 /**
  * POST /api/health
- * Ingest endpoint for Apple Health workouts pushed from an iOS Shortcut.
+ * Ingest endpoint for Apple Health workouts.
  * Auth: personal Health Sync token via `Authorization: Bearer <token>`,
  * minted per-user from /api/settings/health-token. The token itself
- * identifies the owning user — the Shortcut no longer needs to send a
- * userId, so a stolen/misconfigured token can't be pointed at someone else's
- * account.
+ * identifies the owning user — callers never send a userId, so a
+ * stolen/misconfigured token can't be pointed at someone else's account.
  *
- * Body: { workouts: Workout[] }
- * Workouts are deduped on externalId (HKWorkout UUID) so re-runs are safe.
+ * Body: { workouts: Workout[] } — this is a simplified flat shape. The real
+ * Health Auto Export payload nests quantities as {qty, units} inside a
+ * {data: {workouts: [...]}} envelope with non-standard date strings; that
+ * adapter (unit conversion, envelope unwrapping) is separate follow-up work.
+ * This route just needs to compile against the current Workout type for now.
+ *
+ * Workouts are deduped on externalId so re-runs upsert instead of duplicating.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -17,13 +21,15 @@ import { adminDb } from "@/lib/firebase/admin";
 import type { Workout } from "@/lib/types";
 
 const workoutSchema = z.object({
-  activityType: z.string(),
-  startedAt: z.string().datetime(),
-  endedAt: z.string().datetime(),
-  durationSec: z.number().nonnegative(),
-  activeEnergyKcal: z.number().nonnegative().optional(),
-  distanceMeters: z.number().nonnegative().optional(),
-  averageHeartRate: z.number().positive().optional(),
+  type: z.string(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  duration: z.number().nonnegative(),
+  calories: z.number().nonnegative().optional(),
+  distance: z.number().nonnegative().optional(),
+  pace: z.number().nonnegative().optional(),
+  heartRate: z.object({ avg: z.number().positive().optional(), max: z.number().positive().optional() }).optional(),
+  elevationGain: z.number().optional(),
   externalId: z.string().min(1),
 });
 
@@ -55,8 +61,15 @@ export async function POST(req: Request) {
   const batch = adminDb.batch();
   for (const w of workouts) {
     const ref = col.doc(w.externalId);
-    const doc: Workout = { id: w.externalId, userId, createdAt: now, ...w };
-    batch.set(ref, doc, { merge: true });
+    const workout: Workout = {
+      id: w.externalId,
+      userId,
+      date: w.startTime.slice(0, 10),
+      source: "appleHealth",
+      syncedAt: now,
+      ...w,
+    };
+    batch.set(ref, workout, { merge: true });
   }
   await batch.commit();
 

@@ -1,0 +1,310 @@
+"use client";
+
+/**
+ * Today dashboard: 4 metric cards, meals table (+ inline add-meal form —
+ * this becomes the chat FAB's "log a meal" mode in a later phase), and a
+ * workouts section synced from Apple Health via Health Auto Export.
+ */
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { auth } from "@/lib/firebase/client";
+import { useAuth } from "@/lib/firebase/useAuth";
+import { useI18n } from "@/lib/i18n/useI18n";
+import { getMealDay, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/queries";
+import { getUserGoals } from "@/lib/profile/queries";
+import type { MealDay, UserProfile, Workout } from "@/lib/types";
+
+function MetricCard({
+  label,
+  value,
+  goal,
+  sub,
+  colorVar,
+}: {
+  label: string;
+  value: number;
+  goal?: number;
+  sub: string;
+  colorVar: string;
+}) {
+  const ratio = goal ? value / goal : undefined;
+  const pct = ratio != null ? Math.min(100, Math.round(ratio * 100)) : undefined;
+  const overflow = ratio != null && ratio > 1;
+
+  return (
+    <div className="card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value" style={{ color: colorVar }}>
+        {Math.round(value)}
+      </div>
+      <div style={{ color: "var(--muted)", fontSize: 13 }}>{sub}</div>
+      {pct != null && (
+        <div className="progress-track">
+          <div
+            className="progress-fill"
+            style={{ width: `${pct}%`, background: colorVar, opacity: overflow ? 1 : 0.85 }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatPace(secPerKm: number): string {
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2, "0")}/km`;
+}
+
+export default function Today() {
+  const { user, loading: authLoading, signIn } = useAuth();
+  const { t } = useI18n();
+
+  const [mealDay, setMealDay] = useState<MealDay | null>(null);
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal">>({
+    calorieGoal: 1950,
+    proteinGoal: 145,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const load = useCallback(async (uid: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const date = localDateKey();
+      const [day, w, g] = await Promise.all([
+        getMealDay(uid, date),
+        getWorkoutsForDate(uid, date),
+        getUserGoals(uid),
+      ]);
+      setMealDay(day);
+      setWorkouts(w);
+      setGoals(g);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) load(user.uid);
+  }, [user, load]);
+
+  async function submitMeal(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+
+      let imageUrl: string | undefined;
+      if (file) {
+        const { uploadNutritionImage } = await import("@/lib/firebase/uploadImage");
+        imageUrl = await uploadNutritionImage(currentUser.uid, file);
+      }
+
+      const res = await fetch("/api/nutrition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ text: text || undefined, imageUrl, date: localDateKey() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+
+      setText("");
+      setFile(null);
+      setAddOpen(false);
+      await load(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <main>
+        <p style={{ color: "var(--muted)" }}>{t("loading")}</p>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main>
+        <h1>{t("today")}</h1>
+        <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
+        <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+      </main>
+    );
+  }
+
+  const totals = mealDay?.totals ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const burned = workouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
+  const net = totals.calories - burned;
+  const lastSynced = workouts
+    .map((w) => w.syncedAt)
+    .sort()
+    .at(-1);
+
+  return (
+    <main>
+      <h1>{t("today")}</h1>
+
+      {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
+
+      {loading ? (
+        <p style={{ color: "var(--muted)" }}>{t("loading")}</p>
+      ) : (
+        <>
+          <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <MetricCard
+              label={t("calories")}
+              value={totals.calories}
+              goal={goals.calorieGoal}
+              sub={`${Math.round(totals.calories)} / ${goals.calorieGoal} ${t("goal")} · ${Math.max(0, Math.round(goals.calorieGoal - totals.calories))} ${t("remaining")}`}
+              colorVar="var(--calories)"
+            />
+            <MetricCard
+              label={t("protein")}
+              value={totals.protein}
+              goal={goals.proteinGoal}
+              sub={`${Math.round(totals.protein)}g / ${goals.proteinGoal}g · ${totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")} ${Math.abs(Math.round(totals.protein - goals.proteinGoal))}g`}
+              colorVar="var(--protein)"
+            />
+            <MetricCard
+              label={t("burned")}
+              value={burned}
+              sub={`${Math.round(burned)} kcal`}
+              colorVar="var(--burned)"
+            />
+            <MetricCard
+              label={t("net")}
+              value={net}
+              sub={`${Math.round(totals.calories)} − ${Math.round(burned)}`}
+              colorVar="var(--net)"
+            />
+          </section>
+
+          <section style={{ marginTop: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h2 style={{ margin: 0 }}>{t("meals")}</h2>
+              <button onClick={() => setAddOpen((v) => !v)} style={{ background: "none", border: "none", color: "var(--protein)" }}>
+                {t("addMeal")}
+              </button>
+            </div>
+
+            {addOpen && (
+              <form onSubmit={submitMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="e.g. two eggs and a slice of toast"
+                  rows={2}
+                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                />
+                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <button type="submit" disabled={busy || (!text && !file)}>
+                  {busy ? "Logging…" : "Log it"}
+                </button>
+              </form>
+            )}
+
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+              <thead>
+                <tr style={{ color: "var(--muted)", textAlign: "left", fontSize: 13 }}>
+                  <th style={{ padding: "8px 4px" }}>{t("time")}</th>
+                  <th style={{ padding: "8px 4px" }}>{t("meal")}</th>
+                  <th style={{ padding: "8px 4px" }}>{t("calories")}</th>
+                  <th style={{ padding: "8px 4px" }}>{t("protein")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(mealDay?.entries ?? []).map((entry) => (
+                  <Fragment key={entry.id}>
+                    <tr
+                      onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                      style={{ borderTop: "0.5px solid var(--border)", cursor: "pointer" }}
+                    >
+                      <td style={{ padding: "8px 4px", color: "var(--muted)" }}>
+                        {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td style={{ padding: "8px 4px" }}>{entry.name}</td>
+                      <td style={{ padding: "8px 4px" }}>{Math.round(entry.calories)}</td>
+                      <td style={{ padding: "8px 4px" }}>{Math.round(entry.protein)}g</td>
+                    </tr>
+                    {expandedId === entry.id && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: "0 4px 8px", color: "var(--muted)", fontSize: 13 }}>
+                          {entry.carbs != null && `carbs ${Math.round(entry.carbs)}g · `}
+                          {entry.fat != null && `fat ${Math.round(entry.fat)}g · `}
+                          {entry.fiber != null && `fiber ${Math.round(entry.fiber)}g · `}
+                          {entry.confidence != null && `${Math.round(entry.confidence * 100)}% confidence`}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "0.5px solid var(--border)", fontWeight: 700 }}>
+                  <td style={{ padding: "8px 4px" }} colSpan={2}>
+                    {t("total")}
+                  </td>
+                  <td style={{ padding: "8px 4px" }}>{Math.round(totals.calories)}</td>
+                  <td style={{ padding: "8px 4px" }}>{Math.round(totals.protein)}g</td>
+                </tr>
+              </tfoot>
+            </table>
+          </section>
+
+          <section style={{ marginTop: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h2 style={{ margin: 0 }}>{t("workouts")}</h2>
+              <button onClick={() => user && load(user.uid)}>{t("refresh")}</button>
+            </div>
+            {lastSynced && (
+              <p style={{ color: "var(--muted)", fontSize: 13 }}>
+                {t("lastSynced")}: {new Date(lastSynced).toLocaleString()}
+              </p>
+            )}
+            {workouts.length === 0 ? (
+              <p style={{ color: "var(--muted)" }}>—</p>
+            ) : (
+              workouts.map((w) => (
+                <div key={w.id} className="card" style={{ marginTop: 8 }}>
+                  <strong>{w.type}</strong>
+                  <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
+                    {w.distance != null && `${(w.distance / 1000).toFixed(1)} km · `}
+                    {w.pace != null && `${formatPace(w.pace)} · `}
+                    {formatDuration(w.duration)}
+                    {w.heartRate?.avg != null && ` · avg HR ${Math.round(w.heartRate.avg)}`}
+                    {w.calories != null && ` · ${Math.round(w.calories)} kcal`}
+                    {w.elevationGain != null && ` · +${Math.round(w.elevationGain)}m`}
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  );
+}

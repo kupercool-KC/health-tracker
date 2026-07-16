@@ -12,6 +12,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Profile/memory/alerts docs (users/{uid}/meta/{profile|memory|alerts}) —
+    // unlike healthTokenHash on the users/{uid} doc itself, these aren't
+    // security-sensitive, and the Profile screen edits them directly from the
+    // client (language toggle, dietary prefs, goals, memory notes, etc.).
+    match /users/{userId}/meta/{document} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // The users/{uid} document itself (not matched by the wildcard above)
     // holds healthTokenHash — never exposed to clients, only the Admin SDK
     // (via /api/settings/health-token) reads/writes it.

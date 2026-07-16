@@ -24,6 +24,9 @@ const parsedSchema = z.object({
   description: z.string().min(1),
   calories: z.number().nonnegative(),
   protein: z.number().nonnegative(),
+  carbs: z.number().nonnegative().optional(),
+  fat: z.number().nonnegative().optional(),
+  fiber: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
 });
 
@@ -39,8 +42,9 @@ Two runs on the same image of the same food should produce the same numbers; do 
 estimate for stylistic reasons across runs.
 
 Respond ONLY with JSON matching:
-{ "description": string, "calories": number, "protein": number, "confidence": number }
+{ "description": string, "calories": number, "protein": number, "carbs": number, "fat": number, "fiber": number, "confidence": number }
 - description: a short human summary of what was logged.
+- carbs, fat, fiber: grams; include your best estimate for these too.
 - confidence: your confidence in the estimate from 0 to 1.
 If the input is ambiguous, make a reasonable single best estimate rather than refusing.`;
 

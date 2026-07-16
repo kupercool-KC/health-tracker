@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { I18nProvider } from "@/lib/i18n/useI18n";
+import NavShell from "./NavShell";
 
 export const metadata: Metadata = {
   title: "Health Tracker",
@@ -13,7 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <I18nProvider>
+          <NavShell>{children}</NavShell>
+        </I18nProvider>
+      </body>
     </html>
   );
 }
