@@ -33,5 +33,13 @@ service cloud.firestore {
     match /healthTokens/{hash} {
       allow read, write: if false;
     }
+
+    // App-wide config (nutrition parser system prompt / model / sampling
+    // params), editable from /admin. Gated to a single hardcoded uid — keep
+    // this literal in sync with ADMIN_UID in src/lib/admin.ts.
+    match /appConfig/{document} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == "Jw9kXMN8aucpw53kqaAw12gtlaA2";
+    }
   }
 }

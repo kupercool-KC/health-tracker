@@ -7,9 +7,11 @@
  * the nav shell's third tab has real content rather than a placeholder.
  */
 import { useState } from "react";
+import Link from "next/link";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
+import { isAdmin } from "@/lib/admin";
 
 export default function Profile() {
   const { user, loading: authLoading, signIn, signOutUser } = useAuth();
@@ -137,6 +139,14 @@ export default function Profile() {
           </p>
         )}
       </div>
+
+      {isAdmin(user.uid) && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <Link href="/admin" style={{ color: "var(--protein)" }}>
+            Admin settings →
+          </Link>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 16 }}>
         <p style={{ color: "var(--muted)", margin: 0 }}>
