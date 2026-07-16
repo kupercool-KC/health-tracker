@@ -1,0 +1,9 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "bucket": "health-tracker-new-bf407.firebasestorage.app",
+    "rules": "storage.rules"
+  }
+}

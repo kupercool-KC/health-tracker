@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only read/write their own subtree. Writes from the client are
+    // allowed for reads; server-side writes go through the Admin SDK (which
+    // bypasses these rules), so we keep client writes tight.
+    match /users/{userId}/{document=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Client writes disabled by default — nutrition and workouts are written
+      // server-side via API routes. Loosen deliberately if you add client writes.
+      allow write: if false;
+    }
+  }
+}
