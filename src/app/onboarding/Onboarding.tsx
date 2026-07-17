@@ -4,6 +4,11 @@
  * Onboarding wizard: one question per screen, progress bar at top, final
  * calculated-profile confirmation screen. Re-runnable from Profile →
  * "Recalculate goals from formula".
+ *
+ * No "desired change rate" question — the expected weekly rate of change is
+ * derived from the calorie deficit/surplus the calculated goal already
+ * implies (see calculateGoals) and just displayed on the final screen,
+ * rather than asked as a separate input.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,7 +26,11 @@ import type {
   WorkoutType,
 } from "@/lib/types";
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 6;
+
+const AGE_OPTIONS = Array.from({ length: 91 }, (_, i) => i + 10); // 10-100
+const HEIGHT_OPTIONS = Array.from({ length: 121 }, (_, i) => i + 100); // 100-220 cm
+const WEIGHT_OPTIONS = Array.from({ length: 171 }, (_, i) => i + 30); // 30-200 kg
 
 const GOAL_OPTIONS: Array<{ value: Goal; labelKey: StringKey }> = [
   { value: "buildMuscle", labelKey: "goalBuildMuscle" },
@@ -57,12 +66,6 @@ const DIET_OPTIONS: Array<{ value: DietaryPref; labelKey: StringKey }> = [
   { value: "other", labelKey: "dietOther" },
 ];
 
-const RATE_OPTIONS: Array<{ value: "gentle" | "moderate" | "aggressive"; labelKey: StringKey }> = [
-  { value: "gentle", labelKey: "rateGentle" },
-  { value: "moderate", labelKey: "rateModerate" },
-  { value: "aggressive", labelKey: "rateAggressive" },
-];
-
 export default function Onboarding() {
   const { user, loading: authLoading, signIn } = useAuth();
   const { t } = useI18n();
@@ -75,11 +78,14 @@ export default function Onboarding() {
   const [gender, setGender] = useState<UserProfile["gender"]>("male");
   const [height, setHeight] = useState(175);
   const [weight, setWeight] = useState(75);
-  const [goal, setGoal] = useState<Goal>("maintain");
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>("moderate");
   const [workoutTypes, setWorkoutTypes] = useState<WorkoutType[]>([]);
   const [dietaryPref, setDietaryPref] = useState<DietaryPref>("everything");
-  const [changeRate, setChangeRate] = useState<"gentle" | "moderate" | "aggressive">("moderate");
+
+  function toggleGoal(value: Goal) {
+    setGoals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
 
   function toggleWorkoutType(value: WorkoutType) {
     setWorkoutTypes((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
@@ -87,7 +93,7 @@ export default function Onboarding() {
 
   const bmr = calculateBmr({ gender: gender ?? "other", weightKg: weight, heightCm: height, age });
   const tdee = calculateTdee(bmr, activityLevel);
-  const calculated = calculateGoals({ bmr, tdee, goal, weightKg: weight, dietaryPrefs: [dietaryPref] });
+  const calculated = calculateGoals({ bmr, tdee, goals, weightKg: weight, dietaryPrefs: [dietaryPref] });
 
   async function confirmAndSave() {
     if (!user) return;
@@ -100,11 +106,10 @@ export default function Onboarding() {
         gender,
         height,
         weight,
-        goal,
+        goals,
         activityLevel,
         workoutTypes,
         dietaryPrefs: [dietaryPref],
-        changeRate,
         calorieGoal: calculated.calorieGoal,
         proteinGoal: calculated.proteinGoal,
         carbGoal: calculated.carbGoal,
@@ -119,7 +124,7 @@ export default function Onboarding() {
     }
   }
 
-  function OptionButton<T extends string>({
+  function OptionButton({
     selected,
     onClick,
     children,
@@ -143,6 +148,30 @@ export default function Onboarding() {
       >
         {children}
       </button>
+    );
+  }
+
+  function NumberSelect({
+    value,
+    onChange,
+    options,
+  }: {
+    value: number;
+    onChange: (v: number) => void;
+    options: number[];
+  }) {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+      >
+        {options.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
     );
   }
 
@@ -176,7 +205,7 @@ export default function Onboarding() {
           <h1>{t("onboardingStep1Title")}</h1>
           <label style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("ageLabel")}</span>
-            <input type="number" value={age} onChange={(e) => setAge(Number(e.target.value))} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+            <NumberSelect value={age} onChange={setAge} options={AGE_OPTIONS} />
           </label>
           <div style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("genderLabel")}</span>
@@ -188,11 +217,11 @@ export default function Onboarding() {
           </div>
           <label style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("heightLabel")}</span>
-            <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value))} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+            <NumberSelect value={height} onChange={setHeight} options={HEIGHT_OPTIONS} />
           </label>
           <label style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("weightLabel")}</span>
-            <input type="number" value={weight} onChange={(e) => setWeight(Number(e.target.value))} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+            <NumberSelect value={weight} onChange={setWeight} options={WEIGHT_OPTIONS} />
           </label>
         </section>
       )}
@@ -201,7 +230,7 @@ export default function Onboarding() {
         <section style={{ display: "grid", gap: 8 }}>
           <h1>{t("onboardingStep2Title")}</h1>
           {GOAL_OPTIONS.map((opt) => (
-            <OptionButton key={opt.value} selected={goal === opt.value} onClick={() => setGoal(opt.value)}>
+            <OptionButton key={opt.value} selected={goals.includes(opt.value)} onClick={() => toggleGoal(opt.value)}>
               {t(opt.labelKey)}
             </OptionButton>
           ))}
@@ -242,20 +271,6 @@ export default function Onboarding() {
       )}
 
       {step === 6 && (
-        <section style={{ display: "grid", gap: 8 }}>
-          <h1>{t("onboardingStep6Title")}</h1>
-          {RATE_OPTIONS.map((opt) => (
-            <OptionButton key={opt.value} selected={changeRate === opt.value} onClick={() => setChangeRate(opt.value)}>
-              {t(opt.labelKey)}
-            </OptionButton>
-          ))}
-          {changeRate === "aggressive" && (
-            <p style={{ color: "var(--calories)", fontSize: 13 }}>{t("rateWarning")}</p>
-          )}
-        </section>
-      )}
-
-      {step === 7 && (
         <section style={{ display: "grid", gap: 12 }}>
           <h1>{t("onboardingFinalTitle")}</h1>
           <div className="card" style={{ display: "grid", gap: 8 }}>
@@ -278,6 +293,13 @@ export default function Onboarding() {
             <div style={{ color: "var(--muted)", fontSize: 13 }}>
               {t("carbs")}: {calculated.carbGoal}g · {t("fat")}: {calculated.fatGoal}g
             </div>
+            <div>
+              <span className="metric-label">{t("expectedRateLabel")}</span>
+              <div className="metric-value">
+                {calculated.expectedRateKgPerWeek > 0 ? "+" : ""}
+                {calculated.expectedRateKgPerWeek} {t("kgPerWeek")}
+              </div>
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={confirmAndSave} disabled={busy}>
@@ -290,7 +312,7 @@ export default function Onboarding() {
         </section>
       )}
 
-      {step < 7 && (
+      {step < TOTAL_STEPS && (
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
           <button onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1} style={{ background: "none", color: "var(--muted)" }}>
             {t("back")}

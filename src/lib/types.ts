@@ -82,11 +82,11 @@ export interface UserProfile {
   gender?: "male" | "female" | "other";
   height?: number;
   weight?: number;
-  goal?: Goal;
+  /** Multi-select — e.g. buildMuscle + loseWeight for body recomposition. */
+  goals?: Goal[];
   activityLevel?: ActivityLevel;
   workoutTypes?: WorkoutType[];
   dietaryPrefs?: DietaryPref[];
-  changeRate?: "gentle" | "moderate" | "aggressive";
   avoidFoods?: string[];
   allergies?: string[];
   preferredFoods?: string[];

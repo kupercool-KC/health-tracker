@@ -107,18 +107,11 @@ export const strings = {
   dietLactoseFree: { en: "Lactose-free", he: "ללא לקטוז" },
   dietOther: { en: "Other", he: "אחר" },
 
-  onboardingStep6Title: { en: "Desired change rate", he: "קצב שינוי רצוי" },
-  rateGentle: { en: "Gentle: 0.25 kg/week", he: "עדין: 0.25 ק\"ג בשבוע" },
-  rateModerate: { en: "Moderate: 0.5 kg/week", he: "בינוני: 0.5 ק\"ג בשבוע" },
-  rateAggressive: { en: "Aggressive: 1 kg/week", he: "אגרסיבי: 1 ק\"ג בשבוע" },
-  rateWarning: {
-    en: "That's a fast rate of change — consider a gentler pace for sustainable results.",
-    he: "זה קצב שינוי מהיר — שווה לשקול קצב עדין יותר לתוצאות ברות קיימא.",
-  },
-
   onboardingFinalTitle: { en: "Your calculated profile", he: "הפרופיל המחושב שלך" },
   bmrLabel: { en: "BMR", he: "קצב חילוף חומרים בסיסי" },
   tdeeLabel: { en: "TDEE", he: "הוצאה אנרגטית יומית" },
+  expectedRateLabel: { en: "Expected rate of change", he: "קצב שינוי משוער" },
+  kgPerWeek: { en: "kg/week", he: "ק\"ג בשבוע" },
   confirmAndSave: { en: "Confirm and save", he: "אישור ושמירה" },
   edit: { en: "Edit", he: "ערוך" },
   next: { en: "Next", he: "הבא" },

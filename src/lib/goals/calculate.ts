@@ -58,20 +58,33 @@ export interface CalculatedGoals {
   proteinGoal: number;
   carbGoal: number;
   fatGoal: number;
+  /** Derived from the calorie deficit/surplus itself, not asked as a separate
+   *  question — negative means losing weight, positive means gaining. */
+  expectedRateKgPerWeek: number;
 }
 
 export interface GoalsInput {
   bmr: number;
   tdee: number;
-  goal: Goal;
+  /** One or more goals (multi-select) — e.g. buildMuscle + loseWeight for recomposition. */
+  goals: Goal[];
   weightKg: number;
   dietaryPrefs: DietaryPref[];
 }
 
-export function calculateGoals({ bmr, tdee, goal, weightKg, dietaryPrefs }: GoalsInput): CalculatedGoals {
-  const calorieGoal = Math.round(tdee + CALORIE_ADJUSTMENT[goal]);
+/** Standard approximation: ~7700 kcal of net energy balance per kg of body fat. */
+const KCAL_PER_KG_BODY_FAT = 7700;
 
-  let proteinPerKg = PROTEIN_PER_KG[goal];
+export function calculateGoals({ bmr, tdee, goals, weightKg, dietaryPrefs }: GoalsInput): CalculatedGoals {
+  const selected = goals.length > 0 ? goals : (["maintain"] as Goal[]);
+
+  // Multiple goals selected (e.g. body recomposition): average the calorie
+  // adjustment, but take the highest protein target — protein needs from
+  // any one goal don't go away just because another goal is also selected.
+  const avgCalorieAdjustment = selected.reduce((sum, g) => sum + CALORIE_ADJUSTMENT[g], 0) / selected.length;
+  const calorieGoal = Math.round(tdee + avgCalorieAdjustment);
+
+  let proteinPerKg = Math.max(...selected.map((g) => PROTEIN_PER_KG[g]));
   if (dietaryPrefs.includes("vegan")) {
     // Spec: "Vegan: add 10% to protein target (lower bioavailability from plant sources)."
     proteinPerKg *= 1.1;
@@ -85,5 +98,16 @@ export function calculateGoals({ bmr, tdee, goal, weightKg, dietaryPrefs }: Goal
   const carbGoal = Math.round((remainingKcal * 0.5) / 4);
   const fatGoal = Math.round((remainingKcal * 0.5) / 9);
 
-  return { bmr: Math.round(bmr), tdee: Math.round(tdee), calorieGoal, proteinGoal, carbGoal, fatGoal };
+  const weeklyDeltaKcal = (calorieGoal - tdee) * 7;
+  const expectedRateKgPerWeek = Math.round((weeklyDeltaKcal / KCAL_PER_KG_BODY_FAT) * 100) / 100;
+
+  return {
+    bmr: Math.round(bmr),
+    tdee: Math.round(tdee),
+    calorieGoal,
+    proteinGoal,
+    carbGoal,
+    fatGoal,
+    expectedRateKgPerWeek,
+  };
 }
