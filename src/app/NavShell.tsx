@@ -13,6 +13,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { useAuth } from "@/lib/firebase/useAuth";
+import ChatPanel from "./ChatPanel";
 
 const TABS = [
   { href: "/today", labelKey: "navToday" as const },
@@ -113,38 +114,29 @@ export default function NavShell({ children }: { children: ReactNode }) {
 
       {children}
 
-      <button
-        onClick={() => setChatOpen((v) => !v)}
-        aria-label="Open chat"
-        style={{
-          position: "fixed",
-          bottom: 16,
-          insetInlineEnd: 16,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          background: "var(--protein)",
-          color: "white",
-          border: "none",
-          fontSize: 24,
-        }}
-      >
-        💬
-      </button>
+      {user && !pathname?.startsWith("/share") && (
+        <>
+          <button
+            onClick={() => setChatOpen((v) => !v)}
+            aria-label="Open chat"
+            style={{
+              position: "fixed",
+              bottom: 16,
+              insetInlineEnd: 16,
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "var(--protein)",
+              color: "white",
+              border: "none",
+              fontSize: 24,
+            }}
+          >
+            💬
+          </button>
 
-      {chatOpen && (
-        <div
-          className="card"
-          style={{
-            position: "fixed",
-            bottom: 80,
-            insetInlineEnd: 16,
-            width: 300,
-            padding: 16,
-          }}
-        >
-          <p style={{ color: "var(--muted)", margin: 0 }}>Chat coming soon.</p>
-        </div>
+          {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
+        </>
       )}
     </>
   );

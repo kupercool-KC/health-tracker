@@ -123,6 +123,18 @@ export const strings = {
   edit: { en: "Edit", he: "ערוך" },
   next: { en: "Next", he: "הבא" },
   back: { en: "Back", he: "חזור" },
+
+  newChat: { en: "+ New chat", he: "+ שיחה חדשה" },
+  chatPlaceholder: { en: "Ask about your history, plans, or nutrition…", he: "שאל על ההיסטוריה שלך, תוכניות או תזונה…" },
+  send: { en: "Send", he: "שלח" },
+  confirm: { en: "Confirm", he: "אשר" },
+  rename: { en: "Rename", he: "שנה שם" },
+  delete: { en: "Delete", he: "מחק" },
+  share: { en: "Share", he: "שתף" },
+  deleteConfirm: { en: "Delete this chat?", he: "למחוק את השיחה הזו?" },
+  shareLinkCreated: { en: "Share link created — copied to clipboard.", he: "קישור שיתוף נוצר — הועתק ללוח." },
+  noSessions: { en: "No chats yet.", he: "אין שיחות עדיין." },
+  sharedChatTitle: { en: "Shared chat", he: "שיחה משותפת" },
 } as const;
 
 export type StringKey = keyof typeof strings;

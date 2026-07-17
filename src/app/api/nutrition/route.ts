@@ -1,11 +1,14 @@
 /**
  * POST /api/nutrition
- * Body: { text?: string, imageUrl?: string, loggedAt?: string, date?: string }
+ * Body: { text?: string, imageUrl?: string, loggedAt?: string, date?: string, parsed?: ParsedNutrition }
  * Auth: Firebase ID token (Bearer).
  *
- * Parses the input into { calories, protein, ... }, appends a MealEntry into
- * the day's users/{uid}/meals/{date} doc (creating it if needed), and
- * returns the entry.
+ * Appends a MealEntry into the day's users/{uid}/meals/{date} doc (creating
+ * it if needed), and returns the entry. If `parsed` is provided (the chat
+ * confirm flow already has a ParsedNutrition from /api/chat's log_meal
+ * intent), it's used as-is instead of calling parseNutrition() again —
+ * avoids a second, possibly-inconsistent OpenAI call for input already
+ * parsed once.
  *
  * `date` (yyyy-mm-dd) should be the client's *local* date — the server has no
  * timezone context, and deriving "today" from a UTC timestamp mislabels the
@@ -17,7 +20,17 @@ import { z } from "zod";
 import { getUidFromRequest } from "@/lib/auth";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { adminDb } from "@/lib/firebase/admin";
-import type { MealDay, MealEntry } from "@/lib/types";
+import type { MealDay, MealEntry, ParsedNutrition } from "@/lib/types";
+
+const parsedNutritionSchema = z.object({
+  description: z.string().min(1),
+  calories: z.number().nonnegative(),
+  protein: z.number().nonnegative(),
+  carbs: z.number().nonnegative().optional(),
+  fat: z.number().nonnegative().optional(),
+  fiber: z.number().nonnegative().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+});
 
 const bodySchema = z
   .object({
@@ -26,9 +39,10 @@ const bodySchema = z
     imageUrl: z.string().url().optional(),
     loggedAt: z.string().datetime().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    parsed: parsedNutritionSchema.optional(),
   })
-  .refine((b) => b.text || b.imageUrl, {
-    message: "Provide text or imageUrl",
+  .refine((b) => b.text || b.imageUrl || b.parsed, {
+    message: "Provide text, imageUrl, or parsed",
   });
 
 export async function POST(req: Request) {
@@ -47,9 +61,9 @@ export async function POST(req: Request) {
 
   const { text, imageUrl, loggedAt, date } = parsedBody.data;
 
-  let parsed;
+  let parsed: ParsedNutrition;
   try {
-    parsed = await parseNutrition({ text, imageUrl });
+    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrl }));
   } catch (err) {
     return NextResponse.json(
       { error: "Failed to parse nutrition", detail: String(err) },

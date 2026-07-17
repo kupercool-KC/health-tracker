@@ -41,5 +41,22 @@ service cloud.firestore {
       allow read, write: if request.auth != null
         && request.auth.uid == "Jw9kXMN8aucpw53kqaAw12gtlaA2";
     }
+
+    // Chat sessions: message *content* is only ever written by the Admin
+    // SDK (POST /api/chat decides intent and generates replies — a client
+    // can't write a fake assistant message), but the client can rename or
+    // delete its own sessions directly, same trust level as the meta docs.
+    match /users/{userId}/chatSessions/{sessionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Public read-only snapshots created by POST /api/chat/share. The
+    // shareId itself is the unguessable credential (crypto.randomBytes(16)),
+    // not a secret derived from anything else — same posture as an
+    // unlisted-link share. Only the Admin SDK ever writes these.
+    match /sharedChats/{shareId} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }

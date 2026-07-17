@@ -4,9 +4,9 @@
  * Auth: Firebase ID token (Bearer), restricted to ADMIN_UID.
  */
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { getUidFromRequest } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
+import { getOpenAIClient } from "@/lib/openai/client";
 
 // Excludes non-chat model families (audio, image, embeddings, moderation,
 // legacy completion-only models) that would error if picked for our
@@ -35,8 +35,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const list = await client.models.list();
+  const list = await getOpenAIClient().models.list();
 
   const models = list.data
     .map((m) => m.id)

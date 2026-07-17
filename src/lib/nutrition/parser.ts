@@ -8,18 +8,11 @@
  * hardcoded here.
  */
 import "server-only";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { z } from "zod";
 import type { ParsedNutrition } from "@/lib/types";
 import { getNutritionParserConfig } from "./config";
-
-// Lazily constructed so importing this module (e.g. during `next build`'s
-// route data collection) doesn't require OPENAI_API_KEY to be set yet.
-let client: OpenAI | undefined;
-function getClient(): OpenAI {
-  if (!client) client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return client;
-}
+import { getOpenAIClient } from "@/lib/openai/client";
 
 const parsedSchema = z.object({
   description: z.string().min(1),
@@ -51,7 +44,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     content.push({ type: "image_url", image_url: { url: input.imageUrl } });
   }
 
-  const completion = await getClient().chat.completions.create({
+  const completion = await getOpenAIClient().chat.completions.create({
     model: config.model,
     response_format: { type: "json_object" },
     // Minimize run-to-run variance for the same input. Not a hard guarantee
