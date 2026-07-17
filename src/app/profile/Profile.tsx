@@ -149,10 +149,13 @@ export default function Profile() {
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
         </label>
-        <div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={saveGoals} disabled={goalsBusy}>
             {goalsBusy ? t("working") : t("saveGoals")}
           </button>
+          <Link href="/onboarding" style={{ color: "var(--protein)", fontSize: 13 }}>
+            {t("recalculateGoals")}
+          </Link>
         </div>
         {goalsSaved && <p style={{ color: "var(--burned)" }}>{t("saved")}</p>}
       </div>

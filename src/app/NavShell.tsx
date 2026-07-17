@@ -6,9 +6,11 @@
  * opens/closes a placeholder panel for now — actual chat behavior (log-meal
  * / query-history modes) is a later phase.
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { useAuth } from "@/lib/firebase/useAuth";
 
@@ -17,13 +19,31 @@ const TABS = [
   { href: "/history", labelKey: "navHistory" as const },
 ];
 
+// Routes that don't require onboarding — /share is public/unauthenticated,
+// /onboarding is the destination itself (redirecting into it would loop).
+const ONBOARDING_EXEMPT_PREFIXES = ["/onboarding", "/share"];
+
 export default function NavShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
   const { user } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const [chatOpen, setChatOpen] = useState(false);
 
   const initial = (user?.displayName ?? user?.email ?? "?").charAt(0).toUpperCase();
+
+  useEffect(() => {
+    if (!user) return;
+    if (ONBOARDING_EXEMPT_PREFIXES.some((p) => pathname?.startsWith(p))) return;
+
+    const ref = doc(db, "users", user.uid, "meta", "profile");
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.data()?.onboarded !== true) {
+        router.push("/onboarding");
+      }
+    });
+    return unsubscribe;
+  }, [user, pathname, router]);
 
   return (
     <>

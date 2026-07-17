@@ -86,11 +86,15 @@ export interface UserProfile {
   activityLevel?: ActivityLevel;
   workoutTypes?: WorkoutType[];
   dietaryPrefs?: DietaryPref[];
+  changeRate?: "gentle" | "moderate" | "aggressive";
   avoidFoods?: string[];
   allergies?: string[];
   preferredFoods?: string[];
   calorieGoal: number;
   proteinGoal: number;
+  /** grams; calculated during onboarding, editable manually afterward */
+  carbGoal?: number;
+  fatGoal?: number;
   showCarbs?: boolean;
   showFat?: boolean;
   showFiber?: boolean;
@@ -116,4 +120,30 @@ export interface Alerts {
   lowCaloriesNoon: { enabled: boolean; thresholdPercent: number; checkTime: string };
   eveningSummary: { enabled: boolean; time: string };
   healthSync: { enabled: boolean; intervalHours: number };
+}
+
+export type ChatIntent = "log_meal" | "query_history" | "general_health" | "out_of_scope";
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  /** Present on an assistant message that's proposing a meal to log — not yet saved. */
+  pendingMeal?: ParsedNutrition & { imageUrl?: string };
+}
+
+/** users/{uid}/chatSessions/{sessionId} */
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** sharedChats/{shareId} — a public read-only snapshot of a ChatSession. */
+export interface SharedChat {
+  title: string;
+  messages: ChatMessage[];
+  sharedAt: string;
 }

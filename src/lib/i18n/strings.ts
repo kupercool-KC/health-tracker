@@ -66,6 +66,63 @@ export const strings = {
   proteinGoalLabel: { en: "Daily protein goal (g)", he: "מטרת חלבון יומית (גרם)" },
   saveGoals: { en: "Save", he: "שמור" },
   saved: { en: "Saved.", he: "נשמר." },
+  recalculateGoals: { en: "Recalculate goals from formula", he: "חשב מטרות מחדש מנוסחה" },
+
+  onboardingStep1Title: { en: "Basic stats", he: "מדדים בסיסיים" },
+  ageLabel: { en: "Age", he: "גיל" },
+  genderLabel: { en: "Gender", he: "מגדר" },
+  genderMale: { en: "Male", he: "זכר" },
+  genderFemale: { en: "Female", he: "נקבה" },
+  genderOther: { en: "Other", he: "אחר" },
+  heightLabel: { en: "Height (cm)", he: "גובה (ס\"מ)" },
+  weightLabel: { en: "Weight (kg)", he: "משקל (ק\"ג)" },
+
+  onboardingStep2Title: { en: "Primary goal", he: "מטרה עיקרית" },
+  goalBuildMuscle: { en: "Build muscle", he: "בניית שריר" },
+  goalCut: { en: "Cut (reduce body fat, maintain muscle)", he: "חיטוב (הפחתת שומן, שמירה על שריר)" },
+  goalLoseWeight: { en: "Lose weight", he: "הפחתת משקל" },
+  goalMaintain: { en: "Maintain current weight", he: "שמירה על משקל נוכחי" },
+
+  onboardingStep3Title: { en: "Activity level", he: "רמת פעילות" },
+  activitySedentary: { en: "Sedentary (0-1 workouts/week)", he: "בישיבה (0-1 אימונים בשבוע)" },
+  activityLight: { en: "Light (1-3/week)", he: "קלה (1-3 בשבוע)" },
+  activityModerate: { en: "Moderate (3-5/week)", he: "בינונית (3-5 בשבוע)" },
+  activityIntense: { en: "Intense (6-7/week)", he: "אינטנסיבית (6-7 בשבוע)" },
+  activityVeryIntense: { en: "Very intense (twice/day)", he: "אינטנסיבית מאוד (פעמיים ביום)" },
+
+  onboardingStep4Title: { en: "Workout types", he: "סוגי אימונים" },
+  workoutStrength: { en: "Strength", he: "כוח" },
+  workoutRunning: { en: "Running", he: "ריצה" },
+  workoutCycling: { en: "Cycling", he: "רכיבה על אופניים" },
+  workoutSwimming: { en: "Swimming", he: "שחייה" },
+  workoutYoga: { en: "Yoga", he: "יוגה" },
+  workoutHiit: { en: "HIIT", he: "HIIT" },
+  workoutOther: { en: "Other", he: "אחר" },
+
+  onboardingStep5Title: { en: "Dietary preferences", he: "העדפות תזונתיות" },
+  dietEverything: { en: "Everything", he: "הכל" },
+  dietVegetarian: { en: "Vegetarian", he: "צמחוני" },
+  dietVegan: { en: "Vegan", he: "טבעוני" },
+  dietGlutenFree: { en: "Gluten-free", he: "ללא גלוטן" },
+  dietLactoseFree: { en: "Lactose-free", he: "ללא לקטוז" },
+  dietOther: { en: "Other", he: "אחר" },
+
+  onboardingStep6Title: { en: "Desired change rate", he: "קצב שינוי רצוי" },
+  rateGentle: { en: "Gentle: 0.25 kg/week", he: "עדין: 0.25 ק\"ג בשבוע" },
+  rateModerate: { en: "Moderate: 0.5 kg/week", he: "בינוני: 0.5 ק\"ג בשבוע" },
+  rateAggressive: { en: "Aggressive: 1 kg/week", he: "אגרסיבי: 1 ק\"ג בשבוע" },
+  rateWarning: {
+    en: "That's a fast rate of change — consider a gentler pace for sustainable results.",
+    he: "זה קצב שינוי מהיר — שווה לשקול קצב עדין יותר לתוצאות ברות קיימא.",
+  },
+
+  onboardingFinalTitle: { en: "Your calculated profile", he: "הפרופיל המחושב שלך" },
+  bmrLabel: { en: "BMR", he: "קצב חילוף חומרים בסיסי" },
+  tdeeLabel: { en: "TDEE", he: "הוצאה אנרגטית יומית" },
+  confirmAndSave: { en: "Confirm and save", he: "אישור ושמירה" },
+  edit: { en: "Edit", he: "ערוך" },
+  next: { en: "Next", he: "הבא" },
+  back: { en: "Back", he: "חזור" },
 } as const;
 
 export type StringKey = keyof typeof strings;
