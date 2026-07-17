@@ -128,6 +128,17 @@ export const strings = {
   shareLinkCreated: { en: "Share link created — copied to clipboard.", he: "קישור שיתוף נוצר — הועתק ללוח." },
   noSessions: { en: "No chats yet.", he: "אין שיחות עדיין." },
   sharedChatTitle: { en: "Shared chat", he: "שיחה משותפת" },
+
+  last7Days: { en: "7 days", he: "7 ימים" },
+  last30Days: { en: "30 days", he: "30 ימים" },
+  close: { en: "Close", he: "סגור" },
+  allGoalsMet: { en: "All goals met", he: "כל המטרות הושגו" },
+  calorieGoalMissed: { en: "Calorie goal missed", he: "מטרת הקלוריות לא הושגה" },
+  proteinGoalMissed: { en: "Protein goal missed", he: "מטרת החלבון לא הושגה" },
+  noDataLogged: { en: "No data logged", he: "לא נרשמו נתונים" },
+  caloriesVsGoal: { en: "Calories vs goal", he: "קלוריות מול מטרה" },
+  proteinVsGoal: { en: "Protein vs goal", he: "חלבון מול מטרה" },
+  caloriesBurned: { en: "Calories burned", he: "קלוריות שנשרפו" },
 } as const;
 
 export type StringKey = keyof typeof strings;

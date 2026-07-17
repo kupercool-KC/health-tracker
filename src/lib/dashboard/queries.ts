@@ -9,7 +9,7 @@
  * doc read instead of a range query — the old per-entry-doc model needed the
  * range-query + client-side bucketing this file used to do.
  */
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { MealDay, Workout } from "@/lib/types";
 
@@ -28,6 +28,13 @@ export function localDateKey(input: string | Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** yyyy-mm-dd for `daysAgo` days before today, local timezone. */
+export function localDateKeyDaysAgo(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return localDateKey(d);
+}
+
 export async function getMealDay(uid: string, date: string): Promise<MealDay> {
   const ref = doc(db, "users", uid, "meals", date);
   const snap = await getDoc(ref);
@@ -37,6 +44,21 @@ export async function getMealDay(uid: string, date: string): Promise<MealDay> {
 export async function getWorkoutsForDate(uid: string, date: string): Promise<Workout[]> {
   const col = collection(db, "users", uid, "workouts");
   const q = query(col, where("date", "==", date));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as Workout);
+}
+
+/** All meal days with doc id (= date) >= sinceDate. Doc ids sort lexically, same trick as everywhere else in this file. */
+export async function getMealDaysSince(uid: string, sinceDate: string): Promise<MealDay[]> {
+  const col = collection(db, "users", uid, "meals");
+  const q = query(col, where(documentId(), ">=", sinceDate));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as MealDay);
+}
+
+export async function getWorkoutsSince(uid: string, sinceDate: string): Promise<Workout[]> {
+  const col = collection(db, "users", uid, "workouts");
+  const q = query(col, where("date", ">=", sinceDate));
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as Workout);
 }
