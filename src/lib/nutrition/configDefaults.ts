@@ -24,7 +24,8 @@ estimate for stylistic reasons across runs.
 
 Respond ONLY with JSON matching:
 { "description": string, "calories": number, "protein": number, "carbs": number, "fat": number, "fiber": number, "confidence": number }
-- description: a short human summary of what was logged.
+- description: a SHORT meal name, 2-4 words max (e.g. "Pro yogurt", "Chicken salad").
+  Never a full sentence — do not write "Ate a..." or restate the whole input.
 - carbs, fat, fiber: grams; include your best estimate for these too.
 - confidence: your confidence in the estimate from 0 to 1.
 If the input is ambiguous, make a reasonable single best estimate rather than refusing.`,

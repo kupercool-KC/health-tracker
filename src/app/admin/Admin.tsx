@@ -9,7 +9,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
+import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
 import { DEFAULT_NUTRITION_PARSER_CONFIG, type NutritionParserConfig } from "@/lib/nutrition/configDefaults";
 
@@ -17,7 +19,9 @@ const CONFIG_REF_PATH = ["appConfig", "nutritionParser"] as const;
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth();
+  const { backArrow } = useI18n();
   const [config, setConfig] = useState<NutritionParserConfig>(DEFAULT_NUTRITION_PARSER_CONFIG);
+  const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +35,15 @@ export default function Admin() {
     (async () => {
       try {
         const ref = doc(db, CONFIG_REF_PATH[0], CONFIG_REF_PATH[1]);
-        const snap = await getDoc(ref);
+        const [snap, idToken] = await Promise.all([getDoc(ref), auth.currentUser?.getIdToken()]);
         const stored = snap.data() as Partial<NutritionParserConfig> | undefined;
         setConfig({ ...DEFAULT_NUTRITION_PARSER_CONFIG, ...stored });
+
+        const res = await fetch("/api/admin/models", { headers: { Authorization: `Bearer ${idToken}` } });
+        if (res.ok) {
+          const data: { models: string[] } = await res.json();
+          setModels(data.models);
+        }
       } catch (err) {
         setError(String(err instanceof Error ? err.message : err));
       } finally {
@@ -74,12 +84,17 @@ export default function Admin() {
     );
   }
 
+  // The saved model might not be in the fetched list (e.g. it was set before
+  // this dropdown existed, or the account's model catalog changed) — always
+  // include it so the select doesn't silently show the wrong value.
+  const modelOptions = models.includes(config.model) ? models : [config.model, ...models];
+
   return (
     <main>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1>Admin</h1>
         <Link href="/profile" style={{ color: "var(--protein)" }}>
-          ← Profile
+          {backArrow} Profile
         </Link>
       </div>
 
@@ -98,23 +113,30 @@ export default function Admin() {
 
         <label style={{ display: "grid", gap: 4 }}>
           <span style={{ color: "var(--muted)", fontSize: 13 }}>Model</span>
-          <input
+          <select
             value={config.model}
             onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-          />
+          >
+            {modelOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label style={{ display: "grid", gap: 4 }}>
-          <span style={{ color: "var(--muted)", fontSize: 13 }}>Temperature (0 = most consistent, 2 = most varied)</span>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>
+            Temperature: {config.temperature.toFixed(1)} (0 = most consistent, 2 = most varied)
+          </span>
           <input
-            type="number"
+            type="range"
             min={0}
             max={2}
             step={0.1}
             value={config.temperature}
             onChange={(e) => setConfig((c) => ({ ...c, temperature: Number(e.target.value) }))}
-            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
         </label>
 

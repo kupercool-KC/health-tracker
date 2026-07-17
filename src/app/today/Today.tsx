@@ -105,7 +105,7 @@ export default function Today() {
     if (user) load(user.uid);
   }, [user, load]);
 
-  async function submitMeal(e: React.FormEvent) {
+  async function submitMeal(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
@@ -216,13 +216,36 @@ export default function Today() {
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="e.g. two eggs and a slice of toast"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && (text || file) && !busy) {
+                      submitMeal(e);
+                    }
+                  }}
+                  placeholder={t("addMealPlaceholder")}
                   rows={2}
                   style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                 />
-                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <span
+                    style={{
+                      border: "0.5px solid var(--border)",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      background: "var(--panel)",
+                    }}
+                  >
+                    {t("chooseFile")}
+                  </span>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>{file?.name}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    style={{ display: "none" }}
+                  />
+                </label>
                 <button type="submit" disabled={busy || (!text && !file)}>
-                  {busy ? "Logging…" : "Log it"}
+                  {busy ? t("logging") : t("logIt")}
                 </button>
               </form>
             )}
@@ -253,10 +276,10 @@ export default function Today() {
                     {expandedId === entry.id && (
                       <tr>
                         <td colSpan={4} style={{ padding: "0 4px 8px", color: "var(--muted)", fontSize: 13 }}>
-                          {entry.carbs != null && `carbs ${Math.round(entry.carbs)}g · `}
-                          {entry.fat != null && `fat ${Math.round(entry.fat)}g · `}
-                          {entry.fiber != null && `fiber ${Math.round(entry.fiber)}g · `}
-                          {entry.confidence != null && `${Math.round(entry.confidence * 100)}% confidence`}
+                          {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}g · `}
+                          {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}g · `}
+                          {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}g · `}
+                          {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
                         </td>
                       </tr>
                     )}
@@ -286,7 +309,7 @@ export default function Today() {
               </p>
             )}
             {workouts.length === 0 ? (
-              <p style={{ color: "var(--muted)" }}>—</p>
+              <p style={{ color: "var(--muted)" }}>{t("noWorkoutsToday")}</p>
             ) : (
               workouts.map((w) => (
                 <div key={w.id} className="card" style={{ marginTop: 8 }}>

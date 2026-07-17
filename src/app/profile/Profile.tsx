@@ -3,23 +3,55 @@
 /**
  * Profile screen. Full 4-section spec (dietary profile, alerts, memory,
  * goals & display) is a later phase — this ships the Apple Health sync
- * token management (previously at /settings) as a working first section, so
- * the nav shell's third tab has real content rather than a placeholder.
+ * token management (previously at /settings) plus a quick goal-editing
+ * shortcut, so the nav's profile icon has real content rather than a
+ * placeholder. The full onboarding wizard (BMR/TDEE calculation) is still a
+ * separate follow-up — this is a stopgap that lets you just type numbers in.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { auth } from "@/lib/firebase/client";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
+import { getUserGoals } from "@/lib/profile/queries";
 
 export default function Profile() {
   const { user, loading: authLoading, signIn, signOutUser } = useAuth();
-  const { t } = useI18n();
+  const { t, forwardArrow } = useI18n();
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [calorieGoal, setCalorieGoal] = useState(1950);
+  const [proteinGoal, setProteinGoal] = useState(145);
+  const [goalsBusy, setGoalsBusy] = useState(false);
+  const [goalsSaved, setGoalsSaved] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    getUserGoals(user.uid).then((g) => {
+      setCalorieGoal(g.calorieGoal);
+      setProteinGoal(g.proteinGoal);
+    });
+  }, [user]);
+
+  async function saveGoals() {
+    if (!user) return;
+    setGoalsBusy(true);
+    setGoalsSaved(false);
+    try {
+      const ref = doc(db, "users", user.uid, "meta", "profile");
+      await setDoc(ref, { calorieGoal, proteinGoal, updatedAt: new Date().toISOString() }, { merge: true });
+      setGoalsSaved(true);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setGoalsBusy(false);
+    }
+  }
 
   async function copyToken() {
     if (!token) return;
@@ -97,19 +129,44 @@ export default function Profile() {
         </button>
       </div>
 
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("goalsTitle")}</h2>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("calorieGoalLabel")}</span>
+          <input
+            type="number"
+            value={calorieGoal}
+            onChange={(e) => setCalorieGoal(Number(e.target.value))}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("proteinGoalLabel")}</span>
+          <input
+            type="number"
+            value={proteinGoal}
+            onChange={(e) => setProteinGoal(Number(e.target.value))}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+        <div>
+          <button onClick={saveGoals} disabled={goalsBusy}>
+            {goalsBusy ? t("working") : t("saveGoals")}
+          </button>
+        </div>
+        {goalsSaved && <p style={{ color: "var(--burned)" }}>{t("saved")}</p>}
+      </div>
+
       <div className="card" style={{ marginTop: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Apple Health sync</h2>
-        <p style={{ color: "var(--muted)" }}>
-          Generate a personal token to paste into your Health Auto Export automation. Generating a
-          new one immediately revokes the previous one.
-        </p>
+        <h2 style={{ marginTop: 0 }}>{t("appleHealthSyncTitle")}</h2>
+        <p style={{ color: "var(--muted)" }}>{t("appleHealthSyncDesc")}</p>
 
         <button onClick={generate} disabled={busy}>
-          {busy ? "Working…" : "Generate new token"}
+          {busy ? t("working") : t("generateNewToken")}
         </button>
         {token && (
           <button onClick={revoke} disabled={busy} style={{ marginInlineStart: 8, background: "none", color: "var(--muted)" }}>
-            Revoke
+            {t("revoke")}
           </button>
         )}
 
@@ -130,28 +187,22 @@ export default function Profile() {
             >
               {token}
             </div>
-            <button onClick={copyToken}>{copied ? "Copied!" : "Copy"}</button>
+            <button onClick={copyToken}>{copied ? t("copied") : t("copy")}</button>
           </div>
         )}
-        {token && (
-          <p style={{ color: "var(--muted)", fontSize: 13 }}>
-            Copy this now — it won&apos;t be shown again.
-          </p>
-        )}
+        {token && <p style={{ color: "var(--muted)", fontSize: 13 }}>{t("copyNote")}</p>}
       </div>
 
       {isAdmin(user.uid) && (
         <div className="card" style={{ marginTop: 16 }}>
           <Link href="/admin" style={{ color: "var(--protein)" }}>
-            Admin settings →
+            {t("adminSettings")} {forwardArrow}
           </Link>
         </div>
       )}
 
       <div className="card" style={{ marginTop: 16 }}>
-        <p style={{ color: "var(--muted)", margin: 0 }}>
-          Dietary profile, alerts, memory, and goals sections are coming in a later update.
-        </p>
+        <p style={{ color: "var(--muted)", margin: 0 }}>{t("comingLater")}</p>
       </div>
     </main>
   );

@@ -24,6 +24,10 @@ interface I18nContextValue {
   dir: "ltr" | "rtl";
   t: (key: StringKey) => string;
   setLang: (lang: Language) => Promise<void>;
+  /** Points toward the previous/parent screen — flips for RTL. */
+  backArrow: string;
+  /** Points toward the next/child screen — flips for RTL. */
+  forwardArrow: string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -64,7 +68,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback((key: StringKey) => strings[key][lang], [lang]);
 
-  const value = useMemo(() => ({ lang, dir, t, setLang }), [lang, dir, t, setLang]);
+  const backArrow = dir === "rtl" ? "→" : "←";
+  const forwardArrow = dir === "rtl" ? "←" : "→";
+
+  const value = useMemo(
+    () => ({ lang, dir, t, setLang, backArrow, forwardArrow }),
+    [lang, dir, t, setLang, backArrow, forwardArrow],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

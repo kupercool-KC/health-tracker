@@ -69,9 +69,15 @@ main {
   border-radius: 999px;
 }
 
-button {
+button,
+input,
+textarea,
+select {
   font-family: inherit;
   font-size: 14px;
+}
+
+button {
   cursor: pointer;
   border-radius: 8px;
   border: 0.5px solid var(--border);
