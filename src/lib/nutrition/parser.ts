@@ -14,7 +14,7 @@ import type { ParsedNutrition } from "@/lib/types";
 import { getNutritionParserConfig } from "./config";
 import { getOpenAIClient } from "@/lib/openai/client";
 
-const parsedSchema = z.object({
+const itemSchema = z.object({
   description: z.string().min(1),
   calories: z.number().nonnegative(),
   protein: z.number().nonnegative(),
@@ -23,6 +23,7 @@ const parsedSchema = z.object({
   fiber: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
 });
+const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 
 export interface ParseInput {
   /** Free-text message from the chat box. Optional if an image is provided. */

@@ -9,7 +9,7 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
-import type { ChatIntent } from "@/lib/types";
+import type { ChatIntent, MealDay, PendingMealAction } from "@/lib/types";
 
 const CHAT_MODEL = "gpt-4o-mini";
 
@@ -34,8 +34,9 @@ export async function classifyIntent(message: string): Promise<ChatIntent> {
 - "log_meal": user is describing food they ate, to be logged.
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts) — trends, totals, comparisons over time.
 - "general_health": a nutrition/fitness/health question NOT about their own logged history (meal ideas, menus, general advice, "how much protein should I eat").
+- "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged today (e.g. "delete the peach", "remove the tofu entry", "the schnitzel was actually 500 calories not 600", "fix my last meal's protein to 30g"). This is about an existing logged entry, not describing new food to log.
 - "out_of_scope": anything unrelated to nutrition, fitness, or health (coding help, trivia, unrelated small talk, etc).
-Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health" | "out_of_scope" }`,
+Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
       },
       { role: "user", content: message },
     ],
@@ -44,7 +45,7 @@ Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health
   const raw = completion.choices[0]?.message?.content;
   try {
     const parsed = JSON.parse(raw ?? "{}");
-    if (["log_meal", "query_history", "general_health", "out_of_scope"].includes(parsed.intent)) {
+    if (["log_meal", "query_history", "general_health", "manage_meal", "out_of_scope"].includes(parsed.intent)) {
       return parsed.intent as ChatIntent;
     }
   } catch {
@@ -81,7 +82,7 @@ export async function answerHistoryQuery(uid: string, message: string, lang: "en
     messages: [
       {
         role: "system",
-        content: `You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing.`,
+        content: `You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.`,
       },
       { role: "user", content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals, workouts })}\n\nQuestion: ${message}` },
     ],
@@ -96,12 +97,90 @@ export async function answerGeneralHealth(message: string, lang: "en" | "he"): P
     messages: [
       {
         role: "system",
-        content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Answer questions about nutrition, meal planning, menus, workouts, and general health practically and concisely. If a question drifts outside those topics, politely decline and redirect to health topics. Respond in ${lang === "he" ? "Hebrew" : "English"}.`,
+        content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Answer questions about nutrition, meal planning, menus, workouts, and general health practically and concisely. If a question drifts outside those topics, politely decline and redirect to health topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
       },
       { role: "user", content: message },
     ],
   });
   return completion.choices[0]?.message?.content ?? "";
+}
+
+/**
+ * Resolves a "manage_meal" message (delete/edit an already-logged meal)
+ * against that day's entries. Returns a pendingMealAction for the client to
+ * confirm — never mutates Firestore directly, so a misread ("delete the
+ * peach" matching the wrong row) can't destroy data without a confirm click,
+ * same posture as pendingMeal for new logs.
+ */
+export async function resolveMealAction(
+  uid: string,
+  date: string,
+  message: string,
+  lang: "en" | "he",
+): Promise<{ replyContent: string; pendingMealAction?: PendingMealAction }> {
+  const snap = await adminDb.collection("users").doc(uid).collection("meals").doc(date).get();
+  const day = snap.data() as MealDay | undefined;
+  const entries = day?.entries ?? [];
+
+  if (entries.length === 0) {
+    return {
+      replyContent:
+        lang === "he" ? "לא נמצאו ארוחות רשומות היום." : "There are no meals logged today to change.",
+    };
+  }
+
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The user wants to delete or edit one of their already-logged meals for today. Here is today's logged entries as JSON:
+${JSON.stringify(entries.map((e) => ({ id: e.id, name: e.name, calories: e.calories, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })))}
+
+Match the user's message to exactly one entry by name/description. Respond ONLY as JSON:
+{ "found": boolean, "action": "delete" | "update", "entryId": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
+- If action is "update", only include the fields in "changes" that the user actually wants changed.
+- "summary": a short one-sentence description of what you're about to do, in ${lang === "he" ? "Hebrew" : "English"}, plain text, no markdown, ending with a question asking the user to confirm.
+- If no entry matches with reasonable confidence, or the request is ambiguous (matches multiple entries), set "found": false and "summary" to a short plain-text message explaining that in ${lang === "he" ? "Hebrew" : "English"}.`,
+      },
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  let parsed: {
+    found?: boolean;
+    action?: "delete" | "update";
+    entryId?: string;
+    changes?: PendingMealAction["changes"];
+    summary?: string;
+  };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = { found: false };
+  }
+
+  const target = entries.find((e) => e.id === parsed.entryId);
+  if (!parsed.found || !target || (parsed.action !== "delete" && parsed.action !== "update")) {
+    return {
+      replyContent:
+        parsed.summary ?? (lang === "he" ? "לא הצלחתי לזהות איזו ארוחה התכוונת אליה." : "I couldn't tell which meal you meant."),
+    };
+  }
+
+  return {
+    replyContent: parsed.summary ?? (lang === "he" ? "לאשר?" : "Confirm?"),
+    pendingMealAction: {
+      action: parsed.action,
+      date,
+      entryId: target.id,
+      entryName: target.name,
+      ...(parsed.action === "update" && parsed.changes ? { changes: parsed.changes } : {}),
+    },
+  };
 }
 
 export async function generateSessionTitle(firstUserMessage: string, firstAssistantReply: string): Promise<string> {

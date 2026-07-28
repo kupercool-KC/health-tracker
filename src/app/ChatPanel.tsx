@@ -62,7 +62,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ sessionId: activeId ?? undefined, message: text, imageUrl, lang }),
+        body: JSON.stringify({ sessionId: activeId ?? undefined, message: text, imageUrl, lang, date: localDateKey() }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const data: { sessionId: string } = await res.json();
@@ -88,6 +88,28 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ parsed, imageUrl, date: localDateKey() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      setConfirmedIndices((prev) => new Set(prev).add(index));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmMealAction(pendingMealAction: NonNullable<ChatMessage["pendingMealAction"]>, index: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const { action, date, entryId, changes } = pendingMealAction;
+      const res = await fetch("/api/nutrition", {
+        method: action === "delete" ? "DELETE" : "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify(action === "delete" ? { date, entryId } : { date, entryId, changes }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       setConfirmedIndices((prev) => new Set(prev).add(index));
@@ -231,7 +253,13 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
               <div
                 className="card"
-                style={{ padding: 8, background: m.role === "user" ? "var(--protein-bg)" : "var(--bg-muted)", fontSize: 13 }}
+                style={{
+                  padding: 8,
+                  background: m.role === "user" ? "var(--protein-bg)" : "var(--bg-muted)",
+                  fontSize: 13,
+                  whiteSpace: "pre-line",
+                  lineHeight: 1.6,
+                }}
               >
                 {m.content}
               </div>
@@ -240,6 +268,15 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmMeal(m.pendingMeal!, i)} disabled={busy} style={{ marginTop: 4 }}>
+                    {t("confirm")}
+                  </button>
+                )
+              )}
+              {m.pendingMealAction && (
+                confirmedIndices.has(i) ? (
+                  <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
+                ) : (
+                  <button onClick={() => confirmMealAction(m.pendingMealAction!, i)} disabled={busy} style={{ marginTop: 4 }}>
                     {t("confirm")}
                   </button>
                 )

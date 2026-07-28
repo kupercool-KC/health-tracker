@@ -58,8 +58,8 @@ export interface Workout {
   syncedAt: string;
 }
 
-/** Result of parsing a nutrition input, before it becomes a MealEntry. */
-export interface ParsedNutrition {
+/** A single distinct food identified within one parse call. */
+export interface ParsedNutritionItem {
   description: string;
   calories: number;
   protein: number;
@@ -67,6 +67,15 @@ export interface ParsedNutrition {
   fat?: number;
   fiber?: number;
   confidence?: number;
+}
+
+/**
+ * Result of parsing a nutrition input, before it becomes one or more
+ * MealEntry rows. A single message can describe several distinct foods
+ * (e.g. "2 schnitzels and a salad") — each becomes its own item/entry.
+ */
+export interface ParsedNutrition {
+  items: ParsedNutritionItem[];
 }
 
 export type Goal = "buildMuscle" | "cut" | "loseWeight" | "maintain";
@@ -122,14 +131,28 @@ export interface Alerts {
   healthSync: { enabled: boolean; intervalHours: number };
 }
 
-export type ChatIntent = "log_meal" | "query_history" | "general_health" | "out_of_scope";
+export type ChatIntent = "log_meal" | "query_history" | "general_health" | "manage_meal" | "out_of_scope";
+
+/** Proposed edit/delete of an already-logged meal, awaiting user confirmation. */
+export interface PendingMealAction {
+  action: "delete" | "update";
+  /** yyyy-mm-dd — the day the target entry lives in. */
+  date: string;
+  entryId: string;
+  /** Human-readable name of the target entry, for the confirm UI. */
+  entryName: string;
+  /** Only present for action "update". */
+  changes?: Partial<Pick<MealEntry, "name" | "calories" | "protein" | "carbs" | "fat" | "fiber">>;
+}
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
-  /** Present on an assistant message that's proposing a meal to log — not yet saved. */
+  /** Present on an assistant message that's proposing meal(s) to log — not yet saved. */
   pendingMeal?: ParsedNutrition & { imageUrl?: string };
+  /** Present on an assistant message that's proposing an edit/delete of an existing meal. */
+  pendingMealAction?: PendingMealAction;
 }
 
 /** users/{uid}/chatSessions/{sessionId} */

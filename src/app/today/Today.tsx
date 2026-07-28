@@ -138,6 +138,27 @@ export default function Today() {
     }
   }
 
+  async function deleteMeal(entryId: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !window.confirm(t("deleteMealConfirm"))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ date: localDateKey(), entryId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await load(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (authLoading) {
     return (
       <main>
@@ -257,6 +278,7 @@ export default function Today() {
                   <th style={{ padding: "8px 4px" }}>{t("meal")}</th>
                   <th style={{ padding: "8px 4px" }}>{t("calories")}</th>
                   <th style={{ padding: "8px 4px" }}>{t("protein")}</th>
+                  <th style={{ padding: "8px 4px" }} />
                 </tr>
               </thead>
               <tbody>
@@ -272,10 +294,23 @@ export default function Today() {
                       <td style={{ padding: "8px 4px" }}>{entry.name}</td>
                       <td style={{ padding: "8px 4px" }}>{Math.round(entry.calories)}</td>
                       <td style={{ padding: "8px 4px" }}>{Math.round(entry.protein)}g</td>
+                      <td style={{ padding: "8px 4px" }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMeal(entry.id);
+                          }}
+                          disabled={busy}
+                          style={{ border: "none", background: "none", color: "var(--calories)", padding: 2 }}
+                          aria-label={t("deleteMeal")}
+                        >
+                          ✕
+                        </button>
+                      </td>
                     </tr>
                     {expandedId === entry.id && (
                       <tr>
-                        <td colSpan={4} style={{ padding: "0 4px 8px", color: "var(--muted)", fontSize: 13 }}>
+                        <td colSpan={5} style={{ padding: "0 4px 8px", color: "var(--muted)", fontSize: 13 }}>
                           {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}g · `}
                           {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}g · `}
                           {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}g · `}
@@ -293,6 +328,7 @@ export default function Today() {
                   </td>
                   <td style={{ padding: "8px 4px" }}>{Math.round(totals.calories)}</td>
                   <td style={{ padding: "8px 4px" }}>{Math.round(totals.protein)}g</td>
+                  <td style={{ padding: "8px 4px" }} />
                 </tr>
               </tfoot>
             </table>

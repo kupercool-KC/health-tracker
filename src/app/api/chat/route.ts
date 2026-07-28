@@ -21,6 +21,7 @@ import {
   classifyIntent,
   generateSessionTitle,
   outOfScopeReply,
+  resolveMealAction,
 } from "@/lib/chat/chat";
 import type { ChatIntent, ChatMessage, ChatSession, UserProfile } from "@/lib/types";
 
@@ -30,6 +31,9 @@ const bodySchema = z
     message: z.string().optional(),
     imageUrl: z.string().url().optional(),
     lang: z.enum(["en", "he"]).optional().default("en"),
+    // Client's local yyyy-mm-dd — used to scope "manage_meal" to today's
+    // entries; the server has no timezone context (see /api/nutrition).
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   })
   .refine((b) => (b.message && b.message.trim().length > 0) || b.imageUrl, {
     message: "Provide message or imageUrl",
@@ -54,7 +58,7 @@ async function handleChat(req: Request) {
   if (!parsedBody.success) {
     return NextResponse.json({ error: "Invalid request", details: parsedBody.error.flatten() }, { status: 400 });
   }
-  const { sessionId, message, imageUrl, lang } = parsedBody.data;
+  const { sessionId, message, imageUrl, lang, date } = parsedBody.data;
 
   const sessionsCol = adminDb.collection("users").doc(uid).collection("chatSessions");
   const sessionRef = sessionId ? sessionsCol.doc(sessionId) : sessionsCol.doc();
@@ -73,6 +77,7 @@ async function handleChat(req: Request) {
 
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
+  let pendingMealAction: ChatMessage["pendingMealAction"];
 
   if (intent === "log_meal") {
     const parsed = await parseNutrition({ text: message, imageUrl });
@@ -80,20 +85,30 @@ async function handleChat(req: Request) {
 
     const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
     const avoidFoods = (profileSnap.data() as UserProfile | undefined)?.avoidFoods ?? [];
-    const hit = avoidFoods.find((f) => parsed.description.toLowerCase().includes(f.toLowerCase()));
-    const warning = hit
-      ? lang === "he"
-        ? `⚠️ שים לב: זה עשוי להכיל ${hit}, שסימנת כמאכל שאתה נמנע ממנו.\n`
-        : `⚠️ Heads up: this looks like it contains ${hit}, which you've marked as a food to avoid.\n`
-      : "";
+    const hits = avoidFoods.filter((f) =>
+      parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
+    );
+    const warning =
+      hits.length > 0
+        ? lang === "he"
+          ? `⚠️ שים לב: זה עשוי להכיל ${hits.join(", ")}, שסימנת כמאכל שאתה נמנע ממנו.\n`
+          : `⚠️ Heads up: this looks like it contains ${hits.join(", ")}, which you've marked as a food to avoid.\n`
+        : "";
 
-    replyContent =
-      `${warning}${parsed.description}: ${Math.round(parsed.calories)} kcal, ${Math.round(parsed.protein)}g protein. ` +
-      (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+    const lines = parsed.items
+      .map((item) => `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}g protein`)
+      .join("\n");
+
+    replyContent = `${warning}${lines}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang);
   } else if (intent === "general_health") {
     replyContent = await answerGeneralHealth(userContent, lang);
+  } else if (intent === "manage_meal") {
+    const today = date ?? now.slice(0, 10);
+    const result = await resolveMealAction(uid, today, userContent, lang);
+    replyContent = result.replyContent;
+    pendingMealAction = result.pendingMealAction;
   } else {
     replyContent = outOfScopeReply(lang);
   }
@@ -102,9 +117,10 @@ async function handleChat(req: Request) {
     role: "assistant",
     content: replyContent,
     createdAt: new Date().toISOString(),
-    // Firestore rejects `undefined` values, so only include this key when
-    // there actually is a pending meal (log_meal intent).
+    // Firestore rejects `undefined` values, so only include these keys when
+    // there's actually a pending action.
     ...(pendingMeal ? { pendingMeal } : {}),
+    ...(pendingMealAction ? { pendingMealAction } : {}),
   };
   messages.push(assistantMsg);
 

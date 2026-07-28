@@ -33,6 +33,8 @@ export const strings = {
   fat: { en: "fat", he: "שומן" },
   fiber: { en: "fiber", he: "סיבים" },
   confidence: { en: "confidence", he: "רמת ביטחון" },
+  deleteMeal: { en: "Delete meal", he: "מחק ארוחה" },
+  deleteMealConfirm: { en: "Delete this meal?", he: "למחוק את הארוחה הזו?" },
 
   workouts: { en: "Workouts", he: "אימונים" },
   lastSynced: { en: "Last synced", he: "סונכרן לאחרונה" },

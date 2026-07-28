@@ -25,16 +25,20 @@ export default function Profile() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const [calorieGoal, setCalorieGoal] = useState(1950);
-  const [proteinGoal, setProteinGoal] = useState(145);
+  // Kept as raw strings, not numbers — a controlled type="number" input
+  // backed by numeric state doesn't reliably strip a leading "0" as you type
+  // over it (e.g. typing "22" over "0" can leave "022" on screen even though
+  // the parsed number is correct). Parsing only happens on save.
+  const [calorieGoal, setCalorieGoal] = useState("1950");
+  const [proteinGoal, setProteinGoal] = useState("145");
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     getUserGoals(user.uid).then((g) => {
-      setCalorieGoal(g.calorieGoal);
-      setProteinGoal(g.proteinGoal);
+      setCalorieGoal(String(g.calorieGoal));
+      setProteinGoal(String(g.proteinGoal));
     });
   }, [user]);
 
@@ -44,7 +48,11 @@ export default function Profile() {
     setGoalsSaved(false);
     try {
       const ref = doc(db, "users", user.uid, "meta", "profile");
-      await setDoc(ref, { calorieGoal, proteinGoal, updatedAt: new Date().toISOString() }, { merge: true });
+      await setDoc(
+        ref,
+        { calorieGoal: Number(calorieGoal) || 0, proteinGoal: Number(proteinGoal) || 0, updatedAt: new Date().toISOString() },
+        { merge: true },
+      );
       setGoalsSaved(true);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -136,7 +144,7 @@ export default function Profile() {
           <input
             type="number"
             value={calorieGoal}
-            onChange={(e) => setCalorieGoal(Number(e.target.value))}
+            onChange={(e) => setCalorieGoal(e.target.value)}
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
         </label>
@@ -145,7 +153,7 @@ export default function Profile() {
           <input
             type="number"
             value={proteinGoal}
-            onChange={(e) => setProteinGoal(Number(e.target.value))}
+            onChange={(e) => setProteinGoal(e.target.value)}
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
         </label>
