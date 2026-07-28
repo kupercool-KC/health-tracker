@@ -36,6 +36,15 @@ const bodySchema = z
   });
 
 export async function POST(req: Request) {
+  try {
+    return await handleChat(req);
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
+
+async function handleChat(req: Request) {
   const uid = await getUidFromRequest(req);
   if (!uid) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,7 +76,7 @@ export async function POST(req: Request) {
 
   if (intent === "log_meal") {
     const parsed = await parseNutrition({ text: message, imageUrl });
-    pendingMeal = { ...parsed, imageUrl };
+    pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}) };
 
     const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
     const avoidFoods = (profileSnap.data() as UserProfile | undefined)?.avoidFoods ?? [];
@@ -93,7 +102,9 @@ export async function POST(req: Request) {
     role: "assistant",
     content: replyContent,
     createdAt: new Date().toISOString(),
-    pendingMeal,
+    // Firestore rejects `undefined` values, so only include this key when
+    // there actually is a pending meal (log_meal intent).
+    ...(pendingMeal ? { pendingMeal } : {}),
   };
   messages.push(assistantMsg);
 
