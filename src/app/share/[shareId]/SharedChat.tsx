@@ -35,7 +35,7 @@ export default function SharedChat() {
   if (notFound) {
     return (
       <main>
-        <p style={{ color: "var(--muted)" }}>Not found.</p>
+        <p style={{ color: "var(--muted)" }}>{t("sharedChatNotFound")}</p>
       </main>
     );
   }

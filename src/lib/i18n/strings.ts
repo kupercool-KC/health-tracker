@@ -149,6 +149,7 @@ export const strings = {
   shareLinkCreated: { en: "Share link created — copied to clipboard.", he: "קישור שיתוף נוצר — הועתק ללוח." },
   noSessions: { en: "No chats yet.", he: "אין שיחות עדיין." },
   sharedChatTitle: { en: "Shared chat", he: "שיחה משותפת" },
+  sharedChatNotFound: { en: "Not found.", he: "לא נמצא." },
 
   last7Days: { en: "7 days", he: "7 ימים" },
   last30Days: { en: "30 days", he: "30 ימים" },

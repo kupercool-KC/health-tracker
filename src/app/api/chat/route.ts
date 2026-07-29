@@ -130,7 +130,7 @@ async function handleChat(req: Request) {
 
   let title = existing?.title;
   if (!title) {
-    title = await generateSessionTitle(userContent, replyContent).catch(() => "Chat");
+    title = await generateSessionTitle(userContent, replyContent, lang).catch(() => (lang === "he" ? "שיחה" : "Chat"));
   }
 
   const session: ChatSession = {

@@ -209,14 +209,21 @@ Judge by what food it most plausibly refers to, not by spelling distance. Respon
   };
 }
 
-export async function generateSessionTitle(firstUserMessage: string, firstAssistantReply: string): Promise<string> {
+export async function generateSessionTitle(
+  firstUserMessage: string,
+  firstAssistantReply: string,
+  lang: "en" | "he",
+): Promise<string> {
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     temperature: 0.3,
     messages: [
-      { role: "system", content: "Summarize this chat exchange into a short 3-6 word title. No punctuation at the end, no quotes." },
+      {
+        role: "system",
+        content: `Summarize this chat exchange into a short 3-6 word title, in ${lang === "he" ? "Hebrew" : "English"} regardless of what language the exchange itself is in. No punctuation at the end, no quotes.`,
+      },
       { role: "user", content: `User: ${firstUserMessage}\nAssistant: ${firstAssistantReply}` },
     ],
   });
-  return (completion.choices[0]?.message?.content ?? "Chat").trim();
+  return (completion.choices[0]?.message?.content ?? (lang === "he" ? "שיחה" : "Chat")).trim();
 }

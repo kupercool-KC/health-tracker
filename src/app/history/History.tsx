@@ -39,6 +39,21 @@ function dayLabel(date: string): string {
   return `${date.slice(5, 7)}/${date.slice(8, 10)}`;
 }
 
+/**
+ * Which day indices get an x-axis label — showing all of them once the range
+ * grows past ~weekly gets illegible, so this thins them out to roughly 6-7
+ * evenly-spaced labels (always including the first and last day) regardless
+ * of whether the range is a week, a month, or a custom span.
+ */
+function axisLabelIndices(count: number): Set<number> {
+  if (count <= 8) return new Set(Array.from({ length: count }, (_, i) => i));
+  const target = 7;
+  const step = (count - 1) / (target - 1);
+  const indices = new Set<number>();
+  for (let i = 0; i < target; i++) indices.add(Math.round(i * step));
+  return indices;
+}
+
 /** Shared gradient-filled bar chart for a single metric, with hover/tap tooltip. */
 function MetricBarChart({
   days,
@@ -69,52 +84,90 @@ function MetricBarChart({
   const goalY = height - (goal / max) * height;
   const gradId = `grad-${valueKey}-${colorVar.replace(/[^a-z]/gi, "")}`;
   const gradMissId = `${gradId}-miss`;
+  const yTicks = [0, 0.5, 1].map((f) => ({ y: height - f * height, value: Math.round(f * max) }));
+  const xLabelIndices = axisLabelIndices(days.length);
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
         <span style={{ color: colorVar }}>■</span> {label}
       </div>
-      <svg
-        viewBox={`0 0 100 ${height}`}
-        preserveAspectRatio="none"
-        style={{ width: "100%", height }}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={colorLightVar} />
-            <stop offset="100%" stopColor={colorVar} />
-          </linearGradient>
-          {missColorVar && (
-            <linearGradient id={gradMissId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={missColorLightVar} />
-              <stop offset="100%" stopColor={missColorVar} />
+      <div style={{ display: "flex" }}>
+        {/* Y-axis: plain HTML, not SVG — the chart's viewBox is stretched
+            non-uniformly (preserveAspectRatio="none") so SVG <text> inside it
+            would render horizontally distorted; positioning labels outside
+            at the same pixel offsets avoids that. */}
+        <div style={{ position: "relative", width: 34, height, flexShrink: 0 }}>
+          {yTicks.map((tick) => (
+            <bdi
+              dir="ltr"
+              key={tick.y}
+              style={{
+                position: "absolute",
+                top: tick.y,
+                insetInlineEnd: 4,
+                transform: "translateY(-50%)",
+                fontSize: 10,
+                color: "var(--muted)",
+              }}
+            >
+              {tick.value}
+            </bdi>
+          ))}
+        </div>
+        <svg
+          viewBox={`0 0 100 ${height}`}
+          preserveAspectRatio="none"
+          style={{ width: "100%", height }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={colorLightVar} />
+              <stop offset="100%" stopColor={colorVar} />
             </linearGradient>
-          )}
-        </defs>
-        <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={colorVar} strokeDasharray="2,2" strokeWidth={0.5} />
-        {days.map((d, i) => {
-          const val = d[valueKey];
-          const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
-          const x = i * barWidth;
-          const missed = missColorVar && d.hasData && val < goal;
-          return (
-            <rect
-              key={d.date}
-              x={x + barWidth * 0.15}
-              y={height - barHeight}
-              width={barWidth * 0.7}
-              height={barHeight}
-              fill={missed ? `url(#${gradMissId})` : `url(#${gradId})`}
-              opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
-              onMouseEnter={() => setHoverIdx(i)}
-              onClick={() => setHoverIdx(i)}
-              style={{ cursor: "pointer" }}
-            />
-          );
-        })}
-      </svg>
+            {missColorVar && (
+              <linearGradient id={gradMissId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={missColorLightVar} />
+                <stop offset="100%" stopColor={missColorVar} />
+              </linearGradient>
+            )}
+          </defs>
+          {yTicks.map((tick) => (
+            <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
+          ))}
+          <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={colorVar} strokeDasharray="2,2" strokeWidth={0.5} />
+          {days.map((d, i) => {
+            const val = d[valueKey];
+            const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
+            const x = i * barWidth;
+            const missed = missColorVar && d.hasData && val < goal;
+            return (
+              <rect
+                key={d.date}
+                x={x + barWidth * 0.15}
+                y={height - barHeight}
+                width={barWidth * 0.7}
+                height={barHeight}
+                fill={missed ? `url(#${gradMissId})` : `url(#${gradId})`}
+                opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
+                onMouseEnter={() => setHoverIdx(i)}
+                onClick={() => setHoverIdx(i)}
+                style={{ cursor: "pointer" }}
+              />
+            );
+          })}
+        </svg>
+      </div>
+      {/* X-axis, same reasoning as the y-axis: plain HTML flex row lined up
+          with each bar's slot instead of SVG text. */}
+      <div style={{ display: "flex", marginInlineStart: 34 }}>
+        {days.map((d, i) => (
+          <div key={d.date} style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--muted)" }}>
+            {xLabelIndices.has(i) ? <bdi dir="ltr">{dayLabel(d.date)}</bdi> : null}
+          </div>
+        ))}
+      </div>
       {hoverIdx != null && days[hoverIdx] && (
         <div
           style={{
@@ -153,6 +206,7 @@ function AggregateChart({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 48;
   const barWidth = 100 / Math.max(days.length, 1);
+  const xLabelIndices = axisLabelIndices(days.length);
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
@@ -182,6 +236,13 @@ function AggregateChart({
           );
         })}
       </svg>
+      <div style={{ display: "flex" }}>
+        {days.map((d, i) => (
+          <div key={d.date} style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--muted)" }}>
+            {xLabelIndices.has(i) ? <bdi dir="ltr">{dayLabel(d.date)}</bdi> : null}
+          </div>
+        ))}
+      </div>
       {hoverIdx != null && days[hoverIdx] && (
         <div
           style={{
