@@ -41,6 +41,11 @@ function dayLabel(date: string): string {
   return `${date.slice(5, 7)}/${date.slice(8, 10)}`;
 }
 
+/** dd-mm-yyyy — matches the app's day/month-first convention, unlike the underlying yyyy-mm-dd storage key. */
+function fullDateLabel(date: string): string {
+  return `${date.slice(8, 10)}-${date.slice(5, 7)}-${date.slice(0, 4)}`;
+}
+
 /**
  * 0-100 "how well did this day meet the goal" score for one metric.
  * "atMost" (calories): 100 at/under goal, falling off past it.
@@ -71,6 +76,7 @@ function MetricBarChart({
   goalLabel,
   /** Fixed y-axis gridline spacing (e.g. 500 for calories, 50 for protein/overall) — a dynamic step made the axis jump around as the visible range changed. */
   yStep,
+  onSelectDay,
 }: {
   days: DayInfo[];
   valueKey: "calories" | "protein" | "overallScore";
@@ -87,7 +93,10 @@ function MetricBarChart({
   /** Node shown next to the dashed goal reference line, e.g. "Goal: 1950 kcal". */
   goalLabel: React.ReactNode;
   yStep: number;
+  /** Opens the day-detail drawer for the clicked bar's date. */
+  onSelectDay: (date: string) => void;
 }) {
+  const { t } = useI18n();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 140;
   const rawMax = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
@@ -182,7 +191,10 @@ function MetricBarChart({
                 fill={bad ? `url(#${gradBadId})` : `url(#${gradGoodId})`}
                 opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
                 onMouseEnter={() => setHoverIdx(i)}
-                onClick={() => setHoverIdx(i)}
+                onClick={() => {
+                  setHoverIdx(i);
+                  onSelectDay(d.date);
+                }}
                 style={{ cursor: "pointer" }}
               />
             );
@@ -209,6 +221,12 @@ function MetricBarChart({
             {dayLabel(days[hoverIdx].date)} · {Math.round(days[hoverIdx][valueKey])}
             {unit}
           </bdi>
+          <div style={{ color: "var(--muted)", marginTop: 2 }}>
+            <bdi dir="ltr">
+              {Math.round(days[hoverIdx].calories)} {t("calories")} · {Math.round(days[hoverIdx].protein)}
+              {t("unitG")} {t("protein")}
+            </bdi>
+          </div>
         </div>
       )}
     </div>
@@ -430,6 +448,7 @@ export default function History() {
             }
             unit=" kcal"
             yStep={500}
+            onSelectDay={setSelectedDate}
           />
           <MetricBarChart
             days={days}
@@ -449,6 +468,7 @@ export default function History() {
             }
             unit={t("unitG")}
             yStep={50}
+            onSelectDay={setSelectedDate}
           />
           <MetricBarChart
             days={days}
@@ -468,6 +488,7 @@ export default function History() {
             }
             unit="%"
             yStep={50}
+            onSelectDay={setSelectedDate}
           />
         </>
       )}
@@ -490,7 +511,7 @@ export default function History() {
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <h2 style={{ margin: 0 }}>
-              <bdi dir="ltr">{selected.date}</bdi>
+              <bdi dir="ltr">{fullDateLabel(selected.date)}</bdi>
             </h2>
             <button onClick={() => setSelectedDate(null)} style={{ border: "none", background: "none" }}>
               ✕
