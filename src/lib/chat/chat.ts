@@ -157,12 +157,18 @@ export async function resolveMealAction(
         content: `The user wants to delete or edit one of their already-logged meals. Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references ("yesterday", "on Monday", etc.) in their message. Here are their logged entries from the last ${MANAGE_MEAL_WINDOW_DAYS} days as JSON, each tagged with the date it was logged on:
 ${JSON.stringify(entries.map((e) => ({ id: e.id, date: e.date, name: e.name, calories: e.calories, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })))}
 
-Match the user's message to exactly one entry by date and name/description. Respond ONLY as JSON:
+Match the user's message to exactly one entry by date and name/description. The user is typing on a
+phone and may misspell, mistype, or use an inconsistent transliteration of the food name (e.g.
+"vegeteriane shnitzel", "shnitzel", "veg schnitzel" should all match an entry named "Vegetarian
+schnitzel" — treat these as the same food; don't require an exact or near-exact string match).
+Judge by what food it most plausibly refers to, not by spelling distance. Respond ONLY as JSON:
 { "found": boolean, "action": "delete" | "update", "entryId": string, "date": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
 - "date": the date (yyyy-mm-dd) of the matched entry, from its "date" field above.
 - If action is "update", only include the fields in "changes" that the user actually wants changed.
 - "summary": a short one-sentence description of what you're about to do, in ${lang === "he" ? "Hebrew" : "English"}, plain text, no markdown, ending with a question asking the user to confirm.
-- If no entry matches with reasonable confidence, or the request is ambiguous (matches multiple entries), set "found": false and "summary" to a short plain-text message explaining that in ${lang === "he" ? "Hebrew" : "English"}.`,
+- Only set "found": false if the food genuinely doesn't match anything in the list (not because of
+  spelling/typos) or if it's genuinely ambiguous between two or more distinct foods on the SAME
+  date — in that case, "summary" should explain that in ${lang === "he" ? "Hebrew" : "English"}.`,
       },
       { role: "user", content: message },
     ],
