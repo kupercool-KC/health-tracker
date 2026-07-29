@@ -84,6 +84,10 @@ export default function Today() {
   const [workoutFile, setWorkoutFile] = useState<File | null>(null);
   const [workoutBusy, setWorkoutBusy] = useState(false);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCalories, setEditCalories] = useState("");
+  const [editProtein, setEditProtein] = useState("");
+
   const load = useCallback(async (uid: string) => {
     setLoading(true);
     setError(null);
@@ -153,6 +157,38 @@ export default function Today() {
         body: JSON.stringify({ date: localDateKey(), entryId }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await load(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditMeal(entryId: string, calories: number, protein: number) {
+    setEditingId(entryId);
+    setEditCalories(String(Math.round(calories)));
+    setEditProtein(String(Math.round(protein)));
+  }
+
+  async function saveMealEdit(entryId: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          date: localDateKey(),
+          entryId,
+          changes: { calories: Number(editCalories) || 0, protein: Number(editProtein) || 0 },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      setEditingId(null);
       await load(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -314,27 +350,92 @@ export default function Today() {
                 {(mealDay?.entries ?? []).map((entry) => (
                   <Fragment key={entry.id}>
                     <tr
-                      onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                      style={{ borderTop: "0.5px solid var(--border)", cursor: "pointer" }}
+                      onClick={() => editingId !== entry.id && setExpandedId(expandedId === entry.id ? null : entry.id)}
+                      style={{ borderTop: "0.5px solid var(--border)", cursor: editingId === entry.id ? "default" : "pointer" }}
                     >
                       <td style={{ padding: "8px 4px", color: "var(--muted)" }}>
                         {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </td>
                       <td style={{ padding: "8px 4px" }}>{entry.name}</td>
-                      <td style={{ padding: "8px 4px" }}>{Math.round(entry.calories)}</td>
-                      <td style={{ padding: "8px 4px" }}>{Math.round(entry.protein)}g</td>
-                      <td style={{ padding: "8px 4px" }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMeal(entry.id);
-                          }}
-                          disabled={busy}
-                          style={{ border: "none", background: "none", color: "var(--calories)", padding: 2 }}
-                          aria-label={t("deleteMeal")}
-                        >
-                          ✕
-                        </button>
+                      {editingId === entry.id ? (
+                        <>
+                          <td style={{ padding: "8px 4px" }}>
+                            <input
+                              type="number"
+                              value={editCalories}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setEditCalories(e.target.value)}
+                              style={{ width: 64, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          </td>
+                          <td style={{ padding: "8px 4px" }}>
+                            <input
+                              type="number"
+                              value={editProtein}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setEditProtein(e.target.value)}
+                              style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td style={{ padding: "8px 4px" }}>{Math.round(entry.calories)}</td>
+                          <td style={{ padding: "8px 4px" }}>{Math.round(entry.protein)}g</td>
+                        </>
+                      )}
+                      <td style={{ padding: "8px 4px", whiteSpace: "nowrap" }}>
+                        {editingId === entry.id ? (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                saveMealEdit(entry.id);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--protein)", padding: 2 }}
+                              aria-label={t("save")}
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingId(null);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--muted)", padding: 2 }}
+                              aria-label={t("close")}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditMeal(entry.id, entry.calories, entry.protein);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", padding: 2 }}
+                              aria-label={t("edit")}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMeal(entry.id);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--calories)", padding: 2 }}
+                              aria-label={t("deleteMeal")}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                     {expandedId === entry.id && (

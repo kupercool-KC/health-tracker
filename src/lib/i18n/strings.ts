@@ -122,6 +122,7 @@ export const strings = {
   kgPerWeek: { en: "kg/week", he: "ק\"ג בשבוע" },
   confirmAndSave: { en: "Confirm and save", he: "אישור ושמירה" },
   edit: { en: "Edit", he: "ערוך" },
+  save: { en: "Save", he: "שמור" },
   next: { en: "Next", he: "הבא" },
   back: { en: "Back", he: "חזור" },
 
