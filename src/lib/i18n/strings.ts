@@ -34,6 +34,7 @@ export const strings = {
   meal: { en: "Meal", he: "ארוחה" },
   total: { en: "Total", he: "סה\"כ" },
   carbs: { en: "carbs", he: "פחמימות" },
+  unitG: { en: "g", he: "גר" },
   fat: { en: "fat", he: "שומן" },
   fiber: { en: "fiber", he: "סיבים" },
   confidence: { en: "confidence", he: "רמת ביטחון" },

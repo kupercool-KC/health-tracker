@@ -55,6 +55,7 @@ const postBodySchema = z
     loggedAt: z.string().datetime().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     parsed: parsedNutritionSchema.optional(),
+    lang: z.enum(["en", "he"]).optional(),
   })
   .refine((b) => b.text || b.imageUrl || b.parsed, {
     message: "Provide text, imageUrl, or parsed",
@@ -86,11 +87,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const { text, imageUrl, loggedAt, date } = parsedBody.data;
+  const { text, imageUrl, loggedAt, date, lang } = parsedBody.data;
 
   let parsed: ParsedNutrition;
   try {
-    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrl }));
+    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrl, lang }));
   } catch (err) {
     return NextResponse.json(
       { error: "Failed to parse nutrition", detail: String(err) },

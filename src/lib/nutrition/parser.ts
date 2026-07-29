@@ -30,6 +30,8 @@ export interface ParseInput {
   text?: string;
   /** A data URL or https URL for the food photo. Optional. */
   imageUrl?: string;
+  /** Language the "description" field should be written in. Defaults to English. */
+  lang?: "en" | "he";
 }
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
@@ -45,6 +47,14 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     content.push({ type: "image_url", image_url: { url: input.imageUrl } });
   }
 
+  // Appended at call time rather than baked into the (admin-editable, stored
+  // in English) systemPrompt — otherwise every admin edit would need to
+  // re-specify this, and it'd silently drop out if they don't.
+  const languageInstruction =
+    input.lang === "he"
+      ? "\n\nWrite the \"description\" field in Hebrew, regardless of what language the input is in."
+      : "\n\nWrite the \"description\" field in English, regardless of what language the input is in.";
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: config.model,
     response_format: { type: "json_object" },
@@ -55,7 +65,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     temperature: config.temperature,
     seed: config.seed,
     messages: [
-      { role: "system", content: config.systemPrompt },
+      { role: "system", content: config.systemPrompt + languageInstruction },
       { role: "user", content },
     ],
   });

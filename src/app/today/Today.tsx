@@ -77,7 +77,7 @@ function formatPace(secPerKm: number): string {
 
 export default function Today() {
   const { user, loading: authLoading, signIn } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [mealDay, setMealDay] = useState<MealDay | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -143,7 +143,7 @@ export default function Today() {
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text: text || undefined, imageUrl, date: localDateKey() }),
+        body: JSON.stringify({ text: text || undefined, imageUrl, date: localDateKey(), lang }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
 
@@ -228,7 +228,7 @@ export default function Today() {
       const res = await fetch("/api/workouts", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text: workoutText || undefined, imageUrl, date: localDateKey() }),
+        body: JSON.stringify({ text: workoutText || undefined, imageUrl, date: localDateKey(), lang }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
 
@@ -290,7 +290,7 @@ export default function Today() {
               label={t("protein")}
               value={totals.protein}
               goal={goals.proteinGoal}
-              sub={`${Math.round(totals.protein)}g / ${goals.proteinGoal}g · ${totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")} ${Math.abs(Math.round(totals.protein - goals.proteinGoal))}g`}
+              sub={`${Math.round(totals.protein)}${t("unitG")} / ${goals.proteinGoal}${t("unitG")} · ${totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")} ${Math.abs(Math.round(totals.protein - goals.proteinGoal))}${t("unitG")}`}
               tone="protein"
             />
             <MetricCard
@@ -353,14 +353,15 @@ export default function Today() {
               </button>
             </form>
 
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+            <div className="card" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ color: "var(--muted)", textAlign: "left", fontSize: 13 }}>
-                  <th style={{ padding: "8px 4px" }}>{t("time")}</th>
-                  <th style={{ padding: "8px 4px" }}>{t("meal")}</th>
-                  <th style={{ padding: "8px 4px" }}>{t("calories")}</th>
-                  <th style={{ padding: "8px 4px" }}>{t("protein")}</th>
-                  <th style={{ padding: "8px 4px" }} />
+                <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
+                  <th style={{ padding: "12px 10px" }}>{t("time")}</th>
+                  <th style={{ padding: "12px 10px" }}>{t("meal")}</th>
+                  <th style={{ padding: "12px 10px" }}>{t("calories")}</th>
+                  <th style={{ padding: "12px 10px" }}>{t("protein")}</th>
+                  <th style={{ padding: "12px 10px" }} />
                 </tr>
               </thead>
               <tbody>
@@ -370,13 +371,15 @@ export default function Today() {
                       onClick={() => editingId !== entry.id && setExpandedId(expandedId === entry.id ? null : entry.id)}
                       style={{ borderTop: "0.5px solid var(--border)", cursor: editingId === entry.id ? "default" : "pointer" }}
                     >
-                      <td style={{ padding: "8px 4px", color: "var(--muted)" }}>
-                        {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      <td style={{ padding: "12px 10px", color: "var(--muted)" }}>
+                        <bdi dir="ltr">
+                          {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </bdi>
                       </td>
-                      <td style={{ padding: "8px 4px" }}>{entry.name}</td>
+                      <td style={{ padding: "12px 10px" }}>{entry.name}</td>
                       {editingId === entry.id ? (
                         <>
-                          <td style={{ padding: "8px 4px" }}>
+                          <td style={{ padding: "12px 10px" }}>
                             <input
                               type="number"
                               value={editCalories}
@@ -385,7 +388,7 @@ export default function Today() {
                               style={{ width: 64, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
                             />
                           </td>
-                          <td style={{ padding: "8px 4px" }}>
+                          <td style={{ padding: "12px 10px" }}>
                             <input
                               type="number"
                               value={editProtein}
@@ -397,11 +400,16 @@ export default function Today() {
                         </>
                       ) : (
                         <>
-                          <td style={{ padding: "8px 4px" }}>{Math.round(entry.calories)}</td>
-                          <td style={{ padding: "8px 4px" }}>{Math.round(entry.protein)}g</td>
+                          <td style={{ padding: "12px 10px" }}>{Math.round(entry.calories)}</td>
+                          <td style={{ padding: "12px 10px" }}>
+                            <bdi dir="ltr">
+                              {Math.round(entry.protein)}
+                              {t("unitG")}
+                            </bdi>
+                          </td>
                         </>
                       )}
-                      <td style={{ padding: "8px 4px", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "12px 10px", whiteSpace: "nowrap" }}>
                         {editingId === entry.id ? (
                           <>
                             <button
@@ -410,7 +418,7 @@ export default function Today() {
                                 saveMealEdit(entry.id);
                               }}
                               disabled={busy}
-                              style={{ border: "none", background: "none", color: "var(--protein)", padding: 2 }}
+                              style={{ border: "none", background: "none", color: "var(--protein)", padding: 6 }}
                               aria-label={t("save")}
                             >
                               ✓
@@ -421,7 +429,7 @@ export default function Today() {
                                 setEditingId(null);
                               }}
                               disabled={busy}
-                              style={{ border: "none", background: "none", color: "var(--muted)", padding: 2 }}
+                              style={{ border: "none", background: "none", color: "var(--muted)", padding: 6 }}
                               aria-label={t("close")}
                             >
                               ✕
@@ -435,7 +443,7 @@ export default function Today() {
                                 startEditMeal(entry.id, entry.calories, entry.protein);
                               }}
                               disabled={busy}
-                              style={{ border: "none", background: "none", padding: 2 }}
+                              style={{ border: "none", background: "none", padding: 6 }}
                               aria-label={t("edit")}
                             >
                               ✏️
@@ -446,7 +454,7 @@ export default function Today() {
                                 deleteMeal(entry.id);
                               }}
                               disabled={busy}
-                              style={{ border: "none", background: "none", color: "var(--calories)", padding: 2 }}
+                              style={{ border: "none", background: "none", color: "var(--calories)", padding: 6 }}
                               aria-label={t("deleteMeal")}
                             >
                               ✕
@@ -457,11 +465,13 @@ export default function Today() {
                     </tr>
                     {expandedId === entry.id && (
                       <tr>
-                        <td colSpan={5} style={{ padding: "0 4px 8px", color: "var(--muted)", fontSize: 13 }}>
-                          {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}g · `}
-                          {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}g · `}
-                          {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}g · `}
-                          {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
+                        <td colSpan={5} style={{ padding: "0 10px 12px", color: "var(--muted)", fontSize: 13 }}>
+                          <bdi dir="ltr">
+                            {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
+                            {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
+                            {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
+                            {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
+                          </bdi>
                         </td>
                       </tr>
                     )}
@@ -470,15 +480,21 @@ export default function Today() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: "0.5px solid var(--border)", fontWeight: 700 }}>
-                  <td style={{ padding: "8px 4px" }} colSpan={2}>
+                  <td style={{ padding: "12px 10px" }} colSpan={2}>
                     {t("total")}
                   </td>
-                  <td style={{ padding: "8px 4px" }}>{Math.round(totals.calories)}</td>
-                  <td style={{ padding: "8px 4px" }}>{Math.round(totals.protein)}g</td>
-                  <td style={{ padding: "8px 4px" }} />
+                  <td style={{ padding: "12px 10px" }}>{Math.round(totals.calories)}</td>
+                  <td style={{ padding: "12px 10px" }}>
+                    <bdi dir="ltr">
+                      {Math.round(totals.protein)}
+                      {t("unitG")}
+                    </bdi>
+                  </td>
+                  <td style={{ padding: "12px 10px" }} />
                 </tr>
               </tfoot>
             </table>
+            </div>
           </section>
 
           <section style={{ marginTop: 24 }}>

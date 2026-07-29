@@ -39,6 +39,7 @@ const bodySchema = z
     imageUrl: z.string().url().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     parsed: parsedWorkoutSchema.optional(),
+    lang: z.enum(["en", "he"]).optional(),
   })
   .refine((b) => b.text || b.imageUrl || b.parsed, {
     message: "Provide text, imageUrl, or parsed",
@@ -58,11 +59,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const { text, imageUrl, date } = parsedBody.data;
+  const { text, imageUrl, date, lang } = parsedBody.data;
 
   let parsed: ParsedWorkout;
   try {
-    parsed = parsedBody.data.parsed ?? (await parseWorkout({ text, imageUrl }));
+    parsed = parsedBody.data.parsed ?? (await parseWorkout({ text, imageUrl, lang }));
   } catch (err) {
     return NextResponse.json(
       { error: "Failed to parse workout", detail: String(err) },

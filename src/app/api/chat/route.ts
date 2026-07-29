@@ -15,6 +15,7 @@ import { z } from "zod";
 import { getUidFromRequest } from "@/lib/auth";
 import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
+import { strings } from "@/lib/i18n/strings";
 import {
   answerGeneralHealth,
   answerHistoryQuery,
@@ -81,7 +82,7 @@ async function handleChat(req: Request) {
   let pendingMealAction: ChatMessage["pendingMealAction"];
 
   if (intent === "log_meal") {
-    const parsed = await parseNutrition({ text: message, imageUrl });
+    const parsed = await parseNutrition({ text: message, imageUrl, lang });
     pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}) };
 
     const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
@@ -97,7 +98,10 @@ async function handleChat(req: Request) {
         : "";
 
     const lines = parsed.items
-      .map((item) => `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}g protein`)
+      .map(
+        (item) =>
+          `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
+      )
       .join("\n");
 
     replyContent = `${warning}${lines}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");

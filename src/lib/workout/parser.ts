@@ -29,6 +29,8 @@ export interface ParseWorkoutInput {
   text?: string;
   /** A data URL or https URL for a screenshot of a workout summary. Optional. */
   imageUrl?: string;
+  /** Language the "type" field should be written in. Defaults to English. */
+  lang?: "en" | "he";
 }
 
 const SYSTEM_PROMPT = `You are a workout log estimator. Given a text description of a workout and/or
@@ -57,12 +59,17 @@ export async function parseWorkout(input: ParseWorkoutInput): Promise<ParsedWork
     content.push({ type: "image_url", image_url: { url: input.imageUrl } });
   }
 
+  const languageInstruction =
+    input.lang === "he"
+      ? "\n\nWrite the \"type\" field in Hebrew, regardless of what language the input is in."
+      : "\n\nWrite the \"type\" field in English, regardless of what language the input is in.";
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     response_format: { type: "json_object" },
     temperature: 0,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT + languageInstruction },
       { role: "user", content },
     ],
   });

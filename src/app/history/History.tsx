@@ -419,7 +419,7 @@ export default function History() {
             colorLightVar="var(--protein-light)"
             missColorVar="var(--danger)"
             missColorLightVar="var(--danger-light)"
-            unit="g"
+            unit={t("unitG")}
           />
           <AggregateChart days={days} statusColor={statusColor} statusText={statusText} label={t("overallStanding")} />
         </>
@@ -451,7 +451,8 @@ export default function History() {
           </div>
           <p style={{ color: "var(--muted)" }}>
             <bdi dir="ltr">
-              {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}g {t("protein")}
+              {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}
+              {t("unitG")} {t("protein")}
             </bdi>
           </p>
 
@@ -463,7 +464,8 @@ export default function History() {
               <div key={e.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
                 <strong>{e.name}</strong> —{" "}
                 <bdi dir="ltr">
-                  {Math.round(e.calories)} kcal, {Math.round(e.protein)}g
+                  {Math.round(e.calories)} kcal, {Math.round(e.protein)}
+                  {t("unitG")}
                 </bdi>
               </div>
             ))

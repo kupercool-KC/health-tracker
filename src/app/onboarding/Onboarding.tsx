@@ -362,7 +362,12 @@ export default function Onboarding() {
             </div>
             <div className="card" style={{ background: "var(--protein-bg)", border: "none" }}>
               <div className="metric-label" style={{ color: "var(--protein)" }}>{t("protein")}</div>
-              <div className="metric-value" style={{ color: "var(--protein)" }}>{calculated.proteinGoal}g</div>
+              <div className="metric-value" style={{ color: "var(--protein)" }}>
+                <bdi dir="ltr">
+                  {calculated.proteinGoal}
+                  {t("unitG")}
+                </bdi>
+              </div>
             </div>
           </div>
           <div className="card" style={{ display: "grid", gap: 8 }}>
@@ -376,7 +381,9 @@ export default function Onboarding() {
             </div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>
               <bdi dir="ltr">
-                {t("carbs")}: {calculated.carbGoal}g · {t("fat")}: {calculated.fatGoal}g
+                {t("carbs")}: {calculated.carbGoal}
+                {t("unitG")} · {t("fat")}: {calculated.fatGoal}
+                {t("unitG")}
               </bdi>
             </div>
             <div>
