@@ -355,6 +355,16 @@ export default function Onboarding() {
       {step === 6 && (
         <section style={{ display: "grid", gap: 12 }}>
           <h1>{t("onboardingFinalTitle")}</h1>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="card" style={{ background: "var(--calories-bg)", border: "none" }}>
+              <div className="metric-label" style={{ color: "var(--calories)" }}>{t("calories")}</div>
+              <div className="metric-value" style={{ color: "var(--calories)" }}>{calculated.calorieGoal}</div>
+            </div>
+            <div className="card" style={{ background: "var(--protein-bg)", border: "none" }}>
+              <div className="metric-label" style={{ color: "var(--protein)" }}>{t("protein")}</div>
+              <div className="metric-value" style={{ color: "var(--protein)" }}>{calculated.proteinGoal}g</div>
+            </div>
+          </div>
           <div className="card" style={{ display: "grid", gap: 8 }}>
             <div>
               <span className="metric-label">{t("bmrLabel")}</span>
@@ -364,22 +374,18 @@ export default function Onboarding() {
               <span className="metric-label">{t("tdeeLabel")}</span>
               <div className="metric-value">{calculated.tdee}</div>
             </div>
-            <div>
-              <span className="metric-label">{t("calories")}</span>
-              <div className="metric-value" style={{ color: "var(--calories)" }}>{calculated.calorieGoal}</div>
-            </div>
-            <div>
-              <span className="metric-label">{t("protein")}</span>
-              <div className="metric-value" style={{ color: "var(--protein)" }}>{calculated.proteinGoal}g</div>
-            </div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>
-              {t("carbs")}: {calculated.carbGoal}g · {t("fat")}: {calculated.fatGoal}g
+              <bdi dir="ltr">
+                {t("carbs")}: {calculated.carbGoal}g · {t("fat")}: {calculated.fatGoal}g
+              </bdi>
             </div>
             <div>
               <span className="metric-label">{t("expectedRateLabel")}</span>
               <div className="metric-value">
-                {calculated.expectedRateKgPerWeek > 0 ? "+" : ""}
-                {calculated.expectedRateKgPerWeek} {t("kgPerWeek")}
+                <bdi dir="ltr">
+                  {calculated.expectedRateKgPerWeek > 0 ? "+" : ""}
+                  {calculated.expectedRateKgPerWeek} {t("kgPerWeek")}
+                </bdi>
               </div>
             </div>
           </div>

@@ -13,26 +13,32 @@ import { getMealDay, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/qu
 import { getUserGoals } from "@/lib/profile/queries";
 import type { MealDay, UserProfile, Workout } from "@/lib/types";
 
+/** One of the app's 4 fixed accents — each has a matching `--{tone}-bg` tint. */
+type MetricTone = "calories" | "protein" | "burned" | "net";
+
 function MetricCard({
   label,
   value,
   goal,
   sub,
-  colorVar,
+  tone,
 }: {
   label: string;
   value: number;
   goal?: number;
   sub: string;
-  colorVar: string;
+  tone: MetricTone;
 }) {
   const ratio = goal ? value / goal : undefined;
   const pct = ratio != null ? Math.min(100, Math.round(ratio * 100)) : undefined;
   const overflow = ratio != null && ratio > 1;
+  const colorVar = `var(--${tone})`;
 
   return (
-    <div className="card">
-      <div className="metric-label">{label}</div>
+    <div className="card" style={{ background: `var(--${tone}-bg)`, border: "none" }}>
+      <div className="metric-label" style={{ color: colorVar }}>
+        {label}
+      </div>
       <div className="metric-value" style={{ color: colorVar }}>
         {Math.round(value)}
       </div>
@@ -41,11 +47,11 @@ function MetricCard({
           the token ordering without touching this div's own text-align, so
           Hebrew layout stays right-aligned but the formula still reads
           left-to-right internally. */}
-      <div style={{ color: "var(--muted)", fontSize: 13 }}>
+      <div style={{ color: colorVar, fontSize: 13, opacity: 0.85 }}>
         <bdi dir="ltr">{sub}</bdi>
       </div>
       {pct != null && (
-        <div className="progress-track">
+        <div className="progress-track" style={{ background: "rgba(255,255,255,0.55)" }}>
           <div
             className="progress-fill"
             style={{ width: `${pct}%`, background: colorVar, opacity: overflow ? 1 : 0.85 }}
@@ -278,26 +284,26 @@ export default function Today() {
               value={totals.calories}
               goal={goals.calorieGoal}
               sub={`${Math.round(totals.calories)} / ${goals.calorieGoal} ${t("goal")} · ${Math.max(0, Math.round(goals.calorieGoal - totals.calories))} ${t("remaining")}`}
-              colorVar="var(--calories)"
+              tone="calories"
             />
             <MetricCard
               label={t("protein")}
               value={totals.protein}
               goal={goals.proteinGoal}
               sub={`${Math.round(totals.protein)}g / ${goals.proteinGoal}g · ${totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")} ${Math.abs(Math.round(totals.protein - goals.proteinGoal))}g`}
-              colorVar="var(--protein)"
+              tone="protein"
             />
             <MetricCard
               label={t("burned")}
               value={burned}
               sub={`${Math.round(burned)} kcal`}
-              colorVar="var(--burned)"
+              tone="burned"
             />
             <MetricCard
               label={t("net")}
               value={net}
               sub={`${Math.round(totals.calories)} − ${Math.round(burned)}`}
-              colorVar="var(--net)"
+              tone="net"
             />
           </section>
 
