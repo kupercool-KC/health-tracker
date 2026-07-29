@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import type { StringKey } from "@/lib/i18n/strings";
@@ -81,7 +81,12 @@ export default function Onboarding() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>("moderate");
   const [workoutTypes, setWorkoutTypes] = useState<WorkoutType[]>([]);
-  const [dietaryPref, setDietaryPref] = useState<DietaryPref>("everything");
+  const [dietaryPrefs, setDietaryPrefs] = useState<DietaryPref[]>(["everything"]);
+
+  const [otherWorkoutText, setOtherWorkoutText] = useState("");
+  const [matchingWorkout, setMatchingWorkout] = useState(false);
+  const [otherDietText, setOtherDietText] = useState("");
+  const [matchingDiet, setMatchingDiet] = useState(false);
 
   function toggleGoal(value: Goal) {
     setGoals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
@@ -91,9 +96,44 @@ export default function Onboarding() {
     setWorkoutTypes((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   }
 
+  function toggleDietaryPref(value: DietaryPref) {
+    setDietaryPrefs((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
+
+  /**
+   * Sends a freeform "other" description to /api/onboarding/classify and
+   * merges whatever real categories it matches into the given selection —
+   * so "I do pilates and rock climbing" can auto-select existing categories
+   * instead of leaving everything bucketed under "other".
+   */
+  async function matchOther<V extends string>(
+    text: string,
+    options: Array<{ value: V; labelKey: StringKey }>,
+    apply: (matched: V[]) => void,
+    setBusy: (b: boolean) => void,
+  ) {
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      const categories = options.filter((o) => o.value !== "other").map((o) => ({ value: o.value, label: t(o.labelKey) }));
+      const res = await fetch("/api/onboarding/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ text, categories }),
+      });
+      if (!res.ok) return;
+      const data: { matched: string[] } = await res.json();
+      apply(data.matched.filter((v): v is V => options.some((o) => o.value === v)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const bmr = calculateBmr({ gender: gender ?? "other", weightKg: weight, heightCm: height, age });
   const tdee = calculateTdee(bmr, activityLevel);
-  const calculated = calculateGoals({ bmr, tdee, goals, weightKg: weight, dietaryPrefs: [dietaryPref] });
+  const calculated = calculateGoals({ bmr, tdee, goals, weightKg: weight, dietaryPrefs });
 
   async function confirmAndSave() {
     if (!user) return;
@@ -109,7 +149,7 @@ export default function Onboarding() {
         goals,
         activityLevel,
         workoutTypes,
-        dietaryPrefs: [dietaryPref],
+        dietaryPrefs,
         calorieGoal: calculated.calorieGoal,
         proteinGoal: calculated.proteinGoal,
         carbGoal: calculated.carbGoal,
@@ -251,22 +291,64 @@ export default function Onboarding() {
       {step === 4 && (
         <section style={{ display: "grid", gap: 8 }}>
           <h1>{t("onboardingStep4Title")}</h1>
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("multiSelectHint")}</p>
           {WORKOUT_OPTIONS.map((opt) => (
             <OptionButton key={opt.value} selected={workoutTypes.includes(opt.value)} onClick={() => toggleWorkoutType(opt.value)}>
               {t(opt.labelKey)}
             </OptionButton>
           ))}
+          {workoutTypes.includes("other") && (
+            <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+              <textarea
+                value={otherWorkoutText}
+                onChange={(e) => setOtherWorkoutText(e.target.value)}
+                placeholder={t("otherDescribePlaceholder")}
+                rows={2}
+                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <button
+                type="button"
+                onClick={() => matchOther(otherWorkoutText, WORKOUT_OPTIONS, (matched) => {
+                  setWorkoutTypes((prev) => Array.from(new Set([...prev, ...matched])));
+                }, setMatchingWorkout)}
+                disabled={matchingWorkout || !otherWorkoutText.trim()}
+              >
+                {matchingWorkout ? t("working") : t("matchCategory")}
+              </button>
+            </div>
+          )}
         </section>
       )}
 
       {step === 5 && (
         <section style={{ display: "grid", gap: 8 }}>
           <h1>{t("onboardingStep5Title")}</h1>
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("multiSelectHint")}</p>
           {DIET_OPTIONS.map((opt) => (
-            <OptionButton key={opt.value} selected={dietaryPref === opt.value} onClick={() => setDietaryPref(opt.value)}>
+            <OptionButton key={opt.value} selected={dietaryPrefs.includes(opt.value)} onClick={() => toggleDietaryPref(opt.value)}>
               {t(opt.labelKey)}
             </OptionButton>
           ))}
+          {dietaryPrefs.includes("other") && (
+            <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+              <textarea
+                value={otherDietText}
+                onChange={(e) => setOtherDietText(e.target.value)}
+                placeholder={t("otherDescribePlaceholder")}
+                rows={2}
+                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <button
+                type="button"
+                onClick={() => matchOther(otherDietText, DIET_OPTIONS, (matched) => {
+                  setDietaryPrefs((prev) => Array.from(new Set([...prev, ...matched])));
+                }, setMatchingDiet)}
+                disabled={matchingDiet || !otherDietText.trim()}
+              >
+                {matchingDiet ? t("working") : t("matchCategory")}
+              </button>
+            </div>
+          )}
         </section>
       )}
 

@@ -36,7 +36,14 @@ function MetricCard({
       <div className="metric-value" style={{ color: colorVar }}>
         {Math.round(value)}
       </div>
-      <div style={{ color: "var(--muted)", fontSize: 13 }}>{sub}</div>
+      {/* Numbers/units/operators (e.g. "1510 − 1007") reorder incorrectly if
+          left to inherit the page's RTL direction. <bdi dir="ltr"> isolates
+          the token ordering without touching this div's own text-align, so
+          Hebrew layout stays right-aligned but the formula still reads
+          left-to-right internally. */}
+      <div style={{ color: "var(--muted)", fontSize: 13 }}>
+        <bdi dir="ltr">{sub}</bdi>
+      </div>
       {pct != null && (
         <div className="progress-track">
           <div
@@ -312,7 +319,10 @@ export default function Today() {
                 rows={2}
                 style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
               />
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <label
+                title={t("photoUploadHint")}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
                 <span
                   style={{
                     border: "0.5px solid var(--border)",
@@ -321,7 +331,7 @@ export default function Today() {
                     background: "var(--panel)",
                   }}
                 >
-                  {t("chooseFile")}
+                  📷 {t("chooseFile")}
                 </span>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>{file?.name}</span>
                 <input
@@ -331,6 +341,7 @@ export default function Today() {
                   style={{ display: "none" }}
                 />
               </label>
+              <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
               <button type="submit" disabled={busy || (!text && !file)}>
                 {busy ? t("logging") : t("logIt")}
               </button>
@@ -481,13 +492,17 @@ export default function Today() {
                 <div key={w.id} className="card" style={{ marginTop: 8 }}>
                   <strong>{w.type}</strong>
                   <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
-                    {w.distance != null && `${(w.distance / 1000).toFixed(1)} km · `}
-                    {w.pace != null && `${formatPace(w.pace)} · `}
-                    {formatDuration(w.duration)}
-                    {w.heartRate?.avg != null && ` · avg HR ${Math.round(w.heartRate.avg)}`}
-                    {w.calories != null && ` · ${Math.round(w.calories)} kcal`}
-                    {w.elevationGain != null && ` · +${Math.round(w.elevationGain)}m`}
-                    {w.source === "manual" && ` · ${t("manuallyLogged")}`}
+                    {/* Multi-token numeric/unit strings reorder incorrectly
+                        under RTL unless isolated — see Hebrew coverage note. */}
+                    <bdi dir="ltr">
+                      {w.distance != null && `${(w.distance / 1000).toFixed(1)} km · `}
+                      {w.pace != null && `${formatPace(w.pace)} · `}
+                      {formatDuration(w.duration)}
+                      {w.heartRate?.avg != null && ` · ${t("avgHr")} ${Math.round(w.heartRate.avg)}`}
+                      {w.calories != null && ` · ${Math.round(w.calories)} kcal`}
+                      {w.elevationGain != null && ` · +${Math.round(w.elevationGain)}m`}
+                      {w.source === "manual" && ` · ${t("manuallyLogged")}`}
+                    </bdi>
                   </div>
                 </div>
               ))
@@ -507,7 +522,10 @@ export default function Today() {
                 rows={2}
                 style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
               />
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <label
+                title={t("photoUploadHint")}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
                 <span
                   style={{
                     border: "0.5px solid var(--border)",
@@ -516,7 +534,7 @@ export default function Today() {
                     background: "var(--panel)",
                   }}
                 >
-                  {t("chooseFile")}
+                  📷 {t("chooseFile")}
                 </span>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>{workoutFile?.name}</span>
                 <input
@@ -526,6 +544,7 @@ export default function Today() {
                   style={{ display: "none" }}
                 />
               </label>
+              <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
               <button type="submit" disabled={workoutBusy || (!workoutText && !workoutFile)}>
                 {workoutBusy ? t("logging") : t("logIt")}
               </button>

@@ -24,6 +24,10 @@ export const strings = {
   addMeal: { en: "+ Add meal", he: "+ הוסף ארוחה" },
   addMealPlaceholder: { en: "e.g. two eggs and a slice of toast", he: "לדוגמה: שתי ביצים וטוסט" },
   chooseFile: { en: "Choose File", he: "בחר קובץ" },
+  photoUploadHint: {
+    en: "Take a photo or choose one from your library",
+    he: "צלם תמונה או בחר אחת מהגלריה",
+  },
   logIt: { en: "Log it", he: "שמור" },
   logging: { en: "Logging…", he: "שומר…" },
   time: { en: "Time", he: "שעה" },
@@ -46,6 +50,7 @@ export const strings = {
     he: "לדוגמה: רצתי 5 ק\"מ ב-28 דקות, או העלה צילום מסך מאפליקציית הכושר",
   },
   manuallyLogged: { en: "manually logged", he: "נרשם ידנית" },
+  avgHr: { en: "avg HR", he: "דופק ממוצע" },
 
   loading: { en: "Loading…", he: "טוען…" },
   signInPrompt: { en: "Sign in to log nutrition and view your data.", he: "התחבר כדי לרשום תזונה ולראות את הנתונים שלך." },
@@ -114,6 +119,12 @@ export const strings = {
   dietGlutenFree: { en: "Gluten-free", he: "ללא גלוטן" },
   dietLactoseFree: { en: "Lactose-free", he: "ללא לקטוז" },
   dietOther: { en: "Other", he: "אחר" },
+  multiSelectHint: { en: "You can select more than one", he: "אפשר לבחור יותר מאחת" },
+  otherDescribePlaceholder: {
+    en: "Describe it here, in your own words",
+    he: "תאר זאת כאן, במילים שלך",
+  },
+  matchCategory: { en: "Match to a category", he: "התאם לקטגוריה" },
 
   onboardingFinalTitle: { en: "Your calculated profile", he: "הפרופיל המחושב שלך" },
   bmrLabel: { en: "BMR", he: "קצב חילוף חומרים בסיסי" },

@@ -347,7 +347,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             placeholder={t("chatPlaceholder")}
             style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", minWidth: 0 }}
           />
-          <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+          <label title={t("photoUploadHint")} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
             📷
             <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} />
           </label>
