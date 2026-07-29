@@ -74,6 +74,7 @@ async function handleChat(req: Request) {
   // An image essentially always means "log this food" — skip the classifier
   // call entirely rather than trust it to guess right from a placeholder string.
   const intent: ChatIntent = imageUrl ? "log_meal" : await classifyIntent(userContent);
+  const today = date ?? now.slice(0, 10);
 
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
@@ -101,11 +102,10 @@ async function handleChat(req: Request) {
 
     replyContent = `${warning}${lines}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
   } else if (intent === "query_history") {
-    replyContent = await answerHistoryQuery(uid, userContent, lang);
+    replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {
     replyContent = await answerGeneralHealth(userContent, lang);
   } else if (intent === "manage_meal") {
-    const today = date ?? now.slice(0, 10);
     const result = await resolveMealAction(uid, today, userContent, lang);
     replyContent = result.replyContent;
     pendingMealAction = result.pendingMealAction;

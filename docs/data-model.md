@@ -100,9 +100,13 @@ write can't fabricate an assistant reply.
   attached, which writes one `MealEntry` per item (see below).
 - `pendingMealAction: { action: "delete"|"update", date, entryId, entryName, changes? }`
   — proposed edit/delete of an *already-logged* entry (the `manage_meal`
-  chat intent, e.g. "delete the peach" or "the schnitzel was actually 500
-  calories"), resolved by `src/lib/chat/chat.ts#resolveMealAction` against
-  that day's entries. Confirming it calls `DELETE`/`PATCH /api/nutrition`.
+  chat intent, e.g. "delete the peach" or "yesterday's schnitzel was
+  actually 300 calories"), resolved by
+  `src/lib/chat/chat.ts#resolveMealAction` against the last 14 days of
+  entries (not just today — the model is told today's date and matches by
+  both date and name, since "date" isn't otherwise inferable from the
+  server's timezone-less context). Confirming it calls `DELETE`/`PATCH
+  /api/nutrition` against the matched entry's actual date.
 
 ## SharedChat (sharedChats/{shareId})
 A public, read-only **snapshot** — not a live view — of a `ChatSession`'s

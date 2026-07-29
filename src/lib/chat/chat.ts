@@ -34,7 +34,7 @@ export async function classifyIntent(message: string): Promise<ChatIntent> {
 - "log_meal": user is describing food they ate, to be logged.
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts) — trends, totals, comparisons over time.
 - "general_health": a nutrition/fitness/health question NOT about their own logged history (meal ideas, menus, general advice, "how much protein should I eat").
-- "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged today (e.g. "delete the peach", "remove the tofu entry", "the schnitzel was actually 500 calories not 600", "fix my last meal's protein to 30g"). This is about an existing logged entry, not describing new food to log.
+- "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
 - "out_of_scope": anything unrelated to nutrition, fitness, or health (coding help, trivia, unrelated small talk, etc).
 Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
       },
@@ -57,7 +57,7 @@ Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health
 /** Bounded window — a personal app doesn't need unbounded history in every prompt. */
 const HISTORY_WINDOW_DAYS = 90;
 
-export async function answerHistoryQuery(uid: string, message: string, lang: "en" | "he"): Promise<string> {
+export async function answerHistoryQuery(uid: string, message: string, lang: "en" | "he", today: string): Promise<string> {
   const since = new Date();
   since.setDate(since.getDate() - HISTORY_WINDOW_DAYS);
   const sinceDate = since.toISOString().slice(0, 10);
@@ -82,7 +82,7 @@ export async function answerHistoryQuery(uid: string, message: string, lang: "en
     messages: [
       {
         role: "system",
-        content: `You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.`,
+        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.`,
       },
       { role: "user", content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals, workouts })}\n\nQuestion: ${message}` },
     ],
@@ -105,27 +105,45 @@ export async function answerGeneralHealth(message: string, lang: "en" | "he"): P
   return completion.choices[0]?.message?.content ?? "";
 }
 
+/** How far back "manage_meal" looks for an entry to edit/delete — covers "yesterday" and casual same-week corrections without scanning the whole history. */
+const MANAGE_MEAL_WINDOW_DAYS = 14;
+
 /**
  * Resolves a "manage_meal" message (delete/edit an already-logged meal)
- * against that day's entries. Returns a pendingMealAction for the client to
- * confirm — never mutates Firestore directly, so a misread ("delete the
- * peach" matching the wrong row) can't destroy data without a confirm click,
- * same posture as pendingMeal for new logs.
+ * against recent entries — not just today's, since users reasonably say
+ * "yesterday's schnitzel was 300 calories, not 600". Returns a
+ * pendingMealAction for the client to confirm — never mutates Firestore
+ * directly, so a misread ("delete the peach" matching the wrong row) can't
+ * destroy data without a confirm click, same posture as pendingMeal for new
+ * logs.
  */
 export async function resolveMealAction(
   uid: string,
-  date: string,
+  today: string,
   message: string,
   lang: "en" | "he",
 ): Promise<{ replyContent: string; pendingMealAction?: PendingMealAction }> {
-  const snap = await adminDb.collection("users").doc(uid).collection("meals").doc(date).get();
-  const day = snap.data() as MealDay | undefined;
-  const entries = day?.entries ?? [];
+  const since = new Date(today);
+  since.setDate(since.getDate() - MANAGE_MEAL_WINDOW_DAYS);
+  const sinceDate = since.toISOString().slice(0, 10);
+
+  const snap = await adminDb
+    .collection("users")
+    .doc(uid)
+    .collection("meals")
+    .where("date", ">=", sinceDate)
+    .where("date", "<=", today)
+    .get();
+
+  const entries = snap.docs.flatMap((d) => {
+    const day = d.data() as MealDay;
+    return day.entries.map((e) => ({ ...e, date: day.date }));
+  });
 
   if (entries.length === 0) {
     return {
       replyContent:
-        lang === "he" ? "לא נמצאו ארוחות רשומות היום." : "There are no meals logged today to change.",
+        lang === "he" ? "לא נמצאו ארוחות רשומות בטווח הזמן האחרון." : "There are no recently logged meals to change.",
     };
   }
 
@@ -136,11 +154,12 @@ export async function resolveMealAction(
     messages: [
       {
         role: "system",
-        content: `The user wants to delete or edit one of their already-logged meals for today. Here is today's logged entries as JSON:
-${JSON.stringify(entries.map((e) => ({ id: e.id, name: e.name, calories: e.calories, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })))}
+        content: `The user wants to delete or edit one of their already-logged meals. Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references ("yesterday", "on Monday", etc.) in their message. Here are their logged entries from the last ${MANAGE_MEAL_WINDOW_DAYS} days as JSON, each tagged with the date it was logged on:
+${JSON.stringify(entries.map((e) => ({ id: e.id, date: e.date, name: e.name, calories: e.calories, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })))}
 
-Match the user's message to exactly one entry by name/description. Respond ONLY as JSON:
-{ "found": boolean, "action": "delete" | "update", "entryId": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
+Match the user's message to exactly one entry by date and name/description. Respond ONLY as JSON:
+{ "found": boolean, "action": "delete" | "update", "entryId": string, "date": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
+- "date": the date (yyyy-mm-dd) of the matched entry, from its "date" field above.
 - If action is "update", only include the fields in "changes" that the user actually wants changed.
 - "summary": a short one-sentence description of what you're about to do, in ${lang === "he" ? "Hebrew" : "English"}, plain text, no markdown, ending with a question asking the user to confirm.
 - If no entry matches with reasonable confidence, or the request is ambiguous (matches multiple entries), set "found": false and "summary" to a short plain-text message explaining that in ${lang === "he" ? "Hebrew" : "English"}.`,
@@ -154,6 +173,7 @@ Match the user's message to exactly one entry by name/description. Respond ONLY 
     found?: boolean;
     action?: "delete" | "update";
     entryId?: string;
+    date?: string;
     changes?: PendingMealAction["changes"];
     summary?: string;
   };
@@ -175,7 +195,7 @@ Match the user's message to exactly one entry by name/description. Respond ONLY 
     replyContent: parsed.summary ?? (lang === "he" ? "לאשר?" : "Confirm?"),
     pendingMealAction: {
       action: parsed.action,
-      date,
+      date: target.date,
       entryId: target.id,
       entryName: target.name,
       ...(parsed.action === "update" && parsed.changes ? { changes: parsed.changes } : {}),
