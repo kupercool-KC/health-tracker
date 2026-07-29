@@ -48,17 +48,25 @@ export async function getWorkoutsForDate(uid: string, date: string): Promise<Wor
   return snap.docs.map((d) => d.data() as Workout);
 }
 
-/** All meal days with doc id (= date) >= sinceDate. Doc ids sort lexically, same trick as everywhere else in this file. */
-export async function getMealDaysSince(uid: string, sinceDate: string): Promise<MealDay[]> {
+/**
+ * Meal days with doc id (= date) >= sinceDate, optionally also <= untilDate
+ * (for a bounded custom range that doesn't necessarily reach today). Doc ids
+ * sort lexically, same trick as everywhere else in this file.
+ */
+export async function getMealDaysSince(uid: string, sinceDate: string, untilDate?: string): Promise<MealDay[]> {
   const col = collection(db, "users", uid, "meals");
-  const q = query(col, where(documentId(), ">=", sinceDate));
+  const q = untilDate
+    ? query(col, where(documentId(), ">=", sinceDate), where(documentId(), "<=", untilDate))
+    : query(col, where(documentId(), ">=", sinceDate));
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as MealDay);
 }
 
-export async function getWorkoutsSince(uid: string, sinceDate: string): Promise<Workout[]> {
+export async function getWorkoutsSince(uid: string, sinceDate: string, untilDate?: string): Promise<Workout[]> {
   const col = collection(db, "users", uid, "workouts");
-  const q = query(col, where("date", ">=", sinceDate));
+  const q = untilDate
+    ? query(col, where("date", ">=", sinceDate), where("date", "<=", untilDate))
+    : query(col, where("date", ">=", sinceDate));
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as Workout);
 }

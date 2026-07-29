@@ -1,13 +1,22 @@
 :root {
   /* Fixed 3-color accent system */
   --calories: #d85a30;
+  --calories-light: #f0997b;
   --calories-bg: #fbebe5;
   --protein: #185fa5;
+  --protein-light: #85b7eb;
   --protein-bg: #e6eff8;
   --burned: #3b6d11;
+  --burned-light: #97c459;
   --burned-bg: #eaf3e0;
   --net: #b8860b;
   --net-bg: #faf1de;
+
+  /* Missed-protein-target red — distinct from the calories accent so
+     "protein below goal today" reads unambiguously in charts/legends. */
+  --danger: #a32d2d;
+  --danger-light: #e24b4a;
+  --danger-bg: #fcebeb;
 
   --bg: #ffffff;
   --bg-muted: #f7f7f8;

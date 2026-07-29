@@ -2,11 +2,13 @@
 
 /**
  * History screen: 7-day calendar strip (goal-status color dots), tap a day
- * for a full breakdown drawer, and a 7/30-day toggle driving calorie/protein/
- * burned charts. Charts are hand-rolled inline SVG rather than a charting
- * library — simple bar/line shapes, no new dependency needed for this.
+ * for a full breakdown drawer, and a weekly/monthly/custom-range period
+ * picker driving three charts — calories, protein (bars turn red on days
+ * the protein goal was missed), and an aggregate day-by-day standing view.
+ * Charts are hand-rolled inline SVG rather than a charting library — simple
+ * gradient-filled bars, no new dependency needed for this.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
@@ -28,50 +30,75 @@ interface DayInfo {
   workouts: Workout[];
 }
 
-const WINDOW_DAYS = 30;
+type Period = "weekly" | "monthly" | "custom";
 
-function CaloriesChart({
+/** Bounded — a personal app doesn't need to ever fetch more than this in one go. */
+const MAX_FETCH_DAYS = 366;
+
+function dayLabel(date: string): string {
+  return `${date.slice(5, 7)}/${date.slice(8, 10)}`;
+}
+
+/** Shared gradient-filled bar chart for a single metric, with hover/tap tooltip. */
+function MetricBarChart({
   days,
-  calorieGoal,
-  proteinGoal,
-  calLabel,
-  protLabel,
+  valueKey,
+  goal,
+  label,
+  colorVar,
+  colorLightVar,
+  missColorVar,
+  missColorLightVar,
+  unit,
 }: {
   days: DayInfo[];
-  calorieGoal: number;
-  proteinGoal: number;
-  calLabel: string;
-  protLabel: string;
+  valueKey: "calories" | "protein";
+  goal: number;
+  label: string;
+  colorVar: string;
+  colorLightVar: string;
+  /** If set, bars for days that missed the goal (value < goal) use this color instead. */
+  missColorVar?: string;
+  missColorLightVar?: string;
+  unit: string;
 }) {
-  const height = 160;
-  const maxCal = Math.max(calorieGoal, ...days.map((d) => d.calories), 1) * 1.1;
-  const maxProt = Math.max(proteinGoal, ...days.map((d) => d.protein), 1) * 1.1;
-  const barWidth = 100 / days.length;
-  const goalY = height - (calorieGoal / maxCal) * height;
-
-  const proteinPoints = days
-    .map((d, i) => {
-      const x = i * barWidth + barWidth / 2;
-      const y = height - (d.protein / maxProt) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const height = 140;
+  const max = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
+  const barWidth = 100 / Math.max(days.length, 1);
+  const goalY = height - (goal / max) * height;
+  const gradId = `grad-${valueKey}-${colorVar.replace(/[^a-z]/gi, "")}`;
+  const gradMissId = `${gradId}-miss`;
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-        <span>
-          <span style={{ color: "var(--calories)" }}>■</span> {calLabel}
-        </span>
-        <span>
-          <span style={{ color: "var(--protein)" }}>─</span> {protLabel}
-        </span>
+    <div className="card" style={{ marginTop: 16, position: "relative" }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+        <span style={{ color: colorVar }}>■</span> {label}
       </div>
-      <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
-        <line x1={0} y1={goalY} x2={100} y2={goalY} stroke="var(--calories)" strokeDasharray="2,2" strokeWidth={0.5} />
+      <svg
+        viewBox={`0 0 100 ${height}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={colorLightVar} />
+            <stop offset="100%" stopColor={colorVar} />
+          </linearGradient>
+          {missColorVar && (
+            <linearGradient id={gradMissId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={missColorLightVar} />
+              <stop offset="100%" stopColor={missColorVar} />
+            </linearGradient>
+          )}
+        </defs>
+        <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={colorVar} strokeDasharray="2,2" strokeWidth={0.5} />
         {days.map((d, i) => {
-          const barHeight = (d.calories / maxCal) * height;
+          const val = d[valueKey];
+          const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
           const x = i * barWidth;
+          const missed = missColorVar && d.hasData && val < goal;
           return (
             <rect
               key={d.date}
@@ -79,48 +106,99 @@ function CaloriesChart({
               y={height - barHeight}
               width={barWidth * 0.7}
               height={barHeight}
-              fill="var(--calories)"
-              opacity={0.85}
+              fill={missed ? `url(#${gradMissId})` : `url(#${gradId})`}
+              opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
+              onMouseEnter={() => setHoverIdx(i)}
+              onClick={() => setHoverIdx(i)}
+              style={{ cursor: "pointer" }}
             />
           );
         })}
-        <polyline points={proteinPoints} fill="none" stroke="var(--protein)" strokeWidth={1} />
-        {days.map((d, i) => {
-          const x = i * barWidth + barWidth / 2;
-          const y = height - (d.protein / maxProt) * height;
-          return <circle key={d.date} cx={x} cy={y} r={1.2} fill="var(--protein)" />;
-        })}
       </svg>
+      {hoverIdx != null && days[hoverIdx] && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            insetInlineEnd: 8,
+            background: "var(--bg-muted)",
+            border: "0.5px solid var(--border)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            fontSize: 12,
+          }}
+        >
+          <bdi dir="ltr">
+            {dayLabel(days[hoverIdx].date)} · {Math.round(days[hoverIdx][valueKey])}
+            {unit}
+          </bdi>
+        </div>
+      )}
     </div>
   );
 }
 
-function BurnedChart({ days, label }: { days: DayInfo[]; label: string }) {
-  const height = 100;
-  const max = Math.max(...days.map((d) => d.burned), 1) * 1.1;
-  const barWidth = 100 / days.length;
+/** Day-by-day "how am I doing vs both targets" strip — a color-coded bar per day. */
+function AggregateChart({
+  days,
+  statusColor,
+  label,
+  statusText,
+}: {
+  days: DayInfo[];
+  statusColor: (d: DayInfo) => string;
+  label: string;
+  statusText: (d: DayInfo) => string;
+}) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const height = 48;
+  const barWidth = 100 / Math.max(days.length, 1);
+
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-        <span style={{ color: "var(--burned)" }}>■</span> {label}
-      </div>
-      <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
+    <div className="card" style={{ marginTop: 16, position: "relative" }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{label}</div>
+      <svg
+        viewBox={`0 0 100 ${height}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
         {days.map((d, i) => {
-          const barHeight = (d.burned / max) * height;
           const x = i * barWidth;
           return (
             <rect
               key={d.date}
-              x={x + barWidth * 0.15}
-              y={height - barHeight}
-              width={barWidth * 0.7}
-              height={barHeight}
-              fill="var(--burned)"
-              opacity={0.85}
+              x={x + barWidth * 0.1}
+              y={0}
+              width={barWidth * 0.8}
+              height={height}
+              rx={2}
+              fill={statusColor(d)}
+              opacity={hoverIdx === null || hoverIdx === i ? 0.9 : 0.4}
+              onMouseEnter={() => setHoverIdx(i)}
+              onClick={() => setHoverIdx(i)}
+              style={{ cursor: "pointer" }}
             />
           );
         })}
       </svg>
+      {hoverIdx != null && days[hoverIdx] && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            insetInlineEnd: 8,
+            background: "var(--bg-muted)",
+            border: "0.5px solid var(--border)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            fontSize: 12,
+            maxWidth: 200,
+          }}
+        >
+          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> — {statusText(days[hoverIdx])}
+        </div>
+      )}
     </div>
   );
 }
@@ -136,8 +214,16 @@ export default function History() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [range, setRange] = useState<7 | 30>(7);
+  const [period, setPeriod] = useState<Period>("weekly");
+  const [customFrom, setCustomFrom] = useState(localDateKeyDaysAgo(6));
+  const [customTo, setCustomTo] = useState(localDateKey());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  const range = useMemo(() => {
+    if (period === "weekly") return { from: localDateKeyDaysAgo(6), to: localDateKey() };
+    if (period === "monthly") return { from: localDateKeyDaysAgo(29), to: localDateKey() };
+    return { from: customFrom, to: customTo };
+  }, [period, customFrom, customTo]);
 
   useEffect(() => {
     if (!user) return;
@@ -145,10 +231,9 @@ export default function History() {
       setLoading(true);
       setError(null);
       try {
-        const sinceDate = localDateKeyDaysAgo(WINDOW_DAYS - 1);
         const [mealDays, workouts, g] = await Promise.all([
-          getMealDaysSince(user.uid, sinceDate),
-          getWorkoutsSince(user.uid, sinceDate),
+          getMealDaysSince(user.uid, range.from, range.to),
+          getWorkoutsSince(user.uid, range.from, range.to),
           getUserGoals(user.uid),
         ]);
         setGoals(g);
@@ -159,9 +244,18 @@ export default function History() {
           workoutsByDate.set(w.date, [...(workoutsByDate.get(w.date) ?? []), w]);
         }
 
+        const start = new Date(range.from);
+        const end = new Date(range.to);
+        const spanDays = Math.min(
+          Math.max(Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1, 1),
+          MAX_FETCH_DAYS,
+        );
+
         const built: DayInfo[] = [];
-        for (let i = WINDOW_DAYS - 1; i >= 0; i--) {
-          const date = localDateKeyDaysAgo(i);
+        for (let i = 0; i < spanDays; i++) {
+          const d = new Date(start);
+          d.setDate(d.getDate() + i);
+          const date = localDateKey(d);
           const meal = mealByDate.get(date);
           const dayWorkouts = workoutsByDate.get(date) ?? [];
           const burned = dayWorkouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
@@ -182,13 +276,20 @@ export default function History() {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, range.from, range.to]);
 
   function statusColor(d: DayInfo): string {
     if (!d.hasData) return "var(--muted)";
     if (d.calories > goals.calorieGoal) return "var(--calories)";
-    if (d.protein < goals.proteinGoal) return "var(--protein)";
+    if (d.protein < goals.proteinGoal) return "var(--danger)";
     return "var(--burned)";
+  }
+
+  function statusText(d: DayInfo): string {
+    if (!d.hasData) return t("noDataLogged");
+    if (d.calories > goals.calorieGoal) return t("calorieGoalMissed");
+    if (d.protein < goals.proteinGoal) return t("proteinGoalMissed");
+    return t("allGoalsMet");
   }
 
   if (authLoading) {
@@ -210,7 +311,6 @@ export default function History() {
   }
 
   const last7 = days.slice(-7);
-  const chartDays = range === 7 ? last7 : days;
   const selected = days.find((d) => d.date === selectedDate) ?? null;
   const today = localDateKey();
 
@@ -244,14 +344,16 @@ export default function History() {
                     background: isToday ? "var(--bg-muted)" : "var(--panel)",
                   }}
                 >
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>{dayNum}</span>
+                  <bdi dir="ltr" style={{ fontSize: 11, color: "var(--muted)" }}>
+                    {dayNum}
+                  </bdi>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor(d) }} />
                 </button>
               );
             })}
           </div>
 
-          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--muted)", marginTop: 8, flexWrap: "wrap" }}>
             <span>
               <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--burned)" }} /> {t("allGoalsMet")}
             </span>
@@ -259,30 +361,67 @@ export default function History() {
               <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--calories)" }} /> {t("calorieGoalMissed")}
             </span>
             <span>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--protein)" }} /> {t("proteinGoalMissed")}
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--danger)" }} /> {t("proteinGoalMissed")}
             </span>
             <span>
               <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--muted)" }} /> {t("noDataLogged")}
             </span>
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
-            <button onClick={() => setRange(7)} style={{ fontWeight: range === 7 ? 700 : 400 }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 24, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => setPeriod("weekly")} style={{ fontWeight: period === "weekly" ? 700 : 400 }}>
               {t("last7Days")}
             </button>
-            <button onClick={() => setRange(30)} style={{ fontWeight: range === 30 ? 700 : 400 }}>
+            <button onClick={() => setPeriod("monthly")} style={{ fontWeight: period === "monthly" ? 700 : 400 }}>
               {t("last30Days")}
             </button>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => {
+                  setCustomFrom(e.target.value);
+                  setPeriod("custom");
+                }}
+                style={{ padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <span style={{ color: "var(--muted)" }}>–</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom}
+                max={today}
+                onChange={(e) => {
+                  setCustomTo(e.target.value);
+                  setPeriod("custom");
+                }}
+                style={{ padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+            </span>
           </div>
 
-          <CaloriesChart
-            days={chartDays}
-            calorieGoal={goals.calorieGoal}
-            proteinGoal={goals.proteinGoal}
-            calLabel={t("caloriesVsGoal")}
-            protLabel={t("proteinVsGoal")}
+          <MetricBarChart
+            days={days}
+            valueKey="calories"
+            goal={goals.calorieGoal}
+            label={t("caloriesVsGoal")}
+            colorVar="var(--calories)"
+            colorLightVar="var(--calories-light)"
+            unit=" kcal"
           />
-          <BurnedChart days={chartDays} label={t("caloriesBurned")} />
+          <MetricBarChart
+            days={days}
+            valueKey="protein"
+            goal={goals.proteinGoal}
+            label={t("proteinVsGoal")}
+            colorVar="var(--protein)"
+            colorLightVar="var(--protein-light)"
+            missColorVar="var(--danger)"
+            missColorLightVar="var(--danger-light)"
+            unit="g"
+          />
+          <AggregateChart days={days} statusColor={statusColor} statusText={statusText} label={t("overallStanding")} />
         </>
       )}
 
@@ -303,13 +442,17 @@ export default function History() {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <h2 style={{ margin: 0 }}>{selected.date}</h2>
+            <h2 style={{ margin: 0 }}>
+              <bdi dir="ltr">{selected.date}</bdi>
+            </h2>
             <button onClick={() => setSelectedDate(null)} style={{ border: "none", background: "none" }}>
               ✕
             </button>
           </div>
           <p style={{ color: "var(--muted)" }}>
-            {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}g {t("protein")}
+            <bdi dir="ltr">
+              {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}g {t("protein")}
+            </bdi>
           </p>
 
           <h3>{t("meals")}</h3>
@@ -318,7 +461,10 @@ export default function History() {
           ) : (
             selected.entries.map((e) => (
               <div key={e.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
-                <strong>{e.name}</strong> — {Math.round(e.calories)} kcal, {Math.round(e.protein)}g
+                <strong>{e.name}</strong> —{" "}
+                <bdi dir="ltr">
+                  {Math.round(e.calories)} kcal, {Math.round(e.protein)}g
+                </bdi>
               </div>
             ))
           )}
@@ -329,8 +475,11 @@ export default function History() {
           ) : (
             selected.workouts.map((w) => (
               <div key={w.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
-                <strong>{w.type}</strong> — {Math.round(w.duration / 60)} min
-                {w.calories != null && `, ${Math.round(w.calories)} kcal`}
+                <strong>{w.type}</strong> —{" "}
+                <bdi dir="ltr">
+                  {Math.round(w.duration / 60)} min
+                  {w.calories != null && `, ${Math.round(w.calories)} kcal`}
+                </bdi>
               </div>
             ))
           )}

@@ -159,6 +159,7 @@ export const strings = {
   caloriesVsGoal: { en: "Calories vs goal", he: "קלוריות מול מטרה" },
   proteinVsGoal: { en: "Protein vs goal", he: "חלבון מול מטרה" },
   caloriesBurned: { en: "Calories burned", he: "קלוריות שנשרפו" },
+  overallStanding: { en: "Overall standing vs targets", he: "מצב כללי מול המטרות" },
 } as const;
 
 export type StringKey = keyof typeof strings;
