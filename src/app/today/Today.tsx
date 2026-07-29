@@ -75,7 +75,6 @@ export default function Today() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [addOpen, setAddOpen] = useState(false);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,7 +128,6 @@ export default function Today() {
 
       setText("");
       setFile(null);
-      setAddOpen(false);
       await load(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -227,49 +225,44 @@ export default function Today() {
           <section style={{ marginTop: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h2 style={{ margin: 0 }}>{t("meals")}</h2>
-              <button onClick={() => setAddOpen((v) => !v)} style={{ background: "none", border: "none", color: "var(--protein)" }}>
-                {t("addMeal")}
-              </button>
             </div>
 
-            {addOpen && (
-              <form onSubmit={submitMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && (text || file) && !busy) {
-                      submitMeal(e);
-                    }
+            <form onSubmit={submitMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && (text || file) && !busy) {
+                    submitMeal(e);
+                  }
+                }}
+                placeholder={t("addMealPlaceholder")}
+                rows={2}
+                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <span
+                  style={{
+                    border: "0.5px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    background: "var(--panel)",
                   }}
-                  placeholder={t("addMealPlaceholder")}
-                  rows={2}
-                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                >
+                  {t("chooseFile")}
+                </span>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>{file?.name}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  style={{ display: "none" }}
                 />
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <span
-                    style={{
-                      border: "0.5px solid var(--border)",
-                      borderRadius: 8,
-                      padding: "8px 14px",
-                      background: "var(--panel)",
-                    }}
-                  >
-                    {t("chooseFile")}
-                  </span>
-                  <span style={{ color: "var(--muted)", fontSize: 13 }}>{file?.name}</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                    style={{ display: "none" }}
-                  />
-                </label>
-                <button type="submit" disabled={busy || (!text && !file)}>
-                  {busy ? t("logging") : t("logIt")}
-                </button>
-              </form>
-            )}
+              </label>
+              <button type="submit" disabled={busy || (!text && !file)}>
+                {busy ? t("logging") : t("logIt")}
+              </button>
+            </form>
 
             <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
               <thead>
