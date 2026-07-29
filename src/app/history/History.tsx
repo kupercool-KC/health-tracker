@@ -60,21 +60,22 @@ function MetricBarChart({
   valueKey,
   goal,
   label,
-  colorVar,
-  colorLightVar,
-  missColorVar,
-  missColorLightVar,
+  identityColorVar,
+  badColorVar,
+  badColorLightVar,
+  /** "atMost": under/at goal is good (calories). "atLeast": at/over goal is good (protein). */
+  goalDirection,
   unit,
 }: {
   days: DayInfo[];
   valueKey: "calories" | "protein";
   goal: number;
   label: string;
-  colorVar: string;
-  colorLightVar: string;
-  /** If set, bars for days that missed the goal (value < goal) use this color instead. */
-  missColorVar?: string;
-  missColorLightVar?: string;
+  /** Used only for the goal line + legend square — identifies which chart this is, not day-by-day status. */
+  identityColorVar: string;
+  badColorVar: string;
+  badColorLightVar: string;
+  goalDirection: "atMost" | "atLeast";
   unit: string;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -82,15 +83,15 @@ function MetricBarChart({
   const max = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
   const barWidth = 100 / Math.max(days.length, 1);
   const goalY = height - (goal / max) * height;
-  const gradId = `grad-${valueKey}-${colorVar.replace(/[^a-z]/gi, "")}`;
-  const gradMissId = `${gradId}-miss`;
+  const gradGoodId = `grad-${valueKey}-good`;
+  const gradBadId = `grad-${valueKey}-bad`;
   const yTicks = [0, 0.5, 1].map((f) => ({ y: height - f * height, value: Math.round(f * max) }));
   const xLabelIndices = axisLabelIndices(days.length);
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-        <span style={{ color: colorVar }}>■</span> {label}
+        <span style={{ color: identityColorVar }}>■</span> {label}
       </div>
       <div style={{ display: "flex" }}>
         {/* Y-axis: plain HTML, not SVG — the chart's viewBox is stretched
@@ -122,26 +123,25 @@ function MetricBarChart({
           onMouseLeave={() => setHoverIdx(null)}
         >
           <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={colorLightVar} />
-              <stop offset="100%" stopColor={colorVar} />
+            {/* Good = green, always — this is a status color, not a per-chart identity color. */}
+            <linearGradient id={gradGoodId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--burned-light)" />
+              <stop offset="100%" stopColor="var(--burned)" />
             </linearGradient>
-            {missColorVar && (
-              <linearGradient id={gradMissId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={missColorLightVar} />
-                <stop offset="100%" stopColor={missColorVar} />
-              </linearGradient>
-            )}
+            <linearGradient id={gradBadId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={badColorLightVar} />
+              <stop offset="100%" stopColor={badColorVar} />
+            </linearGradient>
           </defs>
           {yTicks.map((tick) => (
             <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
           ))}
-          <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={colorVar} strokeDasharray="2,2" strokeWidth={0.5} />
+          <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={identityColorVar} strokeDasharray="2,2" strokeWidth={0.5} />
           {days.map((d, i) => {
             const val = d[valueKey];
             const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
             const x = i * barWidth;
-            const missed = missColorVar && d.hasData && val < goal;
+            const bad = d.hasData && (goalDirection === "atMost" ? val > goal : val < goal);
             return (
               <rect
                 key={d.date}
@@ -149,7 +149,7 @@ function MetricBarChart({
                 y={height - barHeight}
                 width={barWidth * 0.7}
                 height={barHeight}
-                fill={missed ? `url(#${gradMissId})` : `url(#${gradId})`}
+                fill={bad ? `url(#${gradBadId})` : `url(#${gradGoodId})`}
                 opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
                 onMouseEnter={() => setHoverIdx(i)}
                 onClick={() => setHoverIdx(i)}
@@ -467,8 +467,10 @@ export default function History() {
             valueKey="calories"
             goal={goals.calorieGoal}
             label={t("caloriesVsGoal")}
-            colorVar="var(--calories)"
-            colorLightVar="var(--calories-light)"
+            identityColorVar="var(--calories)"
+            badColorVar="var(--calories)"
+            badColorLightVar="var(--calories-light)"
+            goalDirection="atMost"
             unit=" kcal"
           />
           <MetricBarChart
@@ -476,10 +478,10 @@ export default function History() {
             valueKey="protein"
             goal={goals.proteinGoal}
             label={t("proteinVsGoal")}
-            colorVar="var(--protein)"
-            colorLightVar="var(--protein-light)"
-            missColorVar="var(--danger)"
-            missColorLightVar="var(--danger-light)"
+            identityColorVar="var(--protein)"
+            badColorVar="var(--danger)"
+            badColorLightVar="var(--danger-light)"
+            goalDirection="atLeast"
             unit={t("unitG")}
           />
           <AggregateChart days={days} statusColor={statusColor} statusText={statusText} label={t("overallStanding")} />
