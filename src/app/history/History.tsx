@@ -28,6 +28,8 @@ interface DayInfo {
   hasData: boolean;
   entries: MealDay["entries"];
   workouts: Workout[];
+  /** 0-100 combined adherence score (see `adherence` below) — average of the calorie and protein scores for the day. */
+  overallScore: number;
 }
 
 type Period = "weekly" | "monthly" | "custom";
@@ -40,18 +42,16 @@ function dayLabel(date: string): string {
 }
 
 /**
- * Which day indices get an x-axis label — showing all of them once the range
- * grows past ~weekly gets illegible, so this thins them out to roughly 6-7
- * evenly-spaced labels (always including the first and last day) regardless
- * of whether the range is a week, a month, or a custom span.
+ * 0-100 "how well did this day meet the goal" score for one metric.
+ * "atMost" (calories): 100 at/under goal, falling off past it.
+ * "atLeast" (protein): scales up to 100 as it approaches/reaches goal, capped there.
  */
-function axisLabelIndices(count: number): Set<number> {
-  if (count <= 8) return new Set(Array.from({ length: count }, (_, i) => i));
-  const target = 7;
-  const step = (count - 1) / (target - 1);
-  const indices = new Set<number>();
-  for (let i = 0; i < target; i++) indices.add(Math.round(i * step));
-  return indices;
+function adherence(value: number, goal: number, direction: "atMost" | "atLeast"): number {
+  if (goal <= 0) return 100;
+  if (direction === "atMost") {
+    return value <= goal ? 100 : Math.max(0, 100 - ((value - goal) / goal) * 100);
+  }
+  return Math.min(100, (value / goal) * 100);
 }
 
 /** Shared gradient-filled bar chart for a single metric, with hover/tap tooltip. */
@@ -68,9 +68,12 @@ function MetricBarChart({
   goodLabel,
   badLabel,
   unit,
+  goalLabel,
+  /** Fixed y-axis gridline spacing (e.g. 500 for calories, 50 for protein/overall) — a dynamic step made the axis jump around as the visible range changed. */
+  yStep,
 }: {
   days: DayInfo[];
-  valueKey: "calories" | "protein";
+  valueKey: "calories" | "protein" | "overallScore";
   goal: number;
   label: string;
   /** Used only for the goal line + legend square — identifies which chart this is, not day-by-day status. */
@@ -81,22 +84,35 @@ function MetricBarChart({
   goodLabel: string;
   badLabel: string;
   unit: string;
+  /** Node shown next to the dashed goal reference line, e.g. "Goal: 1950 kcal". */
+  goalLabel: React.ReactNode;
+  yStep: number;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 140;
-  const max = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
+  const rawMax = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
+  const max = Math.max(Math.ceil(rawMax / yStep) * yStep, yStep);
   const barWidth = 100 / Math.max(days.length, 1);
   const goalY = height - (goal / max) * height;
   const gradGoodId = `grad-${valueKey}-good`;
   const gradBadId = `grad-${valueKey}-bad`;
-  const yTicks = [0, 0.5, 1].map((f) => ({ y: height - f * height, value: Math.round(f * max) }));
-  const xLabelIndices = axisLabelIndices(days.length);
+  const tickCount = max / yStep;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => ({
+    y: height - (i / tickCount) * height,
+    value: i * yStep,
+  }));
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          <span style={{ color: identityColorVar }}>■</span> {label}
+        <div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            <span style={{ color: identityColorVar }}>■</span> {label}
+          </div>
+          <div style={{ fontSize: 11, color: identityColorVar, opacity: 0.85, marginTop: 2 }}>
+            <span aria-hidden style={{ display: "inline-block", width: 10, borderTop: `1.5px dashed ${identityColorVar}`, marginInlineEnd: 4, verticalAlign: "middle" }} />
+            {goalLabel}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--muted)" }}>
           <span>
@@ -173,15 +189,9 @@ function MetricBarChart({
           })}
         </svg>
       </div>
-      {/* X-axis, same reasoning as the y-axis: plain HTML flex row lined up
-          with each bar's slot instead of SVG text. */}
-      <div style={{ display: "flex", marginInlineStart: 34 }}>
-        {days.map((d, i) => (
-          <div key={d.date} style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--muted)" }}>
-            {xLabelIndices.has(i) ? <bdi dir="ltr">{dayLabel(d.date)}</bdi> : null}
-          </div>
-        ))}
-      </div>
+      {/* Day labels only show for the hovered/tapped bar (in the tooltip
+          below) rather than as an always-visible x-axis row — with more than
+          a handful of days a static label per bar gets illegible anyway. */}
       {hoverIdx != null && days[hoverIdx] && (
         <div
           style={{
@@ -261,14 +271,20 @@ export default function History() {
           const meal = mealByDate.get(date);
           const dayWorkouts = workoutsByDate.get(date) ?? [];
           const burned = dayWorkouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
+          const calories = meal?.totals.calories ?? 0;
+          const protein = meal?.totals.protein ?? 0;
+          const hasData = (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0;
           built.push({
             date,
-            calories: meal?.totals.calories ?? 0,
-            protein: meal?.totals.protein ?? 0,
+            calories,
+            protein,
             burned,
-            hasData: (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0,
+            hasData,
             entries: meal?.entries ?? [],
             workouts: dayWorkouts,
+            overallScore: hasData
+              ? (adherence(calories, g.calorieGoal, "atMost") + adherence(protein, g.proteinGoal, "atLeast")) / 2
+              : 0,
           });
         }
         setDays(built);
@@ -407,7 +423,13 @@ export default function History() {
             goalDirection="atMost"
             goodLabel={t("calorieGoalMet")}
             badLabel={t("calorieGoalMissed")}
+            goalLabel={
+              <>
+                {t("goal")}: <bdi dir="ltr">{goals.calorieGoal} kcal</bdi>
+              </>
+            }
             unit=" kcal"
+            yStep={500}
           />
           <MetricBarChart
             days={days}
@@ -420,7 +442,32 @@ export default function History() {
             goalDirection="atLeast"
             goodLabel={t("proteinGoalMet")}
             badLabel={t("proteinGoalMissed")}
+            goalLabel={
+              <>
+                {t("goal")}: <bdi dir="ltr">{goals.proteinGoal}{t("unitG")}</bdi>
+              </>
+            }
             unit={t("unitG")}
+            yStep={50}
+          />
+          <MetricBarChart
+            days={days}
+            valueKey="overallScore"
+            goal={100}
+            label={t("overallVsGoal")}
+            identityColorVar="var(--net)"
+            badColorVar="var(--danger)"
+            badColorLightVar="var(--danger-light)"
+            goalDirection="atLeast"
+            goodLabel={t("overallGoalMet")}
+            badLabel={t("overallGoalMissed")}
+            goalLabel={
+              <>
+                {t("goal")}: <bdi dir="ltr">100%</bdi>
+              </>
+            }
+            unit="%"
+            yStep={50}
           />
         </>
       )}

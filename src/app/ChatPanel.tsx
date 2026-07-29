@@ -49,6 +49,12 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   async function send(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     if (!user || (!text.trim() && !file) || busy) return;
+    const messageText = text;
+    const messageFile = file;
+    // Clear the input immediately so it's ready for the next message —
+    // the thinking indicator below covers the wait, not the input box.
+    setText("");
+    setFile(null);
     setBusy(true);
     setAwaitingReply(true);
     setError(null);
@@ -58,23 +64,24 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const idToken = await currentUser.getIdToken();
 
       let imageUrl: string | undefined;
-      if (file) {
+      if (messageFile) {
         const { uploadNutritionImage } = await import("@/lib/firebase/uploadImage");
-        imageUrl = await uploadNutritionImage(currentUser.uid, file);
+        imageUrl = await uploadNutritionImage(currentUser.uid, messageFile);
       }
 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ sessionId: activeId ?? undefined, message: text, imageUrl, lang, date: localDateKey() }),
+        body: JSON.stringify({ sessionId: activeId ?? undefined, message: messageText, imageUrl, lang, date: localDateKey() }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const data: { sessionId: string } = await res.json();
       setActiveId(data.sessionId);
-      setText("");
-      setFile(null);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+      // Restore the input on failure so the user doesn't lose what they typed.
+      setText(messageText);
+      setFile(messageFile);
     } finally {
       setBusy(false);
       setAwaitingReply(false);
@@ -352,9 +359,23 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} />
           </label>
           <button type="submit" disabled={busy}>
-            {t("send")}
+            {awaitingReply ? <span className="send-spinner" aria-label={t("send")} /> : t("send")}
           </button>
         </form>
+        <style>{`
+          .send-spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid currentColor;
+            border-inline-end-color: transparent;
+            border-radius: 50%;
+            animation: send-spin 0.7s linear infinite;
+          }
+          @keyframes send-spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     </div>
   );
