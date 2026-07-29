@@ -65,6 +65,8 @@ function MetricBarChart({
   badColorLightVar,
   /** "atMost": under/at goal is good (calories). "atLeast": at/over goal is good (protein). */
   goalDirection,
+  goodLabel,
+  badLabel,
   unit,
 }: {
   days: DayInfo[];
@@ -76,6 +78,8 @@ function MetricBarChart({
   badColorVar: string;
   badColorLightVar: string;
   goalDirection: "atMost" | "atLeast";
+  goodLabel: string;
+  badLabel: string;
   unit: string;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -90,8 +94,18 @@ function MetricBarChart({
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-        <span style={{ color: identityColorVar }}>■</span> {label}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          <span style={{ color: identityColorVar }}>■</span> {label}
+        </div>
+        <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--muted)" }}>
+          <span>
+            <span style={{ color: "var(--burned)" }}>■</span> {goodLabel}
+          </span>
+          <span>
+            <span style={{ color: badColorVar }}>■</span> {badLabel}
+          </span>
+        </div>
       </div>
       <div style={{ display: "flex" }}>
         {/* Y-axis: plain HTML, not SVG — the chart's viewBox is stretched
@@ -191,79 +205,6 @@ function MetricBarChart({
   );
 }
 
-/** Day-by-day "how am I doing vs both targets" strip — a color-coded bar per day. */
-function AggregateChart({
-  days,
-  statusColor,
-  label,
-  statusText,
-}: {
-  days: DayInfo[];
-  statusColor: (d: DayInfo) => string;
-  label: string;
-  statusText: (d: DayInfo) => string;
-}) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const height = 48;
-  const barWidth = 100 / Math.max(days.length, 1);
-  const xLabelIndices = axisLabelIndices(days.length);
-
-  return (
-    <div className="card" style={{ marginTop: 16, position: "relative" }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{label}</div>
-      <svg
-        viewBox={`0 0 100 ${height}`}
-        preserveAspectRatio="none"
-        style={{ width: "100%", height }}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
-        {days.map((d, i) => {
-          const x = i * barWidth;
-          return (
-            <rect
-              key={d.date}
-              x={x + barWidth * 0.1}
-              y={0}
-              width={barWidth * 0.8}
-              height={height}
-              rx={2}
-              fill={statusColor(d)}
-              opacity={hoverIdx === null || hoverIdx === i ? 0.9 : 0.4}
-              onMouseEnter={() => setHoverIdx(i)}
-              onClick={() => setHoverIdx(i)}
-              style={{ cursor: "pointer" }}
-            />
-          );
-        })}
-      </svg>
-      <div style={{ display: "flex" }}>
-        {days.map((d, i) => (
-          <div key={d.date} style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--muted)" }}>
-            {xLabelIndices.has(i) ? <bdi dir="ltr">{dayLabel(d.date)}</bdi> : null}
-          </div>
-        ))}
-      </div>
-      {hoverIdx != null && days[hoverIdx] && (
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            insetInlineEnd: 8,
-            background: "var(--bg-muted)",
-            border: "0.5px solid var(--border)",
-            borderRadius: 8,
-            padding: "6px 10px",
-            fontSize: 12,
-            maxWidth: 200,
-          }}
-        >
-          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> — {statusText(days[hoverIdx])}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function History() {
   const { user, loading: authLoading, signIn } = useAuth();
   const { t } = useI18n();
@@ -344,13 +285,6 @@ export default function History() {
     if (d.calories > goals.calorieGoal) return "var(--calories)";
     if (d.protein < goals.proteinGoal) return "var(--danger)";
     return "var(--burned)";
-  }
-
-  function statusText(d: DayInfo): string {
-    if (!d.hasData) return t("noDataLogged");
-    if (d.calories > goals.calorieGoal) return t("calorieGoalMissed");
-    if (d.protein < goals.proteinGoal) return t("proteinGoalMissed");
-    return t("allGoalsMet");
   }
 
   if (authLoading) {
@@ -471,6 +405,8 @@ export default function History() {
             badColorVar="var(--calories)"
             badColorLightVar="var(--calories-light)"
             goalDirection="atMost"
+            goodLabel={t("calorieGoalMet")}
+            badLabel={t("calorieGoalMissed")}
             unit=" kcal"
           />
           <MetricBarChart
@@ -482,9 +418,10 @@ export default function History() {
             badColorVar="var(--danger)"
             badColorLightVar="var(--danger-light)"
             goalDirection="atLeast"
+            goodLabel={t("proteinGoalMet")}
+            badLabel={t("proteinGoalMissed")}
             unit={t("unitG")}
           />
-          <AggregateChart days={days} statusColor={statusColor} statusText={statusText} label={t("overallStanding")} />
         </>
       )}
 

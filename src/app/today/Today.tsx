@@ -26,7 +26,7 @@ function MetricCard({
   label: string;
   value: number;
   goal?: number;
-  sub: string;
+  sub: React.ReactNode;
   tone: MetricTone;
 }) {
   const ratio = goal ? value / goal : undefined;
@@ -42,14 +42,11 @@ function MetricCard({
       <div className="metric-value" style={{ color: colorVar }}>
         {Math.round(value)}
       </div>
-      {/* Numbers/units/operators (e.g. "1510 − 1007") reorder incorrectly if
-          left to inherit the page's RTL direction. <bdi dir="ltr"> isolates
-          the token ordering without touching this div's own text-align, so
-          Hebrew layout stays right-aligned but the formula still reads
-          left-to-right internally. */}
-      <div style={{ color: colorVar, fontSize: 13, opacity: 0.85 }}>
-        <bdi dir="ltr">{sub}</bdi>
-      </div>
+      {/* Only the individual number/unit runs are bdi-isolated (at each call
+          site) — wrapping the whole line in one <bdi dir="ltr"> would also
+          reorder the Hebrew words mixed in with them (e.g. "goal" / "deficit"),
+          since it treats the entire string as a single LTR run. */}
+      <div style={{ color: colorVar, fontSize: 13, opacity: 0.85 }}>{sub}</div>
       {pct != null && (
         <div className="progress-track" style={{ background: "rgba(255,255,255,0.55)" }}>
           <div
@@ -283,26 +280,48 @@ export default function Today() {
               label={t("calories")}
               value={totals.calories}
               goal={goals.calorieGoal}
-              sub={`${Math.round(totals.calories)} / ${goals.calorieGoal} ${t("goal")} · ${Math.max(0, Math.round(goals.calorieGoal - totals.calories))} ${t("remaining")}`}
+              sub={
+                <>
+                  <bdi dir="ltr">
+                    {Math.round(totals.calories)} / {goals.calorieGoal}
+                  </bdi>{" "}
+                  {t("goal")} ·{" "}
+                  <bdi dir="ltr">{Math.max(0, Math.round(goals.calorieGoal - totals.calories))}</bdi>{" "}
+                  {t("remaining")}
+                </>
+              }
               tone="calories"
             />
             <MetricCard
               label={t("protein")}
               value={totals.protein}
               goal={goals.proteinGoal}
-              sub={`${Math.round(totals.protein)}${t("unitG")} / ${goals.proteinGoal}${t("unitG")} · ${totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")} ${Math.abs(Math.round(totals.protein - goals.proteinGoal))}${t("unitG")}`}
+              sub={
+                <>
+                  <bdi dir="ltr">
+                    {Math.round(totals.protein)}
+                    {t("unitG")} / {goals.proteinGoal}
+                    {t("unitG")}
+                  </bdi>{" "}
+                  · {totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")}{" "}
+                  <bdi dir="ltr">
+                    {Math.abs(Math.round(totals.protein - goals.proteinGoal))}
+                    {t("unitG")}
+                  </bdi>
+                </>
+              }
               tone="protein"
             />
             <MetricCard
               label={t("burned")}
               value={burned}
-              sub={`${Math.round(burned)} kcal`}
+              sub={<bdi dir="ltr">{Math.round(burned)} kcal</bdi>}
               tone="burned"
             />
             <MetricCard
               label={t("net")}
               value={net}
-              sub={`${Math.round(totals.calories)} − ${Math.round(burned)}`}
+              sub={<bdi dir="ltr">{Math.round(totals.calories)} − {Math.round(burned)}</bdi>}
               tone="net"
             />
           </section>
