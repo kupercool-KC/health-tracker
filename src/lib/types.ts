@@ -58,6 +58,26 @@ export interface Workout {
   syncedAt: string;
 }
 
+/**
+ * Result of parsing a manually-logged workout (screenshot of a workout
+ * summary and/or a text description), before it becomes a Workout.
+ */
+export interface ParsedWorkout {
+  type: string;
+  /** seconds */
+  durationSec: number;
+  /** meters */
+  distanceMeters?: number;
+  /** seconds per km */
+  paceSecPerKm?: number;
+  calories?: number;
+  heartRateAvg?: number;
+  heartRateMax?: number;
+  /** meters */
+  elevationGainMeters?: number;
+  confidence?: number;
+}
+
 /** A single distinct food identified within one parse call. */
 export interface ParsedNutritionItem {
   description: string;

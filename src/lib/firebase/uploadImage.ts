@@ -16,3 +16,12 @@ export async function uploadNutritionImage(uid: string, file: File): Promise<str
   await uploadBytes(fileRef, file, { contentType: file.type });
   return getDownloadURL(fileRef);
 }
+
+/** Same pattern as uploadNutritionImage, for workout-summary screenshots. */
+export async function uploadWorkoutImage(uid: string, file: File): Promise<string> {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `users/${uid}/workout-images/${crypto.randomUUID()}.${ext}`;
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, file, { contentType: file.type });
+  return getDownloadURL(fileRef);
+}

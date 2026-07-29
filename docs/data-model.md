@@ -67,6 +67,14 @@ Health Auto Export's real export format nests quantities as `{qty, units}`
 inside a `{data: {workouts: [...]}}` envelope with non-standard date strings
 — adapting the route to parse that directly is separate follow-up work.
 
+`POST /api/workouts` is the manual-entry counterpart (Firebase ID token auth,
+not the health-sync token) — a user types a description ("ran 5k in 28
+minutes") and/or uploads a screenshot of a workout summary from any app;
+`src/lib/workout/parser.ts` (OpenAI vision, mirrors the nutrition parser's
+shape but with a hardcoded prompt, not admin-configurable) extracts the
+metrics into a `ParsedWorkout`, which becomes one `Workout` doc with
+`source: "manual"`, `id`/`externalId` a fresh `crypto.randomUUID()`.
+
 ## UserProfile (users/{uid}/meta/profile)
 Matches the spec's onboarding + goals fields: `name, email, age, gender,
 height, weight, goal, activityLevel, workoutTypes, dietaryPrefs, avoidFoods,

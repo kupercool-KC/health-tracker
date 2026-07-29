@@ -80,6 +80,10 @@ export default function Today() {
   const [busy, setBusy] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const [workoutText, setWorkoutText] = useState("");
+  const [workoutFile, setWorkoutFile] = useState<File | null>(null);
+  const [workoutBusy, setWorkoutBusy] = useState(false);
+
   const load = useCallback(async (uid: string) => {
     setLoading(true);
     setError(null);
@@ -154,6 +158,38 @@ export default function Today() {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function submitWorkout(e: React.FormEvent | React.KeyboardEvent) {
+    e.preventDefault();
+    setWorkoutBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+
+      let imageUrl: string | undefined;
+      if (workoutFile) {
+        const { uploadWorkoutImage } = await import("@/lib/firebase/uploadImage");
+        imageUrl = await uploadWorkoutImage(currentUser.uid, workoutFile);
+      }
+
+      const res = await fetch("/api/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ text: workoutText || undefined, imageUrl, date: localDateKey() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+
+      setWorkoutText("");
+      setWorkoutFile(null);
+      await load(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setWorkoutBusy(false);
     }
   }
 
@@ -350,10 +386,49 @@ export default function Today() {
                     {w.heartRate?.avg != null && ` · avg HR ${Math.round(w.heartRate.avg)}`}
                     {w.calories != null && ` · ${Math.round(w.calories)} kcal`}
                     {w.elevationGain != null && ` · +${Math.round(w.elevationGain)}m`}
+                    {w.source === "manual" && ` · ${t("manuallyLogged")}`}
                   </div>
                 </div>
               ))
             )}
+
+            <h3 style={{ marginTop: 16, marginBottom: 0 }}>{t("logWorkout")}</h3>
+            <form onSubmit={submitWorkout} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              <textarea
+                value={workoutText}
+                onChange={(e) => setWorkoutText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && (workoutText || workoutFile) && !workoutBusy) {
+                    submitWorkout(e);
+                  }
+                }}
+                placeholder={t("workoutPlaceholder")}
+                rows={2}
+                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <span
+                  style={{
+                    border: "0.5px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    background: "var(--panel)",
+                  }}
+                >
+                  {t("chooseFile")}
+                </span>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>{workoutFile?.name}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setWorkoutFile(e.target.files?.[0] ?? null)}
+                  style={{ display: "none" }}
+                />
+              </label>
+              <button type="submit" disabled={workoutBusy || (!workoutText && !workoutFile)}>
+                {workoutBusy ? t("logging") : t("logIt")}
+              </button>
+            </form>
           </section>
         </>
       )}

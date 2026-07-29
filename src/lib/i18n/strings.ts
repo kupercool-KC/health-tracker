@@ -40,6 +40,12 @@ export const strings = {
   lastSynced: { en: "Last synced", he: "סונכרן לאחרונה" },
   refresh: { en: "Refresh", he: "רענן" },
   noWorkoutsToday: { en: "—", he: "—" },
+  logWorkout: { en: "Log a workout", he: "רשום אימון" },
+  workoutPlaceholder: {
+    en: "e.g. ran 5k in 28 minutes, or upload a screenshot from your fitness app",
+    he: "לדוגמה: רצתי 5 ק\"מ ב-28 דקות, או העלה צילום מסך מאפליקציית הכושר",
+  },
+  manuallyLogged: { en: "manually logged", he: "נרשם ידנית" },
 
   loading: { en: "Loading…", he: "טוען…" },
   signInPrompt: { en: "Sign in to log nutrition and view your data.", he: "התחבר כדי לרשום תזונה ולראות את הנתונים שלך." },
