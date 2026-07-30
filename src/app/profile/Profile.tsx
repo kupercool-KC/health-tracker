@@ -20,7 +20,7 @@ import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo }
 import { computeNetCalories } from "@/lib/goals/netCalories";
 
 export default function Profile() {
-  const { user, loading: authLoading, signIn, signOutUser } = useAuth();
+  const { user, loading: authLoading, authError, signIn, signOutUser } = useAuth();
   const { t, forwardArrow } = useI18n();
   const [error, setError] = useState<string | null>(null);
 
@@ -120,6 +120,7 @@ export default function Profile() {
         <h1>{t("navProfile")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );
   }

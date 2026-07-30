@@ -74,7 +74,7 @@ function formatPace(secPerKm: number): string {
 }
 
 export default function Today() {
-  const { user, loading: authLoading, signIn } = useAuth();
+  const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
 
   const [mealDay, setMealDay] = useState<MealDay | null>(null);
@@ -276,6 +276,7 @@ export default function Today() {
         <h1>{t("today")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );
   }

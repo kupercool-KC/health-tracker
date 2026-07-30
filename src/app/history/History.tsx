@@ -262,7 +262,7 @@ function MetricBarChart({
 }
 
 export default function History() {
-  const { user, loading: authLoading, signIn } = useAuth();
+  const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
   // Hebrew graphs read as cluttered with "גר" glued to every protein number
   // (e.g. "214גר") — dropped there specifically; English keeps "g".
@@ -369,6 +369,7 @@ export default function History() {
         <h1>{t("navHistory")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );
   }

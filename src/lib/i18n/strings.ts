@@ -58,6 +58,7 @@ export const strings = {
   loading: { en: "Loading…", he: "טוען…" },
   signInPrompt: { en: "Sign in to log nutrition and view your data.", he: "התחבר כדי לרשום תזונה ולראות את הנתונים שלך." },
   signInWithGoogle: { en: "Sign in with Google", he: "התחברות עם Google" },
+  signInFailed: { en: "Sign-in failed", he: "ההתחברות נכשלה" },
   signOut: { en: "Sign out", he: "התנתקות" },
 
   working: { en: "Working…", he: "מעבד…" },

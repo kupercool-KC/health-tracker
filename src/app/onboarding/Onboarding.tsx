@@ -67,7 +67,7 @@ const DIET_OPTIONS: Array<{ value: DietaryPref; labelKey: StringKey }> = [
 ];
 
 export default function Onboarding() {
-  const { user, loading: authLoading, signIn } = useAuth();
+  const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
   const router = useRouter();
 
@@ -242,6 +242,7 @@ export default function Onboarding() {
       <main>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );
   }
