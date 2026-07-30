@@ -18,6 +18,7 @@ import {
   localDateKeyDaysAgo,
 } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
+import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { MealDay, UserProfile, Workout } from "@/lib/types";
 
 interface DayInfo {
@@ -25,6 +26,8 @@ interface DayInfo {
   calories: number;
   protein: number;
   burned: number;
+  /** calories − (burned × the profile's net-calorie-burn factor) — see src/lib/goals/netCalories.ts. */
+  netCalories: number;
   hasData: boolean;
   entries: MealDay["entries"];
   workouts: Workout[];
@@ -77,6 +80,8 @@ function MetricBarChart({
   /** Fixed y-axis gridline spacing (e.g. 500 for calories, 50 for protein/overall) — a dynamic step made the axis jump around as the visible range changed. */
   yStep,
   onSelectDay,
+  /** When set, the goal line/comparison varies per day instead of being flat — used for the calories chart's net-adjusted boundary (goal + burned×factor%), so a workout day's bar can go green even above the raw goal. */
+  perDayGoal,
 }: {
   days: DayInfo[];
   valueKey: "calories" | "protein" | "overallScore";
@@ -95,14 +100,16 @@ function MetricBarChart({
   yStep: number;
   /** Opens the day-detail drawer for the clicked bar's date. */
   onSelectDay: (date: string) => void;
+  perDayGoal?: (d: DayInfo) => number;
 }) {
   const { t } = useI18n();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 140;
-  const rawMax = Math.max(goal, ...days.map((d) => d[valueKey]), 1) * 1.15;
+  const goalFor = (d: DayInfo) => perDayGoal?.(d) ?? goal;
+  const maxGoal = perDayGoal ? Math.max(goal, ...days.map(goalFor)) : goal;
+  const rawMax = Math.max(maxGoal, ...days.map((d) => d[valueKey]), 1) * 1.15;
   const max = Math.max(Math.ceil(rawMax / yStep) * yStep, yStep);
   const barWidth = 100 / Math.max(days.length, 1);
-  const goalY = height - (goal / max) * height;
   const gradGoodId = `grad-${valueKey}-good`;
   const gradBadId = `grad-${valueKey}-bad`;
   const tickCount = max / yStep;
@@ -110,6 +117,14 @@ function MetricBarChart({
     y: height - (i / tickCount) * height,
     value: i * yStep,
   }));
+  // Step polyline through each day's goal line — a flat `goal` for every day
+  // produces a plain horizontal line; `perDayGoal` makes it jump per day.
+  const goalLinePoints = days
+    .flatMap((d, i) => {
+      const y = height - (goalFor(d) / max) * height;
+      return [`${i * barWidth},${y}`, `${(i + 1) * barWidth},${y}`];
+    })
+    .join(" ");
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
@@ -175,12 +190,13 @@ function MetricBarChart({
           {yTicks.map((tick) => (
             <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
           ))}
-          <line x1={0} y1={goalY} x2={100} y2={goalY} stroke={identityColorVar} strokeDasharray="2,2" strokeWidth={0.5} />
+          <polyline points={goalLinePoints} fill="none" stroke={identityColorVar} strokeDasharray="2,2" strokeWidth={0.5} />
           {days.map((d, i) => {
             const val = d[valueKey];
             const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
             const x = i * barWidth;
-            const bad = d.hasData && (goalDirection === "atMost" ? val > goal : val < goal);
+            const dayGoal = goalFor(d);
+            const bad = d.hasData && (goalDirection === "atMost" ? val > dayGoal : val < dayGoal);
             return (
               <rect
                 key={d.date}
@@ -227,6 +243,13 @@ function MetricBarChart({
               {t("unitG")} {t("protein")}
             </bdi>
           </div>
+          {perDayGoal && (
+            <div style={{ color: identityColorVar, marginTop: 2 }}>
+              <bdi dir="ltr">
+                {t("goal")}: {Math.round(goalFor(days[hoverIdx]))} kcal
+              </bdi>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -238,9 +261,10 @@ export default function History() {
   const { t } = useI18n();
 
   const [days, setDays] = useState<DayInfo[]>([]);
-  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal">>({
+  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor">>({
     calorieGoal: 1950,
     proteinGoal: 145,
+    netCalorieBurnFactor: 50,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -291,17 +315,19 @@ export default function History() {
           const burned = dayWorkouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
           const calories = meal?.totals.calories ?? 0;
           const protein = meal?.totals.protein ?? 0;
+          const netCalories = computeNetCalories(calories, burned, g.netCalorieBurnFactor ?? 50);
           const hasData = (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0;
           built.push({
             date,
             calories,
             protein,
             burned,
+            netCalories,
             hasData,
             entries: meal?.entries ?? [],
             workouts: dayWorkouts,
             overallScore: hasData
-              ? (adherence(calories, g.calorieGoal, "atMost") + adherence(protein, g.proteinGoal, "atLeast")) / 2
+              ? (adherence(netCalories, g.calorieGoal, "atMost") + adherence(protein, g.proteinGoal, "atLeast")) / 2
               : 0,
           });
         }
@@ -316,7 +342,7 @@ export default function History() {
 
   function statusColor(d: DayInfo): string {
     if (!d.hasData) return "var(--muted)";
-    if (d.calories > goals.calorieGoal) return "var(--calories)";
+    if (d.netCalories > goals.calorieGoal) return "var(--calories)";
     if (d.protein < goals.proteinGoal) return "var(--danger)";
     return "var(--burned)";
   }
@@ -443,12 +469,13 @@ export default function History() {
             badLabel={t("calorieGoalMissed")}
             goalLabel={
               <>
-                {t("goal")}: <bdi dir="ltr">{goals.calorieGoal} kcal</bdi>
+                {t("goal")}: <bdi dir="ltr">{goals.calorieGoal} kcal</bdi> · {t("netAdjustedNote")}
               </>
             }
             unit=" kcal"
             yStep={500}
             onSelectDay={setSelectedDate}
+            perDayGoal={(d) => goals.calorieGoal + d.burned * ((goals.netCalorieBurnFactor ?? 50) / 100)}
           />
           <MetricBarChart
             days={days}
@@ -522,6 +549,14 @@ export default function History() {
               {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}
               {t("unitG")} {t("protein")}
             </bdi>
+          </p>
+          <p style={{ color: "var(--net)", margin: "4px 0 0" }}>
+            <bdi dir="ltr">
+              {t("net")}: {Math.round(selected.netCalories)} kcal
+            </bdi>{" "}
+            ·{" "}
+            {selected.netCalories <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
+            <bdi dir="ltr">{Math.abs(Math.round(selected.netCalories - goals.calorieGoal))}</bdi>
           </p>
 
           <h3>{t("meals")}</h3>

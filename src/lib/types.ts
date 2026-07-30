@@ -121,6 +121,8 @@ export interface UserProfile {
   preferredFoods?: string[];
   calorieGoal: number;
   proteinGoal: number;
+  /** Percentage (0-100) of workout calories subtracted when computing net calories — default 50, since burn estimates run optimistic and a partial credit keeps the deficit conservative. */
+  netCalorieBurnFactor?: number;
   /** grams; calculated during onboarding, editable manually afterward */
   carbGoal?: number;
   fatGoal?: number;

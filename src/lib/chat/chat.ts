@@ -9,7 +9,8 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
-import type { ChatIntent, MealDay, PendingMealAction } from "@/lib/types";
+import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
+import type { ChatIntent, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
 
 const CHAT_MODEL = "gpt-4o-mini";
 
@@ -62,19 +63,42 @@ export async function answerHistoryQuery(uid: string, message: string, lang: "en
   since.setDate(since.getDate() - HISTORY_WINDOW_DAYS);
   const sinceDate = since.toISOString().slice(0, 10);
 
-  const [mealsSnap, workoutsSnap] = await Promise.all([
+  const [mealsSnap, workoutsSnap, profileSnap] = await Promise.all([
     adminDb.collection("users").doc(uid).collection("meals").get(),
     adminDb.collection("users").doc(uid).collection("workouts").where("date", ">=", sinceDate).get(),
+    adminDb.collection("users").doc(uid).collection("meta").doc("profile").get(),
   ]);
 
+  const profile = profileSnap.data() as UserProfile | undefined;
+  const calorieGoal = profile?.calorieGoal;
+  const netCalorieBurnFactor = profile?.netCalorieBurnFactor ?? DEFAULT_NET_CALORIE_BURN_FACTOR;
+
   const meals = mealsSnap.docs
-    .map((d) => d.data() as { date: string; totals: unknown })
-    .filter((d) => d.date >= sinceDate)
-    .map((d) => ({ date: d.date, totals: d.totals }));
+    .map((d) => d.data() as { date: string; totals: { calories?: number; protein?: number } })
+    .filter((d) => d.date >= sinceDate);
 
   const workouts = workoutsSnap.docs.map((d) => {
     const w = d.data() as { date: string; type: string; duration: number; calories?: number; distance?: number };
     return { date: w.date, type: w.type, durationSec: w.duration, calories: w.calories, distanceMeters: w.distance };
+  });
+
+  const burnedByDate = new Map<string, number>();
+  for (const w of workouts) {
+    burnedByDate.set(w.date, (burnedByDate.get(w.date) ?? 0) + (w.calories ?? 0));
+  }
+
+  // netCalories per day is precomputed here (not left to the model) so the
+  // deficit/surplus math is exact rather than something an LLM might get
+  // wrong when asked to apply the formula itself.
+  const mealsWithNet = meals.map((m) => {
+    const burned = burnedByDate.get(m.date) ?? 0;
+    const calories = m.totals.calories ?? 0;
+    return {
+      date: m.date,
+      totals: m.totals,
+      burnedCalories: burned,
+      netCalories: Math.round(computeNetCalories(calories, burned, netCalorieBurnFactor)),
+    };
   });
 
   const completion = await getOpenAIClient().chat.completions.create({
@@ -82,9 +106,14 @@ export async function answerHistoryQuery(uid: string, message: string, lang: "en
     messages: [
       {
         role: "system",
-        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.`,
+        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.
+
+Each entry in "meals" already includes "netCalories" — the day's net calorie balance, computed as consumed calories minus (burned calories × ${netCalorieBurnFactor}%), i.e. only ${netCalorieBurnFactor}% of a workout's burned calories count toward the deficit (this is the user's configured factor, meant to keep the deficit conservative since burn estimates run optimistic). When asked about deficit/surplus/"net calories"/"caloric balance", use "netCalories" directly rather than recomputing it, and compare it against the calorie goal${calorieGoal != null ? ` (${calorieGoal} kcal/day)` : ""} — under or at goal is a deficit, over goal is a surplus.`,
       },
-      { role: "user", content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals, workouts })}\n\nQuestion: ${message}` },
+      {
+        role: "user",
+        content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals: mealsWithNet, workouts })}\n\nQuestion: ${message}`,
+      },
     ],
   });
 

@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { getMealDay, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
+import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { MealDay, UserProfile, Workout } from "@/lib/types";
 
 /** One of the app's 4 fixed accents — each has a matching `--{tone}-bg` tint. */
@@ -78,9 +79,10 @@ export default function Today() {
 
   const [mealDay, setMealDay] = useState<MealDay | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal">>({
+  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor">>({
     calorieGoal: 1950,
     proteinGoal: 145,
+    netCalorieBurnFactor: 50,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -259,7 +261,7 @@ export default function Today() {
 
   const totals = mealDay?.totals ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const burned = workouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
-  const net = totals.calories - burned;
+  const net = computeNetCalories(totals.calories, burned, goals.netCalorieBurnFactor ?? 50);
   const lastSynced = workouts
     .map((w) => w.syncedAt)
     .sort()
@@ -321,7 +323,16 @@ export default function Today() {
             <MetricCard
               label={t("net")}
               value={net}
-              sub={<bdi dir="ltr">{Math.round(totals.calories)} − {Math.round(burned)}</bdi>}
+              goal={goals.calorieGoal}
+              sub={
+                <>
+                  <bdi dir="ltr">
+                    {Math.round(totals.calories)} − ({Math.round(burned)} × {goals.netCalorieBurnFactor ?? 50}%)
+                  </bdi>{" "}
+                  · {net <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
+                  <bdi dir="ltr">{Math.abs(Math.round(net - goals.calorieGoal))}</bdi>
+                </>
+              }
               tone="net"
             />
           </section>

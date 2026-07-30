@@ -166,6 +166,19 @@ export const strings = {
   overallVsGoal: { en: "Overall vs goal", he: "מצב כללי מול המטרה" },
   overallGoalMet: { en: "Goal met", he: "המטרה הושגה" },
   overallGoalMissed: { en: "Goal missed", he: "המטרה לא הושגה" },
+  netAdjustedNote: { en: "adjusted for calories burned", he: "מותאם לקלוריות שנשרפו" },
+  netCalorieFactorTitle: { en: "Net calorie balance", he: "מאזן קלורי נטו" },
+  netCalorieFactorLabel: {
+    en: "% of burned calories credited toward the deficit",
+    he: "אחוז מהקלוריות שנשרפו שנזכה בו לגירעון",
+  },
+  netCalorieFactorExample: {
+    en: "Example: consumed 2,000 kcal, burned 500 kcal in a workout. At 50%, net calories = 2,000 − (500 × 50%) = 1,750 kcal.",
+    he: "לדוגמה: אם צרכת 2,000 קלוריות ושרפת 500 קלוריות באימון, עם מקדם 50% הקלוריות נטו הן 2,000 − (500 × 50%) = 1,750 קלוריות.",
+  },
+  runRetro: { en: "Run retro", he: "הרץ רטרו" },
+  retroDaysLabel: { en: "Days back", he: "מספר ימים אחורה" },
+  retroNoData: { en: "No logged data in this range.", he: "לא נמצאו נתונים רשומים בטווח הזה." },
 } as const;
 
 export type StringKey = keyof typeof strings;
