@@ -126,6 +126,13 @@ export default function Today() {
 
   async function submitMeal(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
+    const submittedText = text;
+    const submittedFile = file;
+    // Clear immediately — the box shouldn't still show the question while
+    // we're checking it or waiting on the response (see the chat panel's
+    // same pattern in ChatPanel.tsx).
+    setText("");
+    setFile(null);
     setBusy(true);
     setError(null);
     try {
@@ -134,23 +141,28 @@ export default function Today() {
       const idToken = await currentUser.getIdToken();
 
       let imageUrl: string | undefined;
-      if (file) {
+      if (submittedFile) {
         const { uploadNutritionImage } = await import("@/lib/firebase/uploadImage");
-        imageUrl = await uploadNutritionImage(currentUser.uid, file);
+        imageUrl = await uploadNutritionImage(currentUser.uid, submittedFile);
       }
 
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text: text || undefined, imageUrl, date: localDateKey(), lang }),
+        body: JSON.stringify({ text: submittedText || undefined, imageUrl, date: localDateKey(), lang }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (data.flagged) {
+        setError(data.message);
+        return;
+      }
 
-      setText("");
-      setFile(null);
       await load(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+      setText(submittedText);
+      setFile(submittedFile);
     } finally {
       setBusy(false);
     }
@@ -211,6 +223,10 @@ export default function Today() {
 
   async function submitWorkout(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
+    const submittedText = workoutText;
+    const submittedFile = workoutFile;
+    setWorkoutText("");
+    setWorkoutFile(null);
     setWorkoutBusy(true);
     setError(null);
     try {
@@ -219,23 +235,28 @@ export default function Today() {
       const idToken = await currentUser.getIdToken();
 
       let imageUrl: string | undefined;
-      if (workoutFile) {
+      if (submittedFile) {
         const { uploadWorkoutImage } = await import("@/lib/firebase/uploadImage");
-        imageUrl = await uploadWorkoutImage(currentUser.uid, workoutFile);
+        imageUrl = await uploadWorkoutImage(currentUser.uid, submittedFile);
       }
 
       const res = await fetch("/api/workouts", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text: workoutText || undefined, imageUrl, date: localDateKey(), lang }),
+        body: JSON.stringify({ text: submittedText || undefined, imageUrl, date: localDateKey(), lang }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (data.flagged) {
+        setError(data.message);
+        return;
+      }
 
-      setWorkoutText("");
-      setWorkoutFile(null);
       await load(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+      setWorkoutText(submittedText);
+      setWorkoutFile(submittedFile);
     } finally {
       setWorkoutBusy(false);
     }

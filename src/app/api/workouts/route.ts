@@ -15,9 +15,10 @@
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getUidFromRequest } from "@/lib/auth";
+import { getAuthFromRequest } from "@/lib/auth";
 import { parseWorkout } from "@/lib/workout/parser";
 import { adminDb } from "@/lib/firebase/admin";
+import { guardFreeText } from "@/lib/security/guardInput";
 import type { ParsedWorkout, Workout } from "@/lib/types";
 
 const parsedWorkoutSchema = z.object({
@@ -46,10 +47,11 @@ const bodySchema = z
   });
 
 export async function POST(req: Request) {
-  const uid = await getUidFromRequest(req);
-  if (!uid) {
+  const auth = await getAuthFromRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const { uid, email } = auth;
 
   const parsedBody = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsedBody.success) {
@@ -60,6 +62,13 @@ export async function POST(req: Request) {
   }
 
   const { text, imageUrl, date, lang } = parsedBody.data;
+
+  if (text?.trim()) {
+    const guard = await guardFreeText({ uid, email, lang: lang ?? "en", text: text.trim(), context: "workout" });
+    if (guard.flagged) {
+      return NextResponse.json({ flagged: true, message: guard.message }, { status: 200 });
+    }
+  }
 
   let parsed: ParsedWorkout;
   try {

@@ -68,7 +68,7 @@ const DIET_OPTIONS: Array<{ value: DietaryPref; labelKey: StringKey }> = [
 
 export default function Onboarding() {
   const { user, loading: authLoading, signIn } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const router = useRouter();
 
   const [step, setStep] = useState(1);
@@ -85,8 +85,10 @@ export default function Onboarding() {
 
   const [otherWorkoutText, setOtherWorkoutText] = useState("");
   const [matchingWorkout, setMatchingWorkout] = useState(false);
+  const [otherWorkoutMessage, setOtherWorkoutMessage] = useState<string | null>(null);
   const [otherDietText, setOtherDietText] = useState("");
   const [matchingDiet, setMatchingDiet] = useState(false);
+  const [otherDietMessage, setOtherDietMessage] = useState<string | null>(null);
 
   function toggleGoal(value: Goal) {
     setGoals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
@@ -111,8 +113,14 @@ export default function Onboarding() {
     options: Array<{ value: V; labelKey: StringKey }>,
     apply: (matched: V[]) => void,
     setBusy: (b: boolean) => void,
+    clearText: () => void,
+    setMessage: (m: string | null) => void,
   ) {
     if (!text.trim()) return;
+    // Clear immediately, same as the chat panel and Today's add-meal box —
+    // the box shouldn't keep showing the text while it's being checked.
+    clearText();
+    setMessage(null);
     setBusy(true);
     try {
       const idToken = await auth.currentUser?.getIdToken();
@@ -121,10 +129,14 @@ export default function Onboarding() {
       const res = await fetch("/api/onboarding/classify", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text, categories }),
+        body: JSON.stringify({ text, categories, lang }),
       });
       if (!res.ok) return;
-      const data: { matched: string[] } = await res.json();
+      const data: { matched: string[]; flagged?: boolean; message?: string } = await res.json();
+      if (data.flagged) {
+        setMessage(data.message ?? null);
+        return;
+      }
       apply(data.matched.filter((v): v is V => options.some((o) => o.value === v)));
     } finally {
       setBusy(false);
@@ -308,13 +320,21 @@ export default function Onboarding() {
               />
               <button
                 type="button"
-                onClick={() => matchOther(otherWorkoutText, WORKOUT_OPTIONS, (matched) => {
-                  setWorkoutTypes((prev) => Array.from(new Set([...prev, ...matched])));
-                }, setMatchingWorkout)}
+                onClick={() =>
+                  matchOther(
+                    otherWorkoutText,
+                    WORKOUT_OPTIONS,
+                    (matched) => setWorkoutTypes((prev) => Array.from(new Set([...prev, ...matched]))),
+                    setMatchingWorkout,
+                    () => setOtherWorkoutText(""),
+                    setOtherWorkoutMessage,
+                  )
+                }
                 disabled={matchingWorkout || !otherWorkoutText.trim()}
               >
                 {matchingWorkout ? t("working") : t("matchCategory")}
               </button>
+              {otherWorkoutMessage && <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{otherWorkoutMessage}</p>}
             </div>
           )}
         </section>
@@ -340,13 +360,21 @@ export default function Onboarding() {
               />
               <button
                 type="button"
-                onClick={() => matchOther(otherDietText, DIET_OPTIONS, (matched) => {
-                  setDietaryPrefs((prev) => Array.from(new Set([...prev, ...matched])));
-                }, setMatchingDiet)}
+                onClick={() =>
+                  matchOther(
+                    otherDietText,
+                    DIET_OPTIONS,
+                    (matched) => setDietaryPrefs((prev) => Array.from(new Set([...prev, ...matched]))),
+                    setMatchingDiet,
+                    () => setOtherDietText(""),
+                    setOtherDietMessage,
+                  )
+                }
                 disabled={matchingDiet || !otherDietText.trim()}
               >
                 {matchingDiet ? t("working") : t("matchCategory")}
               </button>
+              {otherDietMessage && <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{otherDietMessage}</p>}
             </div>
           )}
         </section>

@@ -233,21 +233,23 @@ function MetricBarChart({
             fontSize: 12,
           }}
         >
+          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> ·{" "}
           <bdi dir="ltr">
-            {dayLabel(days[hoverIdx].date)} · {Math.round(days[hoverIdx][valueKey])}
+            {Math.round(days[hoverIdx][valueKey])}
             {unit}
           </bdi>
           <div style={{ color: "var(--muted)", marginTop: 2 }}>
+            <bdi dir="ltr">{Math.round(days[hoverIdx].calories)}</bdi> {t("calories")} ·{" "}
             <bdi dir="ltr">
-              {Math.round(days[hoverIdx].calories)} {t("calories")} · {Math.round(days[hoverIdx].protein)}
-              {t("unitG")} {t("protein")}
-            </bdi>
+              {Math.round(days[hoverIdx].protein)}
+              {t("unitG")}
+            </bdi>{" "}
+            {t("protein")}
           </div>
           {perDayGoal && (
-            <div style={{ color: identityColorVar, marginTop: 2 }}>
-              <bdi dir="ltr">
-                {t("goal")}: {Math.round(goalFor(days[hoverIdx]))} kcal
-              </bdi>
+            <div style={{ color: "var(--net)", marginTop: 2 }}>
+              {t("net")}:{" "}
+              <bdi dir="ltr">{Math.round(days[hoverIdx].netCalories)} kcal</bdi>
             </div>
           )}
         </div>
@@ -545,16 +547,15 @@ export default function History() {
             </button>
           </div>
           <p style={{ color: "var(--muted)" }}>
+            <bdi dir="ltr">{Math.round(selected.calories)}</bdi> {t("calories")} ·{" "}
             <bdi dir="ltr">
-              {Math.round(selected.calories)} {t("calories")} · {Math.round(selected.protein)}
-              {t("unitG")} {t("protein")}
-            </bdi>
+              {Math.round(selected.protein)}
+              {t("unitG")}
+            </bdi>{" "}
+            {t("protein")}
           </p>
           <p style={{ color: "var(--net)", margin: "4px 0 0" }}>
-            <bdi dir="ltr">
-              {t("net")}: {Math.round(selected.netCalories)} kcal
-            </bdi>{" "}
-            ·{" "}
+            {t("net")}: <bdi dir="ltr">{Math.round(selected.netCalories)} kcal</bdi> ·{" "}
             {selected.netCalories <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
             <bdi dir="ltr">{Math.abs(Math.round(selected.netCalories - goals.calorieGoal))}</bdi>
           </p>

@@ -22,10 +22,7 @@ import { computeNetCalories } from "@/lib/goals/netCalories";
 export default function Profile() {
   const { user, loading: authLoading, signIn, signOutUser } = useAuth();
   const { t, forwardArrow } = useI18n();
-  const [token, setToken] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   // Kept as raw strings, not numbers — a controlled type="number" input
   // backed by numeric state doesn't reliably strip a leading "0" as you type
@@ -106,55 +103,6 @@ export default function Profile() {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setRetroBusy(false);
-    }
-  }
-
-  async function copyToken() {
-    if (!token) return;
-    await navigator.clipboard.writeText(token);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function generate() {
-    setError(null);
-    setBusy(true);
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Not signed in");
-      const idToken = await currentUser.getIdToken();
-      const res = await fetch("/api/settings/health-token", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-      const data: { token: string } = await res.json();
-      setToken(data.token);
-      setCopied(false);
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function revoke() {
-    setError(null);
-    setBusy(true);
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Not signed in");
-      const idToken = await currentUser.getIdToken();
-      const res = await fetch("/api/settings/health-token", {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-      setToken(null);
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -266,41 +214,7 @@ export default function Profile() {
         )}
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2 style={{ marginTop: 0 }}>{t("appleHealthSyncTitle")}</h2>
-        <p style={{ color: "var(--muted)" }}>{t("appleHealthSyncDesc")}</p>
-
-        <button onClick={generate} disabled={busy}>
-          {busy ? t("working") : t("generateNewToken")}
-        </button>
-        {token && (
-          <button onClick={revoke} disabled={busy} style={{ marginInlineStart: 8, background: "none", color: "var(--muted)" }}>
-            {t("revoke")}
-          </button>
-        )}
-
-        {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
-
-        {token && (
-          <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <div
-              style={{
-                flex: 1,
-                padding: 12,
-                borderRadius: 8,
-                background: "var(--bg-muted)",
-                border: "0.5px solid var(--border)",
-                wordBreak: "break-all",
-                fontFamily: "monospace",
-              }}
-            >
-              {token}
-            </div>
-            <button onClick={copyToken}>{copied ? t("copied") : t("copy")}</button>
-          </div>
-        )}
-        {token && <p style={{ color: "var(--muted)", fontSize: 13 }}>{t("copyNote")}</p>}
-      </div>
+      {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
 
       {isAdmin(user.uid) && (
         <div className="card" style={{ marginTop: 16 }}>

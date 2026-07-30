@@ -58,17 +58,7 @@ export const strings = {
   signInWithGoogle: { en: "Sign in with Google", he: "התחברות עם Google" },
   signOut: { en: "Sign out", he: "התנתקות" },
 
-  appleHealthSyncTitle: { en: "Apple Health sync", he: "סנכרון Apple Health" },
-  appleHealthSyncDesc: {
-    en: "Generate a personal token to paste into your Health Auto Export automation. Generating a new one immediately revokes the previous one.",
-    he: "צור טוקן אישי להדבקה באוטומציה של Health Auto Export. יצירת טוקן חדש מבטלת מיידית את הקודם.",
-  },
-  generateNewToken: { en: "Generate new token", he: "צור טוקן חדש" },
   working: { en: "Working…", he: "מעבד…" },
-  revoke: { en: "Revoke", he: "בטל" },
-  copy: { en: "Copy", he: "העתק" },
-  copied: { en: "Copied!", he: "הועתק!" },
-  copyNote: { en: "Copy this now — it won't be shown again.", he: "העתק כעת — הטוקן לא יוצג שוב." },
   adminSettings: { en: "Admin settings", he: "הגדרות מנהל" },
   comingLater: {
     en: "Dietary profile, alerts, memory, and goals sections are coming in a later update.",

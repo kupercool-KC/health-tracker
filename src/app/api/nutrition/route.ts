@@ -30,9 +30,10 @@
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getUidFromRequest } from "@/lib/auth";
+import { getAuthFromRequest, getUidFromRequest } from "@/lib/auth";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { adminDb } from "@/lib/firebase/admin";
+import { guardFreeText } from "@/lib/security/guardInput";
 import type { MealDay, MealEntry, ParsedNutrition } from "@/lib/types";
 
 const itemSchema = z.object({
@@ -74,10 +75,11 @@ function recomputeTotals(entries: MealEntry[]): MealDay["totals"] {
 }
 
 export async function POST(req: Request) {
-  const uid = await getUidFromRequest(req);
-  if (!uid) {
+  const auth = await getAuthFromRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const { uid, email } = auth;
 
   const parsedBody = postBodySchema.safeParse(await req.json().catch(() => null));
   if (!parsedBody.success) {
@@ -88,6 +90,16 @@ export async function POST(req: Request) {
   }
 
   const { text, imageUrl, loggedAt, date, lang } = parsedBody.data;
+
+  // Only the free-typed description needs the guard — an uploaded photo or
+  // an already-parsed payload (chat confirm flow) has no arbitrary text for
+  // a jailbreak attempt to hide in.
+  if (text?.trim()) {
+    const guard = await guardFreeText({ uid, email, lang: lang ?? "en", text: text.trim(), context: "meal" });
+    if (guard.flagged) {
+      return NextResponse.json({ flagged: true, message: guard.message }, { status: 200 });
+    }
+  }
 
   let parsed: ParsedNutrition;
   try {
