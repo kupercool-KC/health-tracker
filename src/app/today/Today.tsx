@@ -410,8 +410,10 @@ export default function Today() {
                 <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
                   <th style={{ padding: "12px 10px" }}>{t("time")}</th>
                   <th style={{ padding: "12px 10px" }}>{t("meal")}</th>
-                  <th style={{ padding: "12px 10px" }}>{t("calories")}</th>
-                  <th style={{ padding: "12px 10px" }}>{t("protein")}</th>
+                  <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("calories")}</th>
+                  <th style={{ padding: "12px 10px", textAlign: "center" }}>
+                    {t("protein")} (<bdi dir="ltr">{t("unitGramHeader")}</bdi>)
+                  </th>
                   <th style={{ padding: "12px 10px" }} />
                 </tr>
               </thead>
@@ -430,7 +432,7 @@ export default function Today() {
                       <td style={{ padding: "12px 10px" }}>{entry.name}</td>
                       {editingId === entry.id ? (
                         <>
-                          <td style={{ padding: "12px 10px" }}>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
                             <input
                               type="number"
                               value={editCalories}
@@ -439,7 +441,7 @@ export default function Today() {
                               style={{ width: 64, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
                             />
                           </td>
-                          <td style={{ padding: "12px 10px" }}>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
                             <input
                               type="number"
                               value={editProtein}
@@ -451,12 +453,11 @@ export default function Today() {
                         </>
                       ) : (
                         <>
-                          <td style={{ padding: "12px 10px" }}>{Math.round(entry.calories)}</td>
-                          <td style={{ padding: "12px 10px" }}>
-                            <bdi dir="ltr">
-                              {Math.round(entry.protein)}
-                              {t("unitG")}
-                            </bdi>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            <bdi dir="ltr">{Math.round(entry.calories)}</bdi>
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            <bdi dir="ltr">{Math.round(entry.protein)}</bdi>
                           </td>
                         </>
                       )}
@@ -534,12 +535,11 @@ export default function Today() {
                   <td style={{ padding: "12px 10px" }} colSpan={2}>
                     {t("total")}
                   </td>
-                  <td style={{ padding: "12px 10px" }}>{Math.round(totals.calories)}</td>
-                  <td style={{ padding: "12px 10px" }}>
-                    <bdi dir="ltr">
-                      {Math.round(totals.protein)}
-                      {t("unitG")}
-                    </bdi>
+                  <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                    <bdi dir="ltr">{Math.round(totals.calories)}</bdi>
+                  </td>
+                  <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                    <bdi dir="ltr">{Math.round(totals.protein)}</bdi>
                   </td>
                   <td style={{ padding: "12px 10px" }} />
                 </tr>

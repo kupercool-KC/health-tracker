@@ -35,6 +35,8 @@ export const strings = {
   total: { en: "Total", he: "סה\"כ" },
   carbs: { en: "carbs", he: "פחמימות" },
   unitG: { en: "g", he: "גר" },
+  /** Spelled-out unit for a column header, where the parenthetical carries the unit for every row instead of repeating it per cell. */
+  unitGramHeader: { en: "g", he: "גרם" },
   fat: { en: "fat", he: "שומן" },
   fiber: { en: "fiber", he: "סיבים" },
   confidence: { en: "confidence", he: "רמת ביטחון" },
