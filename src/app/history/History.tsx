@@ -102,7 +102,10 @@ function MetricBarChart({
   onSelectDay: (date: string) => void;
   perDayGoal?: (d: DayInfo) => number;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  // Hebrew graphs read as cluttered with "גר" glued to every protein number
+  // (e.g. "214גר") — dropped there specifically; English keeps "g".
+  const gramsUnit = lang === "he" ? "" : t("unitG");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 140;
   const goalFor = (d: DayInfo) => perDayGoal?.(d) ?? goal;
@@ -242,7 +245,7 @@ function MetricBarChart({
             <bdi dir="ltr">{Math.round(days[hoverIdx].calories)}</bdi> {t("calories")} ·{" "}
             <bdi dir="ltr">
               {Math.round(days[hoverIdx].protein)}
-              {t("unitG")}
+              {gramsUnit}
             </bdi>{" "}
             {t("protein")}
           </div>
@@ -260,7 +263,10 @@ function MetricBarChart({
 
 export default function History() {
   const { user, loading: authLoading, signIn } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  // Hebrew graphs read as cluttered with "גר" glued to every protein number
+  // (e.g. "214גר") — dropped there specifically; English keeps "g".
+  const gramsUnit = lang === "he" ? "" : t("unitG");
 
   const [days, setDays] = useState<DayInfo[]>([]);
   const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor">>({
@@ -492,10 +498,10 @@ export default function History() {
             badLabel={t("proteinGoalMissed")}
             goalLabel={
               <>
-                {t("goal")}: <bdi dir="ltr">{goals.proteinGoal}{t("unitG")}</bdi>
+                {t("goal")}: <bdi dir="ltr">{goals.proteinGoal}{gramsUnit}</bdi>
               </>
             }
-            unit={t("unitG")}
+            unit={gramsUnit}
             yStep={50}
             onSelectDay={setSelectedDate}
           />
@@ -550,7 +556,7 @@ export default function History() {
             <bdi dir="ltr">{Math.round(selected.calories)}</bdi> {t("calories")} ·{" "}
             <bdi dir="ltr">
               {Math.round(selected.protein)}
-              {t("unitG")}
+              {gramsUnit}
             </bdi>{" "}
             {t("protein")}
           </p>

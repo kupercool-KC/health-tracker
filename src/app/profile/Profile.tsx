@@ -165,6 +165,45 @@ export default function Profile() {
           />
           <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("netCalorieFactorExample")}</span>
         </label>
+
+        <div style={{ display: "grid", gap: 8, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>{t("netCalorieFactorTitle")}</h3>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("retroDaysLabel")}</span>
+            <input
+              type="number"
+              min={1}
+              max={366}
+              value={retroDays}
+              onChange={(e) => setRetroDays(e.target.value)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", width: 80 }}
+            />
+            <button onClick={runRetro} disabled={retroBusy}>
+              {retroBusy ? t("working") : t("runRetro")}
+            </button>
+          </label>
+          {retroResults && (
+            retroResults.length === 0 ? (
+              <p style={{ color: "var(--muted)" }}>{t("retroNoData")}</p>
+            ) : (
+              <div style={{ display: "grid", gap: 4 }}>
+                {retroResults.map((r) => (
+                  <div
+                    key={r.date}
+                    style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: "0.5px solid var(--border)", padding: "6px 0" }}
+                  >
+                    <bdi dir="ltr">{r.date}</bdi>
+                    <bdi dir="ltr" style={{ color: "var(--muted)" }}>
+                      {Math.round(r.calories)} − ({Math.round(r.burned)} × {netFactor}%) ={" "}
+                      <strong style={{ color: "var(--net)" }}>{Math.round(r.netCalories)} kcal</strong>
+                    </bdi>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={saveGoals} disabled={goalsBusy}>
             {goalsBusy ? t("working") : t("saveGoals")}
@@ -174,44 +213,6 @@ export default function Profile() {
           </Link>
         </div>
         {goalsSaved && <p style={{ color: "var(--burned)" }}>{t("saved")}</p>}
-      </div>
-
-      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
-        <h2 style={{ margin: 0 }}>{t("netCalorieFactorTitle")}</h2>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("retroDaysLabel")}</span>
-          <input
-            type="number"
-            min={1}
-            max={366}
-            value={retroDays}
-            onChange={(e) => setRetroDays(e.target.value)}
-            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", width: 80 }}
-          />
-          <button onClick={runRetro} disabled={retroBusy}>
-            {retroBusy ? t("working") : t("runRetro")}
-          </button>
-        </label>
-        {retroResults && (
-          retroResults.length === 0 ? (
-            <p style={{ color: "var(--muted)" }}>{t("retroNoData")}</p>
-          ) : (
-            <div style={{ display: "grid", gap: 4 }}>
-              {retroResults.map((r) => (
-                <div
-                  key={r.date}
-                  style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: "0.5px solid var(--border)", padding: "6px 0" }}
-                >
-                  <bdi dir="ltr">{r.date}</bdi>
-                  <bdi dir="ltr" style={{ color: "var(--muted)" }}>
-                    {Math.round(r.calories)} − ({Math.round(r.burned)} × {netFactor}%) ={" "}
-                    <strong style={{ color: "var(--net)" }}>{Math.round(r.netCalories)} kcal</strong>
-                  </bdi>
-                </div>
-              ))}
-            </div>
-          )
-        )}
       </div>
 
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
