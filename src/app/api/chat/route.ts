@@ -12,7 +12,7 @@
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getUidFromRequest } from "@/lib/auth";
+import { getAuthFromRequest } from "@/lib/auth";
 import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { strings } from "@/lib/i18n/strings";
@@ -24,6 +24,8 @@ import {
   outOfScopeReply,
   resolveMealAction,
 } from "@/lib/chat/chat";
+import { checkPromptSafety, securityReply } from "@/lib/chat/security";
+import { sendSecurityAlert } from "@/lib/security/alertEmail";
 import type { ChatIntent, ChatMessage, ChatSession, UserProfile } from "@/lib/types";
 
 const bodySchema = z
@@ -50,10 +52,11 @@ export async function POST(req: Request) {
 }
 
 async function handleChat(req: Request) {
-  const uid = await getUidFromRequest(req);
-  if (!uid) {
+  const auth = await getAuthFromRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const { uid, email } = auth;
 
   const parsedBody = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsedBody.success) {
@@ -72,16 +75,22 @@ async function handleChat(req: Request) {
   const userContent = message?.trim() || (lang === "he" ? "[תמונה]" : "[photo]");
   messages.push({ role: "user", content: userContent, createdAt: now });
 
+  // Prompt-injection / jailbreak guard — only meaningful for actual typed
+  // text, not an image upload (which produces the "[photo]" placeholder).
+  const safety = message?.trim() ? await checkPromptSafety(message.trim()) : { flagged: false };
+
   // An image essentially always means "log this food" — skip the classifier
   // call entirely rather than trust it to guess right from a placeholder string.
-  const intent: ChatIntent = imageUrl ? "log_meal" : await classifyIntent(userContent);
+  const intent: ChatIntent = safety.flagged ? "out_of_scope" : imageUrl ? "log_meal" : await classifyIntent(userContent);
   const today = date ?? now.slice(0, 10);
 
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
   let pendingMealAction: ChatMessage["pendingMealAction"];
 
-  if (intent === "log_meal") {
+  if (safety.flagged) {
+    replyContent = securityReply(lang);
+  } else if (intent === "log_meal") {
     const parsed = await parseNutrition({ text: message, imageUrl, lang });
     pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}) };
 
@@ -115,6 +124,18 @@ async function handleChat(req: Request) {
     pendingMealAction = result.pendingMealAction;
   } else {
     replyContent = outOfScopeReply(lang);
+  }
+
+  if (safety.flagged) {
+    await sendSecurityAlert({
+      uid,
+      email,
+      sessionId: sessionId ?? sessionRef.id,
+      question: userContent,
+      answer: replyContent,
+      reason: safety.reason,
+      createdAt: now,
+    });
   }
 
   const assistantMsg: ChatMessage = {

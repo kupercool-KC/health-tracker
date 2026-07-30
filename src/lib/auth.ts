@@ -19,3 +19,16 @@ export async function getUidFromRequest(req: Request): Promise<string | null> {
     return null;
   }
 }
+
+/** Same as getUidFromRequest, but also returns the token's email — used where an alert/audit trail needs a human-readable identity. */
+export async function getAuthFromRequest(req: Request): Promise<{ uid: string; email?: string } | null> {
+  const header = req.headers.get("authorization");
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return null;
+  try {
+    const decoded = await adminAuth.verifyIdToken(token);
+    return { uid: decoded.uid, email: decoded.email };
+  } catch {
+    return null;
+  }
+}
