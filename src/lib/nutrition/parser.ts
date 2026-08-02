@@ -34,6 +34,15 @@ export interface ParseInput {
   lang?: "en" | "he";
 }
 
+/**
+ * Appended at call time rather than baked into the (admin-editable, stored)
+ * systemPrompt — a user-stated number should always win over the model's own
+ * estimate for that same field, but this constraint shouldn't depend on the
+ * admin having remembered to word the stored prompt that way.
+ */
+const EXPLICIT_VALUE_INSTRUCTION =
+  "\n\nIf the user's text explicitly states a calorie or protein value for an item (e.g. \"140 calorie protein shake\", \"an apple, 95 kcal\"), you MUST use that exact number for that field — do not substitute your own estimate. Only estimate fields the user did not explicitly state.";
+
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
   if (!input.text && !input.imageUrl) {
     throw new Error("parseNutrition requires text or imageUrl");
@@ -65,7 +74,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     temperature: config.temperature,
     seed: config.seed,
     messages: [
-      { role: "system", content: config.systemPrompt + languageInstruction },
+      { role: "system", content: config.systemPrompt + languageInstruction + EXPLICIT_VALUE_INSTRUCTION },
       { role: "user", content },
     ],
   });

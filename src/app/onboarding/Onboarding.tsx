@@ -26,7 +26,7 @@ import type {
   WorkoutType,
 } from "@/lib/types";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 const AGE_OPTIONS = Array.from({ length: 91 }, (_, i) => i + 10); // 10-100
 const HEIGHT_OPTIONS = Array.from({ length: 121 }, (_, i) => i + 100); // 100-220 cm
@@ -50,9 +50,11 @@ const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; labelKey: StringKey }> = [
 const WORKOUT_OPTIONS: Array<{ value: WorkoutType; labelKey: StringKey }> = [
   { value: "strength", labelKey: "workoutStrength" },
   { value: "running", labelKey: "workoutRunning" },
+  { value: "walking", labelKey: "workoutWalking" },
   { value: "cycling", labelKey: "workoutCycling" },
   { value: "swimming", labelKey: "workoutSwimming" },
   { value: "yoga", labelKey: "workoutYoga" },
+  { value: "padel", labelKey: "workoutPadel" },
   { value: "hiit", labelKey: "workoutHiit" },
   { value: "other", labelKey: "workoutOther" },
 ];
@@ -82,6 +84,8 @@ export default function Onboarding() {
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>("moderate");
   const [workoutTypes, setWorkoutTypes] = useState<WorkoutType[]>([]);
   const [dietaryPrefs, setDietaryPrefs] = useState<DietaryPref[]>(["everything"]);
+  const [averageDailySteps, setAverageDailySteps] = useState(6000);
+  const [stepGoal, setStepGoal] = useState(8000);
 
   const [otherWorkoutText, setOtherWorkoutText] = useState("");
   const [matchingWorkout, setMatchingWorkout] = useState(false);
@@ -166,6 +170,8 @@ export default function Onboarding() {
         proteinGoal: calculated.proteinGoal,
         carbGoal: calculated.carbGoal,
         fatGoal: calculated.fatGoal,
+        averageDailySteps,
+        stepGoal,
         onboarded: true,
         updatedAt: now,
       };
@@ -382,6 +388,32 @@ export default function Onboarding() {
       )}
 
       {step === 6 && (
+        <section style={{ display: "grid", gap: 12 }}>
+          <h1>{t("onboardingStepsTitle")}</h1>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("averageDailyStepsLabel")}</span>
+            <input
+              type="number"
+              min={0}
+              value={averageDailySteps}
+              onChange={(e) => setAverageDailySteps(Number(e.target.value) || 0)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("stepsGoalOnboardingLabel")}</span>
+            <input
+              type="number"
+              min={0}
+              value={stepGoal}
+              onChange={(e) => setStepGoal(Number(e.target.value) || 0)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+        </section>
+      )}
+
+      {step === 7 && (
         <section style={{ display: "grid", gap: 12 }}>
           <h1>{t("onboardingFinalTitle")}</h1>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
   getMealDaysSince,
+  getStepsSince,
   getWorkoutsSince,
   localDateKey,
   localDateKeyDaysAgo,
@@ -28,6 +29,10 @@ interface DayInfo {
   burned: number;
   /** calories − (burned × the profile's net-calorie-burn factor) — see src/lib/goals/netCalories.ts. */
   netCalories: number;
+  steps: number;
+  workoutCount: number;
+  /** meters */
+  distance: number;
   hasData: boolean;
   entries: MealDay["entries"];
   workouts: Workout[];
@@ -47,6 +52,17 @@ function dayLabel(date: string): string {
 /** dd-mm-yyyy — matches the app's day/month-first convention, unlike the underlying yyyy-mm-dd storage key. */
 function fullDateLabel(date: string): string {
   return `${date.slice(8, 10)}-${date.slice(5, 7)}-${date.slice(0, 4)}`;
+}
+
+/** Localized short weekday name (e.g. "Mon" / "ב׳") — Intl handles both locales without a lookup table. */
+function weekdayLabel(date: string, lang: "en" | "he"): string {
+  return new Intl.DateTimeFormat(lang, { weekday: "short" }).format(new Date(`${date}T00:00:00`));
+}
+
+function formatPaceSecPerKm(secPerKm: number): string {
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2, "0")}/km`;
 }
 
 /**
@@ -84,7 +100,7 @@ function MetricBarChart({
   perDayGoal,
 }: {
   days: DayInfo[];
-  valueKey: "calories" | "protein" | "overallScore";
+  valueKey: "calories" | "protein" | "overallScore" | "steps";
   goal: number;
   label: string;
   /** Used only for the goal line + legend square — identifies which chart this is, not day-by-day status. */
@@ -236,7 +252,7 @@ function MetricBarChart({
             fontSize: 12,
           }}
         >
-          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> ·{" "}
+          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> {weekdayLabel(days[hoverIdx].date, lang)} ·{" "}
           <bdi dir="ltr">
             {Math.round(days[hoverIdx][valueKey])}
             {unit}
@@ -261,6 +277,124 @@ function MetricBarChart({
   );
 }
 
+/**
+ * Single-color bar chart for metrics with no pass/fail goal (workout count,
+ * distance, calories burned) — MetricBarChart's whole point is the
+ * good/bad goal coloring, which doesn't apply here, so this is a plainer
+ * sibling rather than forcing a fake goal onto it.
+ */
+function SimpleBarChart({
+  days,
+  valueOf,
+  label,
+  identityColorVar,
+  unit,
+  yStep,
+}: {
+  days: DayInfo[];
+  valueOf: (d: DayInfo) => number;
+  label: string;
+  identityColorVar: string;
+  unit: string;
+  yStep: number;
+}) {
+  const { lang } = useI18n();
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const height = 100;
+  const rawMax = Math.max(...days.map(valueOf), 1) * 1.15;
+  const max = Math.max(Math.ceil(rawMax / yStep) * yStep, yStep);
+  const barWidth = 100 / Math.max(days.length, 1);
+  const gradId = `grad-simple-${label.replace(/\s+/g, "-")}`;
+  const tickCount = max / yStep;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => ({
+    y: height - (i / tickCount) * height,
+    value: i * yStep,
+  }));
+
+  return (
+    <div className="card" style={{ marginTop: 16, position: "relative" }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+        <span style={{ color: identityColorVar }}>■</span> {label}
+      </div>
+      <div style={{ display: "flex" }}>
+        <div style={{ position: "relative", width: 34, height, flexShrink: 0 }}>
+          {yTicks.map((tick) => (
+            <bdi
+              dir="ltr"
+              key={tick.y}
+              style={{
+                position: "absolute",
+                top: tick.y,
+                insetInlineEnd: 4,
+                transform: "translateY(-50%)",
+                fontSize: 10,
+                color: "var(--muted)",
+              }}
+            >
+              {tick.value}
+            </bdi>
+          ))}
+        </div>
+        <svg
+          viewBox={`0 0 100 ${height}`}
+          preserveAspectRatio="none"
+          style={{ width: "100%", height }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={`${identityColorVar}`} stopOpacity={0.55} />
+              <stop offset="100%" stopColor={identityColorVar} />
+            </linearGradient>
+          </defs>
+          {yTicks.map((tick) => (
+            <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
+          ))}
+          {days.map((d, i) => {
+            const val = valueOf(d);
+            const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
+            const x = i * barWidth;
+            return (
+              <rect
+                key={d.date}
+                x={x + barWidth * 0.15}
+                y={height - barHeight}
+                width={barWidth * 0.7}
+                height={barHeight}
+                fill={`url(#${gradId})`}
+                opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
+                onMouseEnter={() => setHoverIdx(i)}
+                onClick={() => setHoverIdx(i)}
+                style={{ cursor: "pointer" }}
+              />
+            );
+          })}
+        </svg>
+      </div>
+      {hoverIdx != null && days[hoverIdx] && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            insetInlineEnd: 8,
+            background: "var(--bg-muted)",
+            border: "0.5px solid var(--border)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            fontSize: 12,
+          }}
+        >
+          <bdi dir="ltr">{dayLabel(days[hoverIdx].date)}</bdi> {weekdayLabel(days[hoverIdx].date, lang)} ·{" "}
+          <bdi dir="ltr">
+            {Math.round(valueOf(days[hoverIdx]) * 10) / 10}
+            {unit}
+          </bdi>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function History() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
@@ -269,10 +403,13 @@ export default function History() {
   const gramsUnit = lang === "he" ? "" : t("unitG");
 
   const [days, setDays] = useState<DayInfo[]>([]);
-  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor">>({
+  const [goals, setGoals] = useState<
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal">
+  >({
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
+    stepGoal: 8000,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -293,14 +430,16 @@ export default function History() {
       setLoading(true);
       setError(null);
       try {
-        const [mealDays, workouts, g] = await Promise.all([
+        const [mealDays, workouts, stepsDays, g] = await Promise.all([
           getMealDaysSince(user.uid, range.from, range.to),
           getWorkoutsSince(user.uid, range.from, range.to),
+          getStepsSince(user.uid, range.from, range.to),
           getUserGoals(user.uid),
         ]);
         setGoals(g);
 
         const mealByDate = new Map(mealDays.map((m) => [m.date, m]));
+        const stepsByDate = new Map(stepsDays.map((s) => [s.date, s.steps]));
         const workoutsByDate = new Map<string, Workout[]>();
         for (const w of workouts) {
           workoutsByDate.set(w.date, [...(workoutsByDate.get(w.date) ?? []), w]);
@@ -321,16 +460,21 @@ export default function History() {
           const meal = mealByDate.get(date);
           const dayWorkouts = workoutsByDate.get(date) ?? [];
           const burned = dayWorkouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
+          const distance = dayWorkouts.reduce((sum, w) => sum + (w.distance ?? 0), 0);
           const calories = meal?.totals.calories ?? 0;
           const protein = meal?.totals.protein ?? 0;
+          const steps = stepsByDate.get(date) ?? 0;
           const netCalories = computeNetCalories(calories, burned, g.netCalorieBurnFactor ?? 50);
-          const hasData = (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0;
+          const hasData = (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0 || steps > 0;
           built.push({
             date,
             calories,
             protein,
             burned,
             netCalories,
+            steps,
+            workoutCount: dayWorkouts.length,
+            distance,
             hasData,
             entries: meal?.entries ?? [],
             workouts: dayWorkouts,
@@ -411,6 +555,7 @@ export default function History() {
                   <bdi dir="ltr" style={{ fontSize: 11, color: "var(--muted)" }}>
                     {dayNum}
                   </bdi>
+                  <span style={{ fontSize: 10, color: "var(--muted)" }}>{weekdayLabel(d.date, lang)}</span>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor(d) }} />
                 </button>
               );
@@ -526,6 +671,50 @@ export default function History() {
             yStep={50}
             onSelectDay={setSelectedDate}
           />
+          <MetricBarChart
+            days={days}
+            valueKey="steps"
+            goal={goals.stepGoal ?? 8000}
+            label={t("stepsVsGoal")}
+            identityColorVar="var(--burned)"
+            badColorVar="var(--danger)"
+            badColorLightVar="var(--danger-light)"
+            goalDirection="atLeast"
+            goodLabel={t("stepsGoalMet")}
+            badLabel={t("stepsGoalMissed")}
+            goalLabel={
+              <>
+                {t("goal")}: <bdi dir="ltr">{goals.stepGoal ?? 8000}</bdi>
+              </>
+            }
+            unit=""
+            yStep={2000}
+            onSelectDay={setSelectedDate}
+          />
+          <SimpleBarChart
+            days={days}
+            valueOf={(d) => d.workoutCount}
+            label={t("workoutsPerDayTitle")}
+            identityColorVar="var(--protein)"
+            unit=""
+            yStep={1}
+          />
+          <SimpleBarChart
+            days={days}
+            valueOf={(d) => d.distance / 1000}
+            label={t("distancePerDayTitle")}
+            identityColorVar="var(--calories)"
+            unit=" km"
+            yStep={5}
+          />
+          <SimpleBarChart
+            days={days}
+            valueOf={(d) => d.burned}
+            label={t("caloriesBurnedPerDayTitle")}
+            identityColorVar="var(--burned)"
+            unit=" kcal"
+            yStep={200}
+          />
         </>
       )}
 
@@ -547,7 +736,7 @@ export default function History() {
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <h2 style={{ margin: 0 }}>
-              <bdi dir="ltr">{fullDateLabel(selected.date)}</bdi>
+              <bdi dir="ltr">{fullDateLabel(selected.date)}</bdi> {weekdayLabel(selected.date, lang)}
             </h2>
             <button onClick={() => setSelectedDate(null)} style={{ border: "none", background: "none" }}>
               ✕
@@ -566,6 +755,11 @@ export default function History() {
             {selected.netCalories <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
             <bdi dir="ltr">{Math.abs(Math.round(selected.netCalories - goals.calorieGoal))}</bdi>
           </p>
+          {selected.steps > 0 && (
+            <p style={{ color: "var(--burned)", margin: "4px 0 0" }}>
+              {t("steps")}: <bdi dir="ltr">{selected.steps}</bdi> / <bdi dir="ltr">{goals.stepGoal ?? 8000}</bdi>
+            </p>
+          )}
 
           <h3>{t("meals")}</h3>
           {selected.entries.length === 0 ? (
@@ -591,7 +785,11 @@ export default function History() {
                 <strong>{w.type}</strong> —{" "}
                 <bdi dir="ltr">
                   {Math.round(w.duration / 60)} min
+                  {w.distance != null && `, ${(w.distance / 1000).toFixed(1)} km`}
+                  {w.pace != null && `, ${formatPaceSecPerKm(w.pace)}`}
                   {w.calories != null && `, ${Math.round(w.calories)} kcal`}
+                  {w.heartRate?.avg != null && `, ${t("avgHr")} ${Math.round(w.heartRate.avg)}`}
+                  {w.elevationGain != null && `, +${Math.round(w.elevationGain)}m`}
                 </bdi>
               </div>
             ))

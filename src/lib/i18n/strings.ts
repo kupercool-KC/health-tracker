@@ -172,6 +172,41 @@ export const strings = {
   runRetro: { en: "Run retro", he: "הרץ רטרו" },
   retroDaysLabel: { en: "Days back", he: "מספר ימים אחורה" },
   retroNoData: { en: "No logged data in this range.", he: "לא נמצאו נתונים רשומים בטווח הזה." },
+
+  manualCaloriesPlaceholder: { en: "Calories (optional)", he: "קלוריות (אופציונלי)" },
+  manualProteinPlaceholder: { en: "Protein g (optional)", he: "חלבון בגרם (אופציונלי)" },
+
+  workoutWalking: { en: "Walking", he: "הליכה" },
+  workoutPadel: { en: "Padel", he: "פאדל" },
+
+  colType: { en: "Type", he: "סוג" },
+  colDuration: { en: "Duration", he: "משך" },
+  colDistance: { en: "Distance", he: "מרחק" },
+  colPace: { en: "Pace", he: "קצב" },
+  colElevation: { en: "Elevation", he: "עלייה" },
+  colSource: { en: "Source", he: "מקור" },
+
+  steps: { en: "Steps", he: "צעדים" },
+  stepsGoalLabel: { en: "Daily steps goal", he: "יעד צעדים יומי" },
+  stepsPlaceholder: {
+    en: "e.g. 8500, or upload a screenshot from your phone's health app",
+    he: "לדוגמה: 8500, או העלה צילום מסך מאפליקציית הבריאות",
+  },
+  logSteps: { en: "Log steps", he: "רשום צעדים" },
+  stepsVsGoal: { en: "Steps vs goal", he: "צעדים מול מטרה" },
+  stepsGoalMet: { en: "Goal met", he: "המטרה הושגה" },
+  stepsGoalMissed: { en: "Goal missed", he: "המטרה לא הושגה" },
+  noStepsToday: { en: "No steps logged today", he: "לא נרשמו צעדים היום" },
+  onboardingStepsTitle: { en: "Daily steps", he: "צעדים יומיים" },
+  averageDailyStepsLabel: {
+    en: "About how many steps do you walk per day now?",
+    he: "בערך כמה צעדים אתה הולך ביום כיום?",
+  },
+  stepsGoalOnboardingLabel: { en: "What's your daily steps goal?", he: "מה יעד הצעדים היומי שלך?" },
+
+  workoutsPerDayTitle: { en: "Workouts per day", he: "אימונים ליום" },
+  distancePerDayTitle: { en: "Distance per day (km)", he: "מרחק ליום (ק\"מ)" },
+  caloriesBurnedPerDayTitle: { en: "Calories burned per day", he: "קלוריות שנשרפו ליום" },
 } as const;
 
 export type StringKey = keyof typeof strings;

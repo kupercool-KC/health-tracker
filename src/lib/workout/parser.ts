@@ -39,7 +39,10 @@ extract the key metrics for that single workout session.
 
 Respond ONLY with JSON matching:
 { "type": string, "durationSec": number, "distanceMeters": number, "paceSecPerKm": number, "calories": number, "heartRateAvg": number, "heartRateMax": number, "elevationGainMeters": number, "confidence": number }
-- type: a short workout type/name (e.g. "Running", "Strength Training", "Cycling", "Yoga", "HIIT").
+- type: a short workout type/name. Prefer one of these recognized types when it clearly matches:
+  "Running", "Walking", "Swimming", "Cycling", "Yoga", "Padel", "Strength Training", "HIIT" — note
+  Walking and Running are DIFFERENT types, never conflate them. If none of these fit, use a short,
+  sensible name for whatever the input actually describes rather than forcing it into this list.
 - durationSec: total duration in seconds — required. Estimate from context if not stated exactly
   (e.g. "about an hour at the gym" → 3600).
 - distanceMeters, paceSecPerKm, calories, heartRateAvg, heartRateMax, elevationGainMeters: include

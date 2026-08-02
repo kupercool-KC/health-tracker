@@ -25,6 +25,8 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [manualCalories, setManualCalories] = useState("");
+  const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -51,10 +53,14 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     if (!user || (!text.trim() && !file) || busy) return;
     const messageText = text;
     const messageFile = file;
+    const messageCalories = manualCalories;
+    const messageProtein = manualProtein;
     // Clear the input immediately so it's ready for the next message —
     // the thinking indicator below covers the wait, not the input box.
     setText("");
     setFile(null);
+    setManualCalories("");
+    setManualProtein("");
     setBusy(true);
     setAwaitingReply(true);
     setError(null);
@@ -72,7 +78,15 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ sessionId: activeId ?? undefined, message: messageText, imageUrl, lang, date: localDateKey() }),
+        body: JSON.stringify({
+          sessionId: activeId ?? undefined,
+          message: messageText,
+          imageUrl,
+          lang,
+          date: localDateKey(),
+          overrideCalories: messageCalories ? Number(messageCalories) : undefined,
+          overrideProtein: messageProtein ? Number(messageProtein) : undefined,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const data: { sessionId: string } = await res.json();
@@ -82,6 +96,8 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       // Restore the input on failure so the user doesn't lose what they typed.
       setText(messageText);
       setFile(messageFile);
+      setManualCalories(messageCalories);
+      setManualProtein(messageProtein);
     } finally {
       setBusy(false);
       setAwaitingReply(false);
@@ -95,11 +111,54 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
-      const { imageUrl, ...parsed } = pendingMeal;
+      const { imageUrl, date, ...parsed } = pendingMeal;
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ parsed, imageUrl, date: localDateKey() }),
+        body: JSON.stringify({ parsed, imageUrl, date: date ?? localDateKey() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      setConfirmedIndices((prev) => new Set(prev).add(index));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmWorkout(pendingWorkout: NonNullable<ChatMessage["pendingWorkout"]>, index: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const { imageUrl, date, ...parsed } = pendingWorkout;
+      const res = await fetch("/api/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ parsed, imageUrl, date }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      setConfirmedIndices((prev) => new Set(prev).add(index));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmSteps(pendingSteps: NonNullable<ChatMessage["pendingSteps"]>, index: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/steps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ steps: pendingSteps.steps, date: pendingSteps.date }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       setConfirmedIndices((prev) => new Set(prev).add(index));
@@ -315,6 +374,24 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                   </button>
                 )
               )}
+              {m.pendingWorkout && (
+                confirmedIndices.has(i) ? (
+                  <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
+                ) : (
+                  <button onClick={() => confirmWorkout(m.pendingWorkout!, i)} disabled={busy} style={{ marginTop: 4 }}>
+                    {t("confirm")}
+                  </button>
+                )
+              )}
+              {m.pendingSteps && (
+                confirmedIndices.has(i) ? (
+                  <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
+                ) : (
+                  <button onClick={() => confirmSteps(m.pendingSteps!, i)} disabled={busy} style={{ marginTop: 4 }}>
+                    {t("confirm")}
+                  </button>
+                )
+              )}
             </div>
           ))}
           {awaitingReply && (
@@ -343,6 +420,27 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         `}</style>
 
         {error && <p style={{ color: "#ff6b6b", fontSize: 12 }}>{error}</p>}
+
+        {file && (
+          <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={manualCalories}
+              onChange={(e) => setManualCalories(e.target.value)}
+              placeholder={t("manualCaloriesPlaceholder")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", fontSize: 13 }}
+            />
+            <input
+              type="number"
+              inputMode="numeric"
+              value={manualProtein}
+              onChange={(e) => setManualProtein(e.target.value)}
+              placeholder={t("manualProteinPlaceholder")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", fontSize: 13 }}
+            />
+          </div>
+        )}
 
         <form onSubmit={send} style={{ display: "flex", gap: 4, marginTop: 8 }}>
           <input

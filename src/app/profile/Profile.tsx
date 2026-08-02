@@ -30,6 +30,7 @@ export default function Profile() {
   // the parsed number is correct). Parsing only happens on save.
   const [calorieGoal, setCalorieGoal] = useState("1950");
   const [proteinGoal, setProteinGoal] = useState("145");
+  const [stepGoal, setStepGoal] = useState("8000");
   const [netFactor, setNetFactor] = useState("50");
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
@@ -45,6 +46,7 @@ export default function Profile() {
     getUserGoals(user.uid).then((g) => {
       setCalorieGoal(String(g.calorieGoal));
       setProteinGoal(String(g.proteinGoal));
+      setStepGoal(String(g.stepGoal ?? 8000));
       setNetFactor(String(g.netCalorieBurnFactor ?? 50));
     });
   }, [user]);
@@ -60,6 +62,7 @@ export default function Profile() {
         {
           calorieGoal: Number(calorieGoal) || 0,
           proteinGoal: Number(proteinGoal) || 0,
+          stepGoal: Number(stepGoal) || 0,
           netCalorieBurnFactor: Math.min(100, Math.max(0, Number(netFactor) || 0)),
           updatedAt: new Date().toISOString(),
         },
@@ -151,6 +154,15 @@ export default function Profile() {
             type="number"
             value={proteinGoal}
             onChange={(e) => setProteinGoal(e.target.value)}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("stepsGoalLabel")}</span>
+          <input
+            type="number"
+            value={stepGoal}
+            onChange={(e) => setStepGoal(e.target.value)}
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
         </label>

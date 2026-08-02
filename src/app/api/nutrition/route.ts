@@ -57,6 +57,11 @@ const postBodySchema = z
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     parsed: parsedNutritionSchema.optional(),
     lang: z.enum(["en", "he"]).optional(),
+    // Manual calorie/protein entered alongside a photo (or text) — wins over
+    // whatever the parser estimated. Only applied when parsing produces a
+    // single item; a multi-item split has no single field to overwrite.
+    overrideCalories: z.number().nonnegative().optional(),
+    overrideProtein: z.number().nonnegative().optional(),
   })
   .refine((b) => b.text || b.imageUrl || b.parsed, {
     message: "Provide text, imageUrl, or parsed",
@@ -89,7 +94,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { text, imageUrl, loggedAt, date, lang } = parsedBody.data;
+  const { text, imageUrl, loggedAt, date, lang, overrideCalories, overrideProtein } = parsedBody.data;
 
   // Only the free-typed description needs the guard — an uploaded photo or
   // an already-parsed payload (chat confirm flow) has no arbitrary text for
@@ -109,6 +114,19 @@ export async function POST(req: Request) {
       { error: "Failed to parse nutrition", detail: String(err) },
       { status: 502 },
     );
+  }
+
+  if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
+    const [item] = parsed.items;
+    parsed = {
+      items: [
+        {
+          ...item,
+          ...(overrideCalories != null ? { calories: overrideCalories } : {}),
+          ...(overrideProtein != null ? { protein: overrideProtein } : {}),
+        },
+      ],
+    };
   }
 
   const now = new Date().toISOString();

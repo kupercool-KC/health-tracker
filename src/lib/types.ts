@@ -58,6 +58,20 @@ export interface Workout {
   syncedAt: string;
 }
 
+/** users/{uid}/steps/{date} — one doc per day (date = yyyy-mm-dd), last write wins. */
+export interface DailySteps {
+  date: string;
+  steps: number;
+  source: "manual" | "photo";
+  syncedAt: string;
+}
+
+/** Result of parsing a manual steps entry (text and/or a screenshot of a phone's health/fitness app). */
+export interface ParsedSteps {
+  steps: number;
+  confidence?: number;
+}
+
 /**
  * Result of parsing a manually-logged workout (screenshot of a workout
  * summary and/or a text description), before it becomes a Workout.
@@ -100,7 +114,7 @@ export interface ParsedNutrition {
 
 export type Goal = "buildMuscle" | "cut" | "loseWeight" | "maintain";
 export type ActivityLevel = "sedentary" | "light" | "moderate" | "intense" | "veryIntense";
-export type WorkoutType = "strength" | "running" | "cycling" | "swimming" | "yoga" | "hiit" | "other";
+export type WorkoutType = "strength" | "running" | "walking" | "cycling" | "swimming" | "yoga" | "padel" | "hiit" | "other";
 export type DietaryPref = "everything" | "vegetarian" | "vegan" | "glutenFree" | "lactoseFree" | "other";
 
 /** users/{uid}/meta/profile */
@@ -123,6 +137,10 @@ export interface UserProfile {
   proteinGoal: number;
   /** Percentage (0-100) of workout calories subtracted when computing net calories — default 50, since burn estimates run optimistic and a partial credit keeps the deficit conservative. */
   netCalorieBurnFactor?: number;
+  /** Roughly how many steps/day the user currently walks — informational, set during onboarding. */
+  averageDailySteps?: number;
+  /** Daily steps goal, shown on Today and charted in History. */
+  stepGoal?: number;
   /** grams; calculated during onboarding, editable manually afterward */
   carbGoal?: number;
   fatGoal?: number;
@@ -153,7 +171,14 @@ export interface Alerts {
   healthSync: { enabled: boolean; intervalHours: number };
 }
 
-export type ChatIntent = "log_meal" | "query_history" | "general_health" | "manage_meal" | "out_of_scope";
+export type ChatIntent =
+  | "log_meal"
+  | "log_workout"
+  | "log_steps"
+  | "query_history"
+  | "general_health"
+  | "manage_meal"
+  | "out_of_scope";
 
 /** Proposed edit/delete of an already-logged meal, awaiting user confirmation. */
 export interface PendingMealAction {
@@ -171,10 +196,14 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
-  /** Present on an assistant message that's proposing meal(s) to log — not yet saved. */
-  pendingMeal?: ParsedNutrition & { imageUrl?: string };
+  /** Present on an assistant message that's proposing meal(s) to log — not yet saved. `date` is the resolved target day (defaults to today, but a message like "add this for Monday" resolves elsewhere). */
+  pendingMeal?: ParsedNutrition & { imageUrl?: string; date?: string };
   /** Present on an assistant message that's proposing an edit/delete of an existing meal. */
   pendingMealAction?: PendingMealAction;
+  /** Present on an assistant message that's proposing a workout to log — not yet saved. */
+  pendingWorkout?: ParsedWorkout & { imageUrl?: string; date: string };
+  /** Present on an assistant message that's proposing a steps count to log — not yet saved. */
+  pendingSteps?: { steps: number; date: string };
 }
 
 /** users/{uid}/chatSessions/{sessionId} */

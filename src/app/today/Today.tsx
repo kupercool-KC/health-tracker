@@ -9,10 +9,10 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
-import { getMealDay, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/queries";
+import { getMealDay, getStepsForDate, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
-import type { MealDay, UserProfile, Workout } from "@/lib/types";
+import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
 
 /** One of the app's 4 fixed accents — each has a matching `--{tone}-bg` tint. */
 type MetricTone = "calories" | "protein" | "burned" | "net";
@@ -79,16 +79,22 @@ export default function Today() {
 
   const [mealDay, setMealDay] = useState<MealDay | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [goals, setGoals] = useState<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor">>({
+  const [steps, setSteps] = useState<DailySteps | null>(null);
+  const [goals, setGoals] = useState<
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal">
+  >({
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
+    stepGoal: 8000,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [manualCalories, setManualCalories] = useState("");
+  const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -100,25 +106,42 @@ export default function Today() {
   const [editCalories, setEditCalories] = useState("");
   const [editProtein, setEditProtein] = useState("");
 
-  const load = useCallback(async (uid: string) => {
-    setLoading(true);
+  const [stepsText, setStepsText] = useState("");
+  const [stepsFile, setStepsFile] = useState<File | null>(null);
+  const [stepsBusy, setStepsBusy] = useState(false);
+
+  // Split from `load` so post-edit refreshes (after logging/deleting/editing
+  // a meal or workout) don't flip the whole page back to the "Loading…"
+  // placeholder — that's the "page refreshes" flicker. Only the very first
+  // load (on mount) shows that placeholder; every refresh after just swaps
+  // the data in place while the existing content stays mounted.
+  const refresh = useCallback(async (uid: string) => {
     setError(null);
     try {
       const date = localDateKey();
-      const [day, w, g] = await Promise.all([
+      const [day, w, s, g] = await Promise.all([
         getMealDay(uid, date),
         getWorkoutsForDate(uid, date),
+        getStepsForDate(uid, date),
         getUserGoals(uid),
       ]);
       setMealDay(day);
       setWorkouts(w);
+      setSteps(s);
       setGoals(g);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setLoading(false);
     }
   }, []);
+
+  const load = useCallback(
+    async (uid: string) => {
+      setLoading(true);
+      await refresh(uid);
+      setLoading(false);
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     if (user) load(user.uid);
@@ -128,11 +151,15 @@ export default function Today() {
     e.preventDefault();
     const submittedText = text;
     const submittedFile = file;
+    const submittedCalories = manualCalories;
+    const submittedProtein = manualProtein;
     // Clear immediately — the box shouldn't still show the question while
     // we're checking it or waiting on the response (see the chat panel's
     // same pattern in ChatPanel.tsx).
     setText("");
     setFile(null);
+    setManualCalories("");
+    setManualProtein("");
     setBusy(true);
     setError(null);
     try {
@@ -149,7 +176,14 @@ export default function Today() {
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ text: submittedText || undefined, imageUrl, date: localDateKey(), lang }),
+        body: JSON.stringify({
+          text: submittedText || undefined,
+          imageUrl,
+          date: localDateKey(),
+          lang,
+          overrideCalories: submittedCalories ? Number(submittedCalories) : undefined,
+          overrideProtein: submittedProtein ? Number(submittedProtein) : undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? res.statusText);
@@ -158,11 +192,13 @@ export default function Today() {
         return;
       }
 
-      await load(currentUser.uid);
+      await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setText(submittedText);
       setFile(submittedFile);
+      setManualCalories(submittedCalories);
+      setManualProtein(submittedProtein);
     } finally {
       setBusy(false);
     }
@@ -181,7 +217,7 @@ export default function Today() {
         body: JSON.stringify({ date: localDateKey(), entryId }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-      await load(currentUser.uid);
+      await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -213,7 +249,7 @@ export default function Today() {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       setEditingId(null);
-      await load(currentUser.uid);
+      await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -252,13 +288,65 @@ export default function Today() {
         return;
       }
 
-      await load(currentUser.uid);
+      await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setWorkoutText(submittedText);
       setWorkoutFile(submittedFile);
     } finally {
       setWorkoutBusy(false);
+    }
+  }
+
+  async function submitSteps(e: React.FormEvent | React.KeyboardEvent) {
+    e.preventDefault();
+    const submittedText = stepsText;
+    const submittedFile = stepsFile;
+    setStepsText("");
+    setStepsFile(null);
+    setStepsBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+
+      let imageUrl: string | undefined;
+      if (submittedFile) {
+        const { uploadStepsImage } = await import("@/lib/firebase/uploadImage");
+        imageUrl = await uploadStepsImage(currentUser.uid, submittedFile);
+      }
+
+      // A pure number typed in ("8500") skips the parser entirely — no need
+      // to round-trip a plain integer through an OpenAI call.
+      const asNumber = Number(submittedText);
+      const isPlainNumber = submittedText.trim() !== "" && Number.isFinite(asNumber) && !imageUrl;
+
+      const res = await fetch("/api/steps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          text: isPlainNumber ? undefined : submittedText || undefined,
+          steps: isPlainNumber ? asNumber : undefined,
+          imageUrl,
+          date: localDateKey(),
+          lang,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (data.flagged) {
+        setError(data.message);
+        return;
+      }
+
+      await refresh(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+      setStepsText(submittedText);
+      setStepsFile(submittedFile);
+    } finally {
+      setStepsBusy(false);
     }
   }
 
@@ -400,6 +488,24 @@ export default function Today() {
                 />
               </label>
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={manualCalories}
+                  onChange={(e) => setManualCalories(e.target.value)}
+                  placeholder={t("manualCaloriesPlaceholder")}
+                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                />
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={manualProtein}
+                  onChange={(e) => setManualProtein(e.target.value)}
+                  placeholder={t("manualProteinPlaceholder")}
+                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                />
+              </div>
               <button type="submit" disabled={busy || (!text && !file)}>
                 {busy ? t("logging") : t("logIt")}
               </button>
@@ -552,7 +658,7 @@ export default function Today() {
           <section style={{ marginTop: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h2 style={{ margin: 0 }}>{t("workouts")}</h2>
-              <button onClick={() => user && load(user.uid)}>{t("refresh")}</button>
+              <button onClick={() => user && refresh(user.uid)}>{t("refresh")}</button>
             </div>
             {lastSynced && (
               <p style={{ color: "var(--muted)", fontSize: 13 }}>
@@ -562,24 +668,50 @@ export default function Today() {
             {workouts.length === 0 ? (
               <p style={{ color: "var(--muted)" }}>{t("noWorkoutsToday")}</p>
             ) : (
-              workouts.map((w) => (
-                <div key={w.id} className="card" style={{ marginTop: 8 }}>
-                  <strong>{w.type}</strong>
-                  <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
-                    {/* Multi-token numeric/unit strings reorder incorrectly
-                        under RTL unless isolated — see Hebrew coverage note. */}
-                    <bdi dir="ltr">
-                      {w.distance != null && `${(w.distance / 1000).toFixed(1)} km · `}
-                      {w.pace != null && `${formatPace(w.pace)} · `}
-                      {formatDuration(w.duration)}
-                      {w.heartRate?.avg != null && ` · ${t("avgHr")} ${Math.round(w.heartRate.avg)}`}
-                      {w.calories != null && ` · ${Math.round(w.calories)} kcal`}
-                      {w.elevationGain != null && ` · +${Math.round(w.elevationGain)}m`}
-                      {w.source === "manual" && ` · ${t("manuallyLogged")}`}
-                    </bdi>
-                  </div>
-                </div>
-              ))
+              <div className="card" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
+                      <th style={{ padding: "12px 10px" }}>{t("colType")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("colDuration")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("colDistance")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("colPace")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("calories")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("avgHr")}</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("colElevation")}</th>
+                      <th style={{ padding: "12px 10px" }}>{t("colSource")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workouts.map((w) => (
+                      <tr key={w.id} style={{ borderTop: "0.5px solid var(--border)" }}>
+                        <td style={{ padding: "12px 10px" }}>{w.type}</td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          <bdi dir="ltr">{formatDuration(w.duration)}</bdi>
+                        </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          {w.distance != null ? <bdi dir="ltr">{(w.distance / 1000).toFixed(1)} km</bdi> : "—"}
+                        </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          {w.pace != null ? <bdi dir="ltr">{formatPace(w.pace)}</bdi> : "—"}
+                        </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          {w.calories != null ? <bdi dir="ltr">{Math.round(w.calories)}</bdi> : "—"}
+                        </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          {w.heartRate?.avg != null ? <bdi dir="ltr">{Math.round(w.heartRate.avg)}</bdi> : "—"}
+                        </td>
+                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                          {w.elevationGain != null ? <bdi dir="ltr">+{Math.round(w.elevationGain)}m</bdi> : "—"}
+                        </td>
+                        <td style={{ padding: "12px 10px", color: "var(--muted)", fontSize: 13 }}>
+                          {w.source === "manual" ? t("manuallyLogged") : w.source}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             <h3 style={{ marginTop: 16, marginBottom: 0 }}>{t("logWorkout")}</h3>
@@ -621,6 +753,74 @@ export default function Today() {
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
               <button type="submit" disabled={workoutBusy || (!workoutText && !workoutFile)}>
                 {workoutBusy ? t("logging") : t("logIt")}
+              </button>
+            </form>
+          </section>
+
+          <section style={{ marginTop: 24 }}>
+            <h2 style={{ margin: 0 }}>{t("steps")}</h2>
+            <div className="card" style={{ background: "var(--burned-bg)", border: "none", marginTop: 8 }}>
+              <div className="metric-label" style={{ color: "var(--burned)" }}>
+                {t("steps")}
+              </div>
+              <div className="metric-value" style={{ color: "var(--burned)" }}>
+                {steps?.steps ?? 0}
+              </div>
+              <div style={{ color: "var(--burned)", fontSize: 13, opacity: 0.85 }}>
+                <bdi dir="ltr">
+                  {steps?.steps ?? 0} / {goals.stepGoal ?? 8000}
+                </bdi>{" "}
+                {t("goal")}
+              </div>
+              <div className="progress-track" style={{ background: "rgba(255,255,255,0.55)" }}>
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${Math.min(100, Math.round(((steps?.steps ?? 0) / (goals.stepGoal || 1)) * 100))}%`,
+                    background: "var(--burned)",
+                    opacity: 0.85,
+                  }}
+                />
+              </div>
+            </div>
+
+            <form onSubmit={submitSteps} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              <textarea
+                value={stepsText}
+                onChange={(e) => setStepsText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && (stepsText || stepsFile) && !stepsBusy) {
+                    submitSteps(e);
+                  }
+                }}
+                placeholder={t("stepsPlaceholder")}
+                rows={1}
+                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <label
+                title={t("photoUploadHint")}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
+                <span
+                  style={{
+                    border: "0.5px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    background: "var(--panel)",
+                  }}
+                >
+                  📷 {t("chooseFile")}
+                </span>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>{stepsFile?.name}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setStepsFile(e.target.files?.[0] ?? null)}
+                  style={{ display: "none" }}
+                />
+              </label>
+              <button type="submit" disabled={stepsBusy || (!stepsText && !stepsFile)}>
+                {stepsBusy ? t("logging") : t("logSteps")}
               </button>
             </form>
           </section>

@@ -23,6 +23,16 @@ export function outOfScopeReply(lang: "en" | "he"): string {
   return OUT_OF_SCOPE_REPLY[lang];
 }
 
+const INTENTS: ChatIntent[] = [
+  "log_meal",
+  "log_workout",
+  "log_steps",
+  "query_history",
+  "general_health",
+  "manage_meal",
+  "out_of_scope",
+];
+
 export async function classifyIntent(message: string): Promise<ChatIntent> {
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
@@ -32,12 +42,14 @@ export async function classifyIntent(message: string): Promise<ChatIntent> {
       {
         role: "system",
         content: `Classify the user's message into exactly one intent:
-- "log_meal": user is describing food they ate, to be logged.
-- "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts) — trends, totals, comparisons over time.
-- "general_health": a nutrition/fitness/health question NOT about their own logged history (meal ideas, menus, general advice, "how much protein should I eat").
+- "log_meal": user is describing food they ate, to be logged (for today OR any other day — "add 2 eggs for yesterday" is still log_meal, not manage_meal).
+- "log_workout": user is describing a workout/exercise session to be logged (running, gym, swimming, etc.), for today or any other day.
+- "log_steps": user is reporting a step count to be logged, for today or any other day (e.g. "I walked 8500 steps yesterday", "log 10k steps for Monday").
+- "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
+- "general_health": a nutrition/fitness/health question NOT about their own logged history — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat".
 - "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
 - "out_of_scope": anything unrelated to nutrition, fitness, or health (coding help, trivia, unrelated small talk, etc).
-Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
+Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
       },
       { role: "user", content: message },
     ],
@@ -46,13 +58,45 @@ Respond ONLY as JSON: { "intent": "log_meal" | "query_history" | "general_health
   const raw = completion.choices[0]?.message?.content;
   try {
     const parsed = JSON.parse(raw ?? "{}");
-    if (["log_meal", "query_history", "general_health", "manage_meal", "out_of_scope"].includes(parsed.intent)) {
+    if (INTENTS.includes(parsed.intent)) {
       return parsed.intent as ChatIntent;
     }
   } catch {
     // fall through to fail-closed default below
   }
   return "out_of_scope";
+}
+
+/**
+ * Resolves which day a log_meal/log_workout/log_steps message applies to —
+ * "add this for yesterday", "log 3 days ago", "on Monday" — defaulting to
+ * `today` when no date is mentioned. A dedicated cheap call rather than
+ * folding this into the nutrition/workout/steps parsers, which reason about
+ * the content (calories, duration, etc.), not calendar phrases.
+ */
+export async function resolveLogDate(message: string, today: string): Promise<string> {
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `Today's date is ${today} (yyyy-mm-dd). The user is logging something (a meal, workout, or step count) and may mention which day it's for — "yesterday", "3 days ago", "on Monday", "last Tuesday" — or may not mention a day at all, which means today. Resolve their message to a single date. Respond ONLY as JSON: { "date": "yyyy-mm-dd" }. Never return a date in the future.`,
+      },
+      { role: "user", content: message },
+    ],
+  });
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  try {
+    const parsed = JSON.parse(raw) as { date?: string };
+    if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) && parsed.date <= today) {
+      return parsed.date;
+    }
+  } catch {
+    // fall through to default below
+  }
+  return today;
 }
 
 /** Bounded window — a personal app doesn't need unbounded history in every prompt. */
@@ -120,13 +164,17 @@ Each entry in "meals" already includes "netCalories" — the day's net calorie b
   return completion.choices[0]?.message?.content ?? "";
 }
 
-export async function answerGeneralHealth(message: string, lang: "en" | "he"): Promise<string> {
+export async function answerGeneralHealth(message: string, lang: "en" | "he", today: string): Promise<string> {
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     messages: [
       {
         role: "system",
-        content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Answer questions about nutrition, meal planning, menus, workouts, and general health practically and concisely. If a question drifts outside those topics, politely decline and redirect to health topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
+        content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Today's date is ${today} (yyyy-mm-dd) — use it to resolve any relative date reference in the question and tailor advice to that day (e.g. day of week, time of year) when relevant. You can:
+- Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
+- Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
+- Answer general fitness/health questions.
+If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
       },
       { role: "user", content: message },
     ],

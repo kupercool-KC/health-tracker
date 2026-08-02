@@ -11,7 +11,7 @@
  */
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { MealDay, Workout } from "@/lib/types";
+import type { DailySteps, MealDay, Workout } from "@/lib/types";
 
 const EMPTY_TOTALS = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
@@ -69,4 +69,20 @@ export async function getWorkoutsSince(uid: string, sinceDate: string, untilDate
     : query(col, where("date", ">=", sinceDate));
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as Workout);
+}
+
+export async function getStepsForDate(uid: string, date: string): Promise<DailySteps | null> {
+  const ref = doc(db, "users", uid, "steps", date);
+  const snap = await getDoc(ref);
+  return (snap.data() as DailySteps | undefined) ?? null;
+}
+
+/** Same doc-id-range trick as getMealDaysSince — users/{uid}/steps/{date}, one doc per day. */
+export async function getStepsSince(uid: string, sinceDate: string, untilDate?: string): Promise<DailySteps[]> {
+  const col = collection(db, "users", uid, "steps");
+  const q = untilDate
+    ? query(col, where(documentId(), ">=", sinceDate), where(documentId(), "<=", untilDate))
+    : query(col, where(documentId(), ">=", sinceDate));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as DailySteps);
 }
