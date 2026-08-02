@@ -86,3 +86,95 @@ export async function getStepsSince(uid: string, sinceDate: string, untilDate?: 
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as DailySteps);
 }
+
+export interface FrequentMeal {
+  name: string;
+  count: number;
+  avgCalories: number;
+  avgProtein: number;
+  avgGrams?: number;
+}
+
+/**
+ * Ranks the user's own logged meals by how often they've logged that exact
+ * name, for a "recent/frequent meals" picker — grouping is case/whitespace
+ * normalized so "Omelet" and "omelet " count as the same meal, but the most
+ * recently-seen casing is what's displayed.
+ */
+export async function getFrequentMeals(uid: string, sinceDaysAgo = 180, limit = 8): Promise<FrequentMeal[]> {
+  const days = await getMealDaysSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
+  const groups = new Map<
+    string,
+    { name: string; count: number; calories: number; protein: number; grams: number; gramsCount: number }
+  >();
+  for (const day of days) {
+    for (const entry of day.entries) {
+      const key = entry.name.trim().toLowerCase();
+      if (!key) continue;
+      const g = groups.get(key) ?? { name: entry.name.trim(), count: 0, calories: 0, protein: 0, grams: 0, gramsCount: 0 };
+      g.name = entry.name.trim();
+      g.count += 1;
+      g.calories += entry.calories;
+      g.protein += entry.protein;
+      if (entry.grams != null) {
+        g.grams += entry.grams;
+        g.gramsCount += 1;
+      }
+      groups.set(key, g);
+    }
+  }
+  return Array.from(groups.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((g) => ({
+      name: g.name,
+      count: g.count,
+      avgCalories: Math.round(g.calories / g.count),
+      avgProtein: Math.round((g.protein / g.count) * 10) / 10,
+      avgGrams: g.gramsCount > 0 ? Math.round(g.grams / g.gramsCount) : undefined,
+    }));
+}
+
+export interface FrequentWorkout {
+  type: string;
+  count: number;
+  avgDurationSec: number;
+  avgDistanceMeters?: number;
+  avgCalories?: number;
+}
+
+/** Ranks the user's own logged workouts by type frequency, for a "past workouts" picker. */
+export async function getFrequentWorkouts(uid: string, sinceDaysAgo = 180, limit = 8): Promise<FrequentWorkout[]> {
+  const workouts = await getWorkoutsSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
+  const groups = new Map<
+    string,
+    { type: string; count: number; duration: number; distance: number; distanceCount: number; calories: number; caloriesCount: number }
+  >();
+  for (const w of workouts) {
+    const key = w.type.trim().toLowerCase();
+    if (!key) continue;
+    const g = groups.get(key) ?? { type: w.type.trim(), count: 0, duration: 0, distance: 0, distanceCount: 0, calories: 0, caloriesCount: 0 };
+    g.type = w.type.trim();
+    g.count += 1;
+    g.duration += w.duration;
+    if (w.distance != null) {
+      g.distance += w.distance;
+      g.distanceCount += 1;
+    }
+    if (w.calories != null) {
+      g.calories += w.calories;
+      g.caloriesCount += 1;
+    }
+    groups.set(key, g);
+  }
+  return Array.from(groups.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((g) => ({
+      type: g.type,
+      count: g.count,
+      avgDurationSec: Math.round(g.duration / g.count),
+      avgDistanceMeters: g.distanceCount > 0 ? Math.round(g.distance / g.distanceCount) : undefined,
+      avgCalories: g.caloriesCount > 0 ? Math.round(g.calories / g.caloriesCount) : undefined,
+    }));
+}

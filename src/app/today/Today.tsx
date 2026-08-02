@@ -9,7 +9,15 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
-import { getMealDay, getStepsForDate, getWorkoutsForDate, localDateKey } from "@/lib/dashboard/queries";
+import {
+  getFrequentMeals,
+  getFrequentWorkouts,
+  getMealDay,
+  getStepsForDate,
+  getWorkoutsForDate,
+  localDateKey,
+} from "@/lib/dashboard/queries";
+import type { FrequentMeal, FrequentWorkout } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
@@ -110,6 +118,20 @@ export default function Today() {
   const [stepsFile, setStepsFile] = useState<File | null>(null);
   const [stepsBusy, setStepsBusy] = useState(false);
 
+  const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
+  const [pickedMeal, setPickedMeal] = useState("");
+  const [pickerGrams, setPickerGrams] = useState("");
+  const [pickerCalories, setPickerCalories] = useState("");
+  const [pickerProtein, setPickerProtein] = useState("");
+  const [pickerMealBusy, setPickerMealBusy] = useState(false);
+
+  const [frequentWorkouts, setFrequentWorkouts] = useState<FrequentWorkout[]>([]);
+  const [pickedWorkout, setPickedWorkout] = useState("");
+  const [pickerDurationMin, setPickerDurationMin] = useState("");
+  const [pickerDistanceKm, setPickerDistanceKm] = useState("");
+  const [pickerWorkoutCalories, setPickerWorkoutCalories] = useState("");
+  const [pickerWorkoutBusy, setPickerWorkoutBusy] = useState(false);
+
   // Split from `load` so post-edit refreshes (after logging/deleting/editing
   // a meal or workout) don't flip the whole page back to the "Loading…"
   // placeholder — that's the "page refreshes" flicker. Only the very first
@@ -119,16 +141,20 @@ export default function Today() {
     setError(null);
     try {
       const date = localDateKey();
-      const [day, w, s, g] = await Promise.all([
+      const [day, w, s, g, fm, fw] = await Promise.all([
         getMealDay(uid, date),
         getWorkoutsForDate(uid, date),
         getStepsForDate(uid, date),
         getUserGoals(uid),
+        getFrequentMeals(uid),
+        getFrequentWorkouts(uid),
       ]);
       setMealDay(day);
       setWorkouts(w);
       setSteps(s);
       setGoals(g);
+      setFrequentMeals(fm);
+      setFrequentWorkouts(fw);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     }
@@ -201,6 +227,96 @@ export default function Today() {
       setManualProtein(submittedProtein);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function selectFrequentMeal(name: string) {
+    setPickedMeal(name);
+    const m = frequentMeals.find((f) => f.name === name);
+    setPickerGrams(m?.avgGrams != null ? String(m.avgGrams) : "");
+    setPickerCalories(m ? String(m.avgCalories) : "");
+    setPickerProtein(m ? String(m.avgProtein) : "");
+  }
+
+  async function submitPickedMeal(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pickedMeal) return;
+    setPickerMealBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          parsed: {
+            items: [
+              {
+                description: pickedMeal,
+                calories: Number(pickerCalories) || 0,
+                protein: Number(pickerProtein) || 0,
+                grams: pickerGrams ? Number(pickerGrams) : undefined,
+              },
+            ],
+          },
+          date: localDateKey(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setPickedMeal("");
+      setPickerGrams("");
+      setPickerCalories("");
+      setPickerProtein("");
+      await refresh(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setPickerMealBusy(false);
+    }
+  }
+
+  function selectFrequentWorkout(type: string) {
+    setPickedWorkout(type);
+    const w = frequentWorkouts.find((f) => f.type === type);
+    setPickerDurationMin(w ? String(Math.round(w.avgDurationSec / 60)) : "");
+    setPickerDistanceKm(w?.avgDistanceMeters != null ? (w.avgDistanceMeters / 1000).toFixed(1) : "");
+    setPickerWorkoutCalories(w?.avgCalories != null ? String(w.avgCalories) : "");
+  }
+
+  async function submitPickedWorkout(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pickedWorkout) return;
+    setPickerWorkoutBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          parsed: {
+            type: pickedWorkout,
+            durationSec: Math.round((Number(pickerDurationMin) || 0) * 60),
+            distanceMeters: pickerDistanceKm ? Math.round(Number(pickerDistanceKm) * 1000) : undefined,
+            calories: pickerWorkoutCalories ? Number(pickerWorkoutCalories) : undefined,
+          },
+          date: localDateKey(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setPickedWorkout("");
+      setPickerDurationMin("");
+      setPickerDistanceKm("");
+      setPickerWorkoutCalories("");
+      await refresh(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setPickerWorkoutBusy(false);
     }
   }
 
@@ -451,6 +567,54 @@ export default function Today() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h2 style={{ margin: 0 }}>{t("meals")}</h2>
             </div>
+
+            {frequentMeals.length > 0 && (
+              <form onSubmit={submitPickedMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                <select
+                  value={pickedMeal}
+                  onChange={(e) => selectFrequentMeal(e.target.value)}
+                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                >
+                  <option value="">{t("pickFrequentMeal")}</option>
+                  {frequentMeals.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name} ({m.count}×, ~{m.avgCalories} kcal)
+                    </option>
+                  ))}
+                </select>
+                {pickedMeal && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerGrams}
+                      onChange={(e) => setPickerGrams(e.target.value)}
+                      placeholder={t("gramsPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerCalories}
+                      onChange={(e) => setPickerCalories(e.target.value)}
+                      placeholder={t("manualCaloriesPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerProtein}
+                      onChange={(e) => setPickerProtein(e.target.value)}
+                      placeholder={t("manualProteinPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                  </div>
+                )}
+                <button type="submit" disabled={!pickedMeal || pickerMealBusy}>
+                  {pickerMealBusy ? t("logging") : t("logIt")}
+                </button>
+              </form>
+            )}
 
             <form onSubmit={submitMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
               <textarea
@@ -712,6 +876,54 @@ export default function Today() {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {frequentWorkouts.length > 0 && (
+              <form onSubmit={submitPickedWorkout} className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+                <select
+                  value={pickedWorkout}
+                  onChange={(e) => selectFrequentWorkout(e.target.value)}
+                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                >
+                  <option value="">{t("pickFrequentWorkout")}</option>
+                  {frequentWorkouts.map((w) => (
+                    <option key={w.type} value={w.type}>
+                      {w.type} ({w.count}×, ~{Math.round(w.avgDurationSec / 60)} min)
+                    </option>
+                  ))}
+                </select>
+                {pickedWorkout && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerDurationMin}
+                      onChange={(e) => setPickerDurationMin(e.target.value)}
+                      placeholder={t("durationMinPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerDistanceKm}
+                      onChange={(e) => setPickerDistanceKm(e.target.value)}
+                      placeholder={t("distanceKmPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={pickerWorkoutCalories}
+                      onChange={(e) => setPickerWorkoutCalories(e.target.value)}
+                      placeholder={t("manualCaloriesPlaceholder")}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                  </div>
+                )}
+                <button type="submit" disabled={!pickedWorkout || pickerWorkoutBusy}>
+                  {pickerWorkoutBusy ? t("logging") : t("logIt")}
+                </button>
+              </form>
             )}
 
             <h3 style={{ marginTop: 16, marginBottom: 0 }}>{t("logWorkout")}</h3>

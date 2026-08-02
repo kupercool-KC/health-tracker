@@ -17,6 +17,8 @@ export interface MealEntry {
   carbs?: number;
   fat?: number;
   fiber?: number;
+  /** Estimated portion weight in grams, when known — used for USDA grounding and the frequent-meals picker. */
+  grams?: number;
   mealType?: "breakfast" | "lunch" | "dinner" | "snack";
   /** Where this came from, for auditing the parse. */
   source: "text" | "photo";
@@ -101,6 +103,8 @@ export interface ParsedNutritionItem {
   fat?: number;
   fiber?: number;
   confidence?: number;
+  /** Estimated portion weight in grams, when known. */
+  grams?: number;
 }
 
 /**

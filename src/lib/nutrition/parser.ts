@@ -13,7 +13,11 @@ import { z } from "zod";
 import type { ParsedNutrition } from "@/lib/types";
 import { getNutritionParserConfig } from "./config";
 import { getOpenAIClient } from "@/lib/openai/client";
+import { lookupUsdaNutrients } from "./usda";
 
+// estimatedGrams/explicitCalories/explicitProtein are internal to this
+// module (used for USDA grounding below) and stripped before returning —
+// ParsedNutritionItem only exposes the final "grams" field.
 const itemSchema = z.object({
   description: z.string().min(1),
   calories: z.number().nonnegative(),
@@ -22,6 +26,9 @@ const itemSchema = z.object({
   fat: z.number().nonnegative().optional(),
   fiber: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  estimatedGrams: z.number().nonnegative().optional(),
+  explicitCalories: z.boolean().optional(),
+  explicitProtein: z.boolean().optional(),
 });
 const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 
@@ -41,7 +48,8 @@ export interface ParseInput {
  * admin having remembered to word the stored prompt that way.
  */
 const EXPLICIT_VALUE_INSTRUCTION =
-  "\n\nIf the user's text explicitly states a calorie or protein value for an item (e.g. \"140 calorie protein shake\", \"an apple, 95 kcal\"), you MUST use that exact number for that field — do not substitute your own estimate. Only estimate fields the user did not explicitly state.";
+  "\n\nIf the user's text explicitly states a calorie or protein value for an item (e.g. \"140 calorie protein shake\", \"an apple, 95 kcal\"), you MUST use that exact number for that field — do not substitute your own estimate — and set that field's boolean flag (\"explicitCalories\"/\"explicitProtein\") to true. Otherwise estimate normally and omit or leave that flag false." +
+  " Also include for each item an \"estimatedGrams\" field: your best-guess portion weight in grams as a plain number.";
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
   if (!input.text && !input.imageUrl) {
@@ -82,5 +90,36 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Empty response from nutrition parser");
 
-  return parsedSchema.parse(JSON.parse(raw));
+  const parsed = parsedSchema.parse(JSON.parse(raw));
+
+  // Ground simple, named foods against USDA's database instead of trusting
+  // the model's own calorie/protein guess. Skipped for photos — a
+  // photographed composite dish doesn't map to a single USDA food entry —
+  // and skipped for any field the user explicitly stated (that always wins).
+  if (!input.imageUrl) {
+    for (const item of parsed.items) {
+      if (!item.estimatedGrams || (item.explicitCalories && item.explicitProtein)) continue;
+      const usda = await lookupUsdaNutrients(item.description);
+      if (!usda) continue;
+      if (!item.explicitCalories) {
+        item.calories = Math.round((usda.caloriesPer100g * item.estimatedGrams) / 100);
+      }
+      if (!item.explicitProtein) {
+        item.protein = Math.round(((usda.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
+      }
+    }
+  }
+
+  return {
+    items: parsed.items.map((item) => ({
+      description: item.description,
+      calories: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      fiber: item.fiber,
+      confidence: item.confidence,
+      grams: item.estimatedGrams,
+    })),
+  };
 }

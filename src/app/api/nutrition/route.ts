@@ -44,6 +44,7 @@ const itemSchema = z.object({
   fat: z.number().nonnegative().optional(),
   fiber: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  grams: z.number().nonnegative().optional(),
 });
 
 const parsedNutritionSchema = z.object({ items: z.array(itemSchema).min(1) });
@@ -141,6 +142,7 @@ export async function POST(req: Request) {
     carbs: item.carbs,
     fat: item.fat,
     fiber: item.fiber,
+    grams: item.grams,
     source: imageUrl ? "photo" : "text",
     confidence: item.confidence,
     confirmedAt: now,

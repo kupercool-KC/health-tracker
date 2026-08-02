@@ -176,6 +176,12 @@ export const strings = {
   manualCaloriesPlaceholder: { en: "Calories (optional)", he: "קלוריות (אופציונלי)" },
   manualProteinPlaceholder: { en: "Protein g (optional)", he: "חלבון בגרם (אופציונלי)" },
 
+  pickFrequentMeal: { en: "— Pick a recent meal —", he: "— בחר מאכל שנרשם בעבר —" },
+  pickFrequentWorkout: { en: "— Pick a past workout —", he: "— בחר אימון שנרשם בעבר —" },
+  gramsPlaceholder: { en: "Grams (optional)", he: "גרם (אופציונלי)" },
+  durationMinPlaceholder: { en: "Minutes", he: "דקות" },
+  distanceKmPlaceholder: { en: "Distance km (optional)", he: "מרחק בק\"מ (אופציונלי)" },
+
   workoutWalking: { en: "Walking", he: "הליכה" },
   workoutPadel: { en: "Padel", he: "פאדל" },
 
