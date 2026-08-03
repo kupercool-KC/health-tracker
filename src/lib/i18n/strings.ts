@@ -201,22 +201,6 @@ export const strings = {
     he: "לדוגמה: 8500, או העלה צילום מסך מאפליקציית הבריאות",
   },
   logSteps: { en: "Log steps", he: "רשום צעדים" },
-  stepsGoalWorkoutQuestion: {
-    en: "Should your steps goal count steps from logged workouts?",
-    he: "האם יעד הצעדים שלך צריך לכלול צעדים מאימונים רשומים?",
-  },
-  stepsGoalExcludeWorkouts: { en: "Exclude workout steps", he: "לא לכלול צעדי אימון" },
-  stepsGoalIncludeWorkouts: { en: "Include workout steps", he: "לכלול צעדי אימון" },
-  stepsGoalWorkoutHint: {
-    en: "If excluded, a run or walk you've logged as a workout won't also count toward your daily steps goal — only your everyday activity will.",
-    he: "אם לא כולל, ריצה או הליכה שנרשמו כאימון לא יחושבו גם ביעד הצעדים היומי — רק הפעילות היומיומית שלך תיחשב.",
-  },
-  stepsGoalExcludeWorkoutsProfileLabel: {
-    en: "Exclude workout steps from the steps goal",
-    he: "לא לכלול צעדי אימון ביעד הצעדים",
-  },
-  stepsFromWorkouts: { en: "from workouts", he: "מאימונים" },
-  stepsFromActivity: { en: "everyday activity", he: "פעילות יומיומית" },
   stepsVsGoal: { en: "Steps vs goal", he: "צעדים מול מטרה" },
   stepsGoalMet: { en: "Goal met", he: "המטרה הושגה" },
   stepsGoalMissed: { en: "Goal missed", he: "המטרה לא הושגה" },
