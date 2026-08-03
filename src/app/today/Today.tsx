@@ -112,6 +112,13 @@ export default function Today() {
   const [workoutFile, setWorkoutFile] = useState<File | null>(null);
   const [workoutBusy, setWorkoutBusy] = useState(false);
 
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [editWorkoutType, setEditWorkoutType] = useState("");
+  const [editWorkoutDurationMin, setEditWorkoutDurationMin] = useState("");
+  const [editWorkoutDistanceKm, setEditWorkoutDistanceKm] = useState("");
+  const [editWorkoutCalories, setEditWorkoutCalories] = useState("");
+  const [editWorkoutElevation, setEditWorkoutElevation] = useState("");
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCalories, setEditCalories] = useState("");
   const [editProtein, setEditProtein] = useState("");
@@ -411,6 +418,67 @@ export default function Today() {
       setError(String(err instanceof Error ? err.message : err));
       setWorkoutText(submittedText);
       setWorkoutFile(submittedFile);
+    } finally {
+      setWorkoutBusy(false);
+    }
+  }
+
+  async function deleteWorkout(id: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !window.confirm(t("deleteWorkoutConfirm"))) return;
+    setWorkoutBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/workouts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await refresh(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setWorkoutBusy(false);
+    }
+  }
+
+  function startEditWorkout(w: Workout) {
+    setEditingWorkoutId(w.id);
+    setEditWorkoutType(w.type);
+    setEditWorkoutDurationMin(String(Math.round(w.duration / 60)));
+    setEditWorkoutDistanceKm(w.distance != null ? (w.distance / 1000).toFixed(2) : "");
+    setEditWorkoutCalories(w.calories != null ? String(Math.round(w.calories)) : "");
+    setEditWorkoutElevation(w.elevationGain != null ? String(Math.round(w.elevationGain)) : "");
+  }
+
+  async function saveWorkoutEdit(id: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    setWorkoutBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/workouts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          id,
+          changes: {
+            type: editWorkoutType.trim() || undefined,
+            duration: Math.round((Number(editWorkoutDurationMin) || 0) * 60),
+            distance: editWorkoutDistanceKm ? Math.round(Number(editWorkoutDistanceKm) * 1000) : undefined,
+            calories: editWorkoutCalories ? Number(editWorkoutCalories) : undefined,
+            elevationGain: editWorkoutElevation ? Number(editWorkoutElevation) : undefined,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      setEditingWorkoutId(null);
+      await refresh(currentUser.uid);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
     } finally {
       setWorkoutBusy(false);
     }
@@ -850,35 +918,134 @@ export default function Today() {
                       <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("avgHr")}</th>
                       <th style={{ padding: "12px 10px", textAlign: "center" }}>{t("colElevation")}</th>
                       <th style={{ padding: "12px 10px" }}>{t("colSource")}</th>
+                      <th style={{ padding: "12px 10px" }} />
                     </tr>
                   </thead>
                   <tbody>
-                    {workouts.map((w) => (
-                      <tr key={w.id} style={{ borderTop: "0.5px solid var(--border)" }}>
-                        <td style={{ padding: "12px 10px" }}>{w.type}</td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          <bdi dir="ltr">{formatDuration(w.duration)}</bdi>
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          {w.distance != null ? <bdi dir="ltr">{(w.distance / 1000).toFixed(1)} km</bdi> : "—"}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          {w.pace != null ? <bdi dir="ltr">{formatPace(w.pace)}</bdi> : "—"}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          {w.calories != null ? <bdi dir="ltr">{Math.round(w.calories)}</bdi> : "—"}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          {w.heartRate?.avg != null ? <bdi dir="ltr">{Math.round(w.heartRate.avg)}</bdi> : "—"}
-                        </td>
-                        <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                          {w.elevationGain != null ? <bdi dir="ltr">+{Math.round(w.elevationGain)}m</bdi> : "—"}
-                        </td>
-                        <td style={{ padding: "12px 10px", color: "var(--muted)", fontSize: 13 }}>
-                          {w.source === "manual" ? t("manuallyLogged") : w.source}
-                        </td>
-                      </tr>
-                    ))}
+                    {workouts.map((w) => {
+                      const editing = editingWorkoutId === w.id;
+                      return (
+                        <tr key={w.id} style={{ borderTop: "0.5px solid var(--border)" }}>
+                          <td style={{ padding: "12px 10px" }}>
+                            {editing ? (
+                              <input
+                                value={editWorkoutType}
+                                onChange={(e) => setEditWorkoutType(e.target.value)}
+                                style={{ width: 90, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                              />
+                            ) : (
+                              w.type
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {editing ? (
+                              <input
+                                type="number"
+                                value={editWorkoutDurationMin}
+                                onChange={(e) => setEditWorkoutDurationMin(e.target.value)}
+                                style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                              />
+                            ) : (
+                              <bdi dir="ltr">{formatDuration(w.duration)}</bdi>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {editing ? (
+                              <input
+                                type="number"
+                                value={editWorkoutDistanceKm}
+                                onChange={(e) => setEditWorkoutDistanceKm(e.target.value)}
+                                placeholder="km"
+                                style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                              />
+                            ) : w.distance != null ? (
+                              <bdi dir="ltr">{(w.distance / 1000).toFixed(1)} km</bdi>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {w.pace != null ? <bdi dir="ltr">{formatPace(w.pace)}</bdi> : "—"}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {editing ? (
+                              <input
+                                type="number"
+                                value={editWorkoutCalories}
+                                onChange={(e) => setEditWorkoutCalories(e.target.value)}
+                                style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                              />
+                            ) : w.calories != null ? (
+                              <bdi dir="ltr">{Math.round(w.calories)}</bdi>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {w.heartRate?.avg != null ? <bdi dir="ltr">{Math.round(w.heartRate.avg)}</bdi> : "—"}
+                          </td>
+                          <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                            {editing ? (
+                              <input
+                                type="number"
+                                value={editWorkoutElevation}
+                                onChange={(e) => setEditWorkoutElevation(e.target.value)}
+                                placeholder="m"
+                                style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                              />
+                            ) : w.elevationGain != null ? (
+                              <bdi dir="ltr">+{Math.round(w.elevationGain)}m</bdi>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 10px", color: "var(--muted)", fontSize: 13 }}>
+                            {w.source === "manual" ? t("manuallyLogged") : w.source}
+                          </td>
+                          <td style={{ padding: "12px 10px", whiteSpace: "nowrap" }}>
+                            {editing ? (
+                              <>
+                                <button
+                                  onClick={() => saveWorkoutEdit(w.id)}
+                                  disabled={workoutBusy}
+                                  style={{ border: "none", background: "none", color: "var(--protein)", padding: 6 }}
+                                  aria-label={t("save")}
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  onClick={() => setEditingWorkoutId(null)}
+                                  disabled={workoutBusy}
+                                  style={{ border: "none", background: "none", color: "var(--muted)", padding: 6 }}
+                                  aria-label={t("close")}
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => startEditWorkout(w)}
+                                  disabled={workoutBusy}
+                                  style={{ border: "none", background: "none", padding: 6 }}
+                                  aria-label={t("edit")}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => deleteWorkout(w.id)}
+                                  disabled={workoutBusy}
+                                  style={{ border: "none", background: "none", color: "var(--calories)", padding: 6 }}
+                                  aria-label={t("deleteWorkout")}
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

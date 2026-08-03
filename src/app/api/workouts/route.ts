@@ -1,7 +1,14 @@
 /**
  * POST /api/workouts
  * Body: { text?: string, imageUrl?: string, date?: string, parsed?: ParsedWorkout }
- * Auth: Firebase ID token (Bearer).
+ *
+ * DELETE /api/workouts
+ * Body: { id: string }
+ *
+ * PATCH /api/workouts
+ * Body: { id: string, changes: Partial<Workout> }
+ *
+ * Auth: Firebase ID token (Bearer) on all three.
  *
  * Manual workout logging — separate from POST /api/health, which is the
  * token-authenticated Apple Health / Health Auto Export ingest webhook.
@@ -12,10 +19,14 @@
  *
  * `date` (yyyy-mm-dd) should be the client's *local* date — same rationale
  * as /api/nutrition: the server has no timezone context.
+ *
+ * DELETE/PATCH operate on a single users/{uid}/workouts/{id} doc — unlike
+ * meals, workouts are one doc per entry rather than one doc per day, so no
+ * read-modify-write of a day's array is needed.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAuthFromRequest } from "@/lib/auth";
+import { getAuthFromRequest, getUidFromRequest } from "@/lib/auth";
 import { parseWorkout } from "@/lib/workout/parser";
 import { adminDb } from "@/lib/firebase/admin";
 import { guardFreeText } from "@/lib/security/guardInput";
@@ -113,4 +124,67 @@ export async function POST(req: Request) {
   await adminDb.collection("users").doc(uid).collection("workouts").doc(id).set(clean);
 
   return NextResponse.json(clean, { status: 201 });
+}
+
+const deleteBodySchema = z.object({ id: z.string().min(1) });
+
+export async function DELETE(req: Request) {
+  const uid = await getUidFromRequest(req);
+  if (!uid) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const parsedBody = deleteBodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsedBody.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  const ref = adminDb.collection("users").doc(uid).collection("workouts").doc(parsedBody.data.id);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return NextResponse.json({ error: "Workout not found" }, { status: 404 });
+  }
+  await ref.delete();
+  return NextResponse.json({ ok: true });
+}
+
+const patchBodySchema = z.object({
+  id: z.string().min(1),
+  changes: z
+    .object({
+      type: z.string().min(1).optional(),
+      duration: z.number().nonnegative().optional(),
+      distance: z.number().nonnegative().optional(),
+      pace: z.number().nonnegative().optional(),
+      calories: z.number().nonnegative().optional(),
+      elevationGain: z.number().optional(),
+    })
+    .refine((c) => Object.keys(c).length > 0, { message: "Provide at least one change" }),
+});
+
+export async function PATCH(req: Request) {
+  const uid = await getUidFromRequest(req);
+  if (!uid) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const parsedBody = patchBodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsedBody.error.flatten() },
+      { status: 400 },
+    );
+  }
+  const { id, changes } = parsedBody.data;
+
+  const ref = adminDb.collection("users").doc(uid).collection("workouts").doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return NextResponse.json({ error: "Workout not found" }, { status: 404 });
+  }
+  await ref.update(changes);
+  return NextResponse.json({ ok: true });
 }

@@ -42,6 +42,8 @@ export const strings = {
   confidence: { en: "confidence", he: "רמת ביטחון" },
   deleteMeal: { en: "Delete meal", he: "מחק ארוחה" },
   deleteMealConfirm: { en: "Delete this meal?", he: "למחוק את הארוחה הזו?" },
+  deleteWorkout: { en: "Delete workout", he: "מחק אימון" },
+  deleteWorkoutConfirm: { en: "Delete this workout?", he: "למחוק את האימון הזה?" },
 
   workouts: { en: "Workouts", he: "אימונים" },
   lastSynced: { en: "Last synced", he: "סונכרן לאחרונה" },
