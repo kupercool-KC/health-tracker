@@ -86,6 +86,7 @@ export default function Onboarding() {
   const [dietaryPrefs, setDietaryPrefs] = useState<DietaryPref[]>(["everything"]);
   const [averageDailySteps, setAverageDailySteps] = useState(6000);
   const [stepGoal, setStepGoal] = useState(8000);
+  const [stepsGoalExcludesWorkouts, setStepsGoalExcludesWorkouts] = useState(true);
 
   const [otherWorkoutText, setOtherWorkoutText] = useState("");
   const [matchingWorkout, setMatchingWorkout] = useState(false);
@@ -172,6 +173,7 @@ export default function Onboarding() {
         fatGoal: calculated.fatGoal,
         averageDailySteps,
         stepGoal,
+        stepsGoalExcludesWorkouts,
         onboarded: true,
         updatedAt: now,
       };
@@ -410,6 +412,18 @@ export default function Onboarding() {
               style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
             />
           </label>
+          <div style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("stepsGoalWorkoutQuestion")}</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <OptionButton selected={stepsGoalExcludesWorkouts} onClick={() => setStepsGoalExcludesWorkouts(true)}>
+                {t("stepsGoalExcludeWorkouts")}
+              </OptionButton>
+              <OptionButton selected={!stepsGoalExcludesWorkouts} onClick={() => setStepsGoalExcludesWorkouts(false)}>
+                {t("stepsGoalIncludeWorkouts")}
+              </OptionButton>
+            </div>
+            <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("stepsGoalWorkoutHint")}</p>
+          </div>
         </section>
       )}
 

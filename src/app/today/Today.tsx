@@ -20,6 +20,7 @@ import {
 import type { FrequentMeal, FrequentWorkout } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
+import { estimateTotalWorkoutSteps } from "@/lib/steps/estimate";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
 
 /** One of the app's 4 fixed accents — each has a matching `--{tone}-bg` tint. */
@@ -89,12 +90,13 @@ export default function Today() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [steps, setSteps] = useState<DailySteps | null>(null);
   const [goals, setGoals] = useState<
-    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal">
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "stepsGoalExcludesWorkouts">
   >({
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
     stepGoal: 8000,
+    stepsGoalExcludesWorkouts: true,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -488,6 +490,10 @@ export default function Today() {
   const totals = mealDay?.totals ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const burned = workouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
   const net = computeNetCalories(totals.calories, burned, goals.netCalorieBurnFactor ?? 50);
+  const totalSteps = steps?.steps ?? 0;
+  const workoutSteps = estimateTotalWorkoutSteps(workouts);
+  const activitySteps = Math.max(0, totalSteps - workoutSteps);
+  const stepsForGoal = goals.stepsGoalExcludesWorkouts === false ? totalSteps : activitySteps;
   const lastSynced = workouts
     .map((w) => w.syncedAt)
     .sort()
@@ -976,11 +982,11 @@ export default function Today() {
                 {t("steps")}
               </div>
               <div className="metric-value" style={{ color: "var(--burned)" }}>
-                {steps?.steps ?? 0}
+                {stepsForGoal}
               </div>
               <div style={{ color: "var(--burned)", fontSize: 13, opacity: 0.85 }}>
                 <bdi dir="ltr">
-                  {steps?.steps ?? 0} / {goals.stepGoal ?? 8000}
+                  {stepsForGoal} / {goals.stepGoal ?? 8000}
                 </bdi>{" "}
                 {t("goal")}
               </div>
@@ -988,12 +994,20 @@ export default function Today() {
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min(100, Math.round(((steps?.steps ?? 0) / (goals.stepGoal || 1)) * 100))}%`,
+                    width: `${Math.min(100, Math.round((stepsForGoal / (goals.stepGoal || 1)) * 100))}%`,
                     background: "var(--burned)",
                     opacity: 0.85,
                   }}
                 />
               </div>
+              {workoutSteps > 0 && (
+                <div style={{ color: "var(--burned)", fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                  <bdi dir="ltr">
+                    {totalSteps} {t("steps").toLowerCase()} = {activitySteps} {t("stepsFromActivity")} +{" "}
+                    {workoutSteps} {t("stepsFromWorkouts")}
+                  </bdi>
+                </div>
+              )}
             </div>
 
             <form onSubmit={submitSteps} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>

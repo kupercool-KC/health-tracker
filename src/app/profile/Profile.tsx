@@ -31,6 +31,7 @@ export default function Profile() {
   const [calorieGoal, setCalorieGoal] = useState("1950");
   const [proteinGoal, setProteinGoal] = useState("145");
   const [stepGoal, setStepGoal] = useState("8000");
+  const [stepsGoalExcludesWorkouts, setStepsGoalExcludesWorkouts] = useState(true);
   const [netFactor, setNetFactor] = useState("50");
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
@@ -47,6 +48,7 @@ export default function Profile() {
       setCalorieGoal(String(g.calorieGoal));
       setProteinGoal(String(g.proteinGoal));
       setStepGoal(String(g.stepGoal ?? 8000));
+      setStepsGoalExcludesWorkouts(g.stepsGoalExcludesWorkouts ?? true);
       setNetFactor(String(g.netCalorieBurnFactor ?? 50));
     });
   }, [user]);
@@ -63,6 +65,7 @@ export default function Profile() {
           calorieGoal: Number(calorieGoal) || 0,
           proteinGoal: Number(proteinGoal) || 0,
           stepGoal: Number(stepGoal) || 0,
+          stepsGoalExcludesWorkouts,
           netCalorieBurnFactor: Math.min(100, Math.max(0, Number(netFactor) || 0)),
           updatedAt: new Date().toISOString(),
         },
@@ -165,6 +168,14 @@ export default function Profile() {
             onChange={(e) => setStepGoal(e.target.value)}
             style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
           />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={stepsGoalExcludesWorkouts}
+            onChange={(e) => setStepsGoalExcludesWorkouts(e.target.checked)}
+          />
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("stepsGoalExcludeWorkoutsProfileLabel")}</span>
         </label>
         <label style={{ display: "grid", gap: 4 }} title={t("netCalorieFactorExample")}>
           <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("netCalorieFactorLabel")}</span>
