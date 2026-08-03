@@ -78,6 +78,20 @@ function adherence(value: number, goal: number, direction: "atMost" | "atLeast")
   return Math.min(100, (value / goal) * 100);
 }
 
+/**
+ * How far under the goal a missed-goal bar is, in four severity tiers
+ * (most-severe first) — used to shade a missed bar red→orange→amber instead
+ * of a flat red, so "almost hit the goal" reads differently from "barely
+ * moved." Not used for goals where missing by a little vs. a lot isn't the
+ * point (e.g. calories, where any overage is the same kind of "bad").
+ */
+function severityTierColor(ratio: number): { color: string; light: string } {
+  if (ratio < 0.25) return { color: "#b91c1c", light: "#f87171" }; // deep red
+  if (ratio < 0.5) return { color: "#dc2626", light: "#fca5a5" }; // red
+  if (ratio < 0.75) return { color: "#f97316", light: "#fdba74" }; // orange
+  return { color: "#eab308", light: "#fde68a" }; // amber — closest to the goal
+}
+
 /** Shared gradient-filled bar chart for a single metric, with hover/tap tooltip. */
 function MetricBarChart({
   days,
@@ -98,6 +112,8 @@ function MetricBarChart({
   onSelectDay,
   /** When set, the goal line/comparison varies per day instead of being flat — used for the calories chart's net-adjusted boundary (goal + burned×factor%), so a workout day's bar can go green even above the raw goal. */
   perDayGoal,
+  /** When true, a missed-goal bar is shaded by how far under the goal it fell (four tiers, red→amber) instead of a flat bad color — see severityTierColor. Only meaningful for "atLeast" goals. */
+  severityWhenBad,
 }: {
   days: DayInfo[];
   valueKey: "calories" | "protein" | "overallScore" | "steps";
@@ -117,6 +133,7 @@ function MetricBarChart({
   /** Opens the day-detail drawer for the clicked bar's date. */
   onSelectDay: (date: string) => void;
   perDayGoal?: (d: DayInfo) => number;
+  severityWhenBad?: boolean;
 }) {
   const { t, lang } = useI18n();
   // Hebrew graphs read as cluttered with "גר" glued to every protein number
@@ -205,6 +222,19 @@ function MetricBarChart({
               <stop offset="0%" stopColor={badColorLightVar} />
               <stop offset="100%" stopColor={badColorVar} />
             </linearGradient>
+            {severityWhenBad &&
+              days.map((d, i) => {
+                const dayGoal = goalFor(d);
+                const bad = d.hasData && d[valueKey] < dayGoal;
+                if (!bad) return null;
+                const tier = severityTierColor(dayGoal > 0 ? d[valueKey] / dayGoal : 0);
+                return (
+                  <linearGradient key={d.date} id={`grad-${valueKey}-sev-${i}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={tier.light} />
+                    <stop offset="100%" stopColor={tier.color} />
+                  </linearGradient>
+                );
+              })}
           </defs>
           {yTicks.map((tick) => (
             <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
@@ -216,6 +246,7 @@ function MetricBarChart({
             const x = i * barWidth;
             const dayGoal = goalFor(d);
             const bad = d.hasData && (goalDirection === "atMost" ? val > dayGoal : val < dayGoal);
+            const fillId = bad ? (severityWhenBad ? `grad-${valueKey}-sev-${i}` : gradBadId) : gradGoodId;
             return (
               <rect
                 key={d.date}
@@ -223,7 +254,7 @@ function MetricBarChart({
                 y={height - barHeight}
                 width={barWidth * 0.7}
                 height={barHeight}
-                fill={bad ? `url(#${gradBadId})` : `url(#${gradGoodId})`}
+                fill={`url(#${fillId})`}
                 opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
                 onMouseEnter={() => setHoverIdx(i)}
                 onClick={() => {
@@ -690,6 +721,7 @@ export default function History() {
             unit=""
             yStep={2000}
             onSelectDay={setSelectedDate}
+            severityWhenBad
           />
           <SimpleBarChart
             days={days}
