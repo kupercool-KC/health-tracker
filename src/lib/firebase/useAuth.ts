@@ -4,11 +4,19 @@
  * Client hook exposing the current Firebase Auth user and sign-in/out actions.
  * Wraps onAuthStateChanged so components re-render on login/logout.
  *
- * Uses signInWithRedirect instead of signInWithPopup: popups are unreliable
- * on iOS Safari (blocked outright in some contexts, and even when allowed,
- * Safari's tracking prevention can partition the popup's storage from the
- * opener's, so the sign-in never makes it back to the main page — this was
- * the actual cause of "have to log in every time" on iPhone, not a
+ * Uses signInWithPopup on most browsers: signInWithRedirect has its own
+ * SDK-internal async step (createAuthUri) before it navigates, and by the
+ * time that resolves, the navigation is no longer tied closely enough to the
+ * original click for some browsers to allow it — it just silently no-ops
+ * (confirmed via a live repro: repeated createAuthUri calls, 200 OK, with no
+ * subsequent navigation to Google at all). A popup opens synchronously in
+ * the click handler, sidestepping that.
+ *
+ * signInWithRedirect is kept as the path on iOS Safari specifically: popups
+ * are unreliable there (blocked outright in some contexts, and even when
+ * allowed, Safari's tracking prevention can partition the popup's storage
+ * from the opener's, so the sign-in never makes it back to the main page —
+ * this was the actual cause of "have to log in every time" on iPhone, not a
  * persistence setting). Persistence is set explicitly to indexedDB-backed
  * local persistence (the default, but explicit here so it can't silently
  * fall back to session-only in an environment where indexedDB init races
@@ -21,6 +29,7 @@ import {
   indexedDBLocalPersistence,
   onAuthStateChanged,
   setPersistence,
+  signInWithPopup,
   signInWithRedirect,
   signOut,
   type User,
@@ -33,6 +42,15 @@ function authErrorCode(err: unknown): string {
     return (err as { code: string }).code;
   }
   return String(err);
+}
+
+/** Popups are unreliable specifically on iOS Safari — see the file header comment. */
+function isIosSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  return isIos && isSafari;
 }
 
 export interface UseAuthResult {
@@ -70,10 +88,15 @@ export function useAuth(): UseAuthResult {
 
   const signIn = useCallback(async () => {
     setAuthError(null);
+    const provider = new GoogleAuthProvider();
     try {
-      await signInWithRedirect(auth, new GoogleAuthProvider());
+      if (isIosSafari()) {
+        await signInWithRedirect(auth, provider);
+      } else {
+        await signInWithPopup(auth, provider);
+      }
     } catch (err) {
-      console.error("[auth] signInWithRedirect failed:", err);
+      console.error("[auth] sign-in failed:", err);
       setAuthError(authErrorCode(err));
     }
   }, []);
