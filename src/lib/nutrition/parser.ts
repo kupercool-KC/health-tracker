@@ -29,6 +29,7 @@ const itemSchema = z.object({
   estimatedGrams: z.number().nonnegative().optional(),
   explicitCalories: z.boolean().optional(),
   explicitProtein: z.boolean().optional(),
+  usdaSearchTerm: z.string().optional(),
 });
 const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 
@@ -49,7 +50,8 @@ export interface ParseInput {
  */
 const EXPLICIT_VALUE_INSTRUCTION =
   "\n\nIf the user's text explicitly states a calorie or protein value for an item (e.g. \"140 calorie protein shake\", \"an apple, 95 kcal\"), you MUST use that exact number for that field — do not substitute your own estimate — and set that field's boolean flag (\"explicitCalories\"/\"explicitProtein\") to true. Otherwise estimate normally and omit or leave that flag false." +
-  " Also include for each item an \"estimatedGrams\" field: your best-guess portion weight in grams as a plain number.";
+  " Also include for each item an \"estimatedGrams\" field: your best-guess portion weight in grams as a plain number." +
+  " Also include a \"usdaSearchTerm\" field: a specific, internationally-recognized English search phrase for looking up this food in the USDA nutrition database — name the base ingredient AND its preparation/state (e.g. \"white rice, cooked\" not just \"rice\"; \"tilapia\" for a fish called \"אמנון\"/\"Amnon\" in Hebrew/Israeli usage, plus \"raw\" or \"cooked\" if known). A bare single-word term like \"rice\" tends to match unrelated products (crackers, flour, snacks) — always qualify it. This is always in English regardless of what language the \"description\" field is written in, and should never be a regional or brand name.";
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
   if (!input.text && !input.imageUrl) {
@@ -99,7 +101,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   if (!input.imageUrl) {
     for (const item of parsed.items) {
       if (!item.estimatedGrams || (item.explicitCalories && item.explicitProtein)) continue;
-      const usda = await lookupUsdaNutrients(item.description);
+      const usda = await lookupUsdaNutrients(item.usdaSearchTerm || item.description);
       if (!usda) continue;
       if (!item.explicitCalories) {
         item.calories = Math.round((usda.caloriesPer100g * item.estimatedGrams) / 100);
