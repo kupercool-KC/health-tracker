@@ -81,6 +81,13 @@ function formatPace(secPerKm: number): string {
   return `${m}:${String(s).padStart(2, "0")}/km`;
 }
 
+/** Inverse of formatPace's "M:SS" — returns seconds/km, or null if unparseable. */
+function parsePaceToSecPerKm(text: string): number | null {
+  const match = text.trim().match(/^(\d+):([0-5]?\d)$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 export default function Today() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
@@ -138,6 +145,8 @@ export default function Today() {
   const [pickerDurationMin, setPickerDurationMin] = useState("");
   const [pickerDistanceKm, setPickerDistanceKm] = useState("");
   const [pickerWorkoutCalories, setPickerWorkoutCalories] = useState("");
+  /** "M:SS" per km — mirrors the app's existing pace display convention (see formatPace). */
+  const [pickerPace, setPickerPace] = useState("");
   const [pickerWorkoutBusy, setPickerWorkoutBusy] = useState(false);
 
   // Split from `load` so post-edit refreshes (after logging/deleting/editing
@@ -288,9 +297,15 @@ export default function Today() {
   function selectFrequentWorkout(type: string) {
     setPickedWorkout(type);
     const w = frequentWorkouts.find((f) => f.type === type);
-    setPickerDurationMin(w ? String(Math.round(w.avgDurationSec / 60)) : "");
     setPickerDistanceKm(w?.avgDistanceMeters != null ? (w.avgDistanceMeters / 1000).toFixed(1) : "");
     setPickerWorkoutCalories(w?.avgCalories != null ? String(w.avgCalories) : "");
+    if (w?.avgDistanceMeters && w.avgDurationSec) {
+      setPickerPace(formatPace(w.avgDurationSec / (w.avgDistanceMeters / 1000)).replace("/km", ""));
+      setPickerDurationMin("");
+    } else {
+      setPickerPace("");
+      setPickerDurationMin(w ? String(Math.round(w.avgDurationSec / 60)) : "");
+    }
   }
 
   async function submitPickedWorkout(e: React.FormEvent) {
@@ -302,14 +317,23 @@ export default function Today() {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
+      const distanceMeters = pickerDistanceKm ? Math.round(Number(pickerDistanceKm) * 1000) : undefined;
+      const paceSecPerKm = parsePaceToSecPerKm(pickerPace);
+      // Pace + distance determines duration directly when both are given —
+      // more natural for a runner/walker than typing total duration by hand.
+      const durationSec =
+        distanceMeters && paceSecPerKm != null
+          ? Math.round((distanceMeters / 1000) * paceSecPerKm)
+          : Math.round((Number(pickerDurationMin) || 0) * 60);
       const res = await fetch("/api/workouts", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           parsed: {
             type: pickedWorkout,
-            durationSec: Math.round((Number(pickerDurationMin) || 0) * 60),
-            distanceMeters: pickerDistanceKm ? Math.round(Number(pickerDistanceKm) * 1000) : undefined,
+            durationSec,
+            distanceMeters,
+            paceSecPerKm: paceSecPerKm ?? undefined,
             calories: pickerWorkoutCalories ? Number(pickerWorkoutCalories) : undefined,
           },
           date: localDateKey(),
@@ -320,6 +344,7 @@ export default function Today() {
       setPickerDurationMin("");
       setPickerDistanceKm("");
       setPickerWorkoutCalories("");
+      setPickerPace("");
       await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -647,7 +672,7 @@ export default function Today() {
                   <option value="">{t("pickFrequentMeal")}</option>
                   {frequentMeals.map((m) => (
                     <option key={m.name} value={m.name}>
-                      {m.name} ({m.count}×, ~{m.avgCalories} kcal)
+                      {m.name}
                     </option>
                   ))}
                 </select>
@@ -1206,27 +1231,25 @@ export default function Today() {
                   <option value="">{t("pickFrequentWorkout")}</option>
                   {frequentWorkouts.map((w) => (
                     <option key={w.type} value={w.type}>
-                      {w.type} ({w.count}×, ~{Math.round(w.avgDurationSec / 60)} min)
+                      {w.type}
                     </option>
                   ))}
                 </select>
                 {pickedWorkout && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerDurationMin}
-                      onChange={(e) => setPickerDurationMin(e.target.value)}
-                      placeholder={t("durationMinPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     <input
                       type="number"
                       inputMode="numeric"
                       value={pickerDistanceKm}
                       onChange={(e) => setPickerDistanceKm(e.target.value)}
                       placeholder={t("distanceKmPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    <input
+                      value={pickerPace}
+                      onChange={(e) => setPickerPace(e.target.value)}
+                      placeholder={t("pacePlaceholder")}
+                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
                     <input
                       type="number"
@@ -1234,8 +1257,18 @@ export default function Today() {
                       value={pickerWorkoutCalories}
                       onChange={(e) => setPickerWorkoutCalories(e.target.value)}
                       placeholder={t("manualCaloriesPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
+                    {!parsePaceToSecPerKm(pickerPace) && (
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={pickerDurationMin}
+                        onChange={(e) => setPickerDurationMin(e.target.value)}
+                        placeholder={t("durationMinPlaceholder")}
+                        style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      />
+                    )}
                   </div>
                 )}
                 <button type="submit" disabled={!pickedWorkout || pickerWorkoutBusy}>

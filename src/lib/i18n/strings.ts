@@ -184,6 +184,7 @@ export const strings = {
   pickFrequentWorkout: { en: "— Pick a past workout —", he: "— בחר אימון שנרשם בעבר —" },
   gramsPlaceholder: { en: "Grams (optional)", he: "גרם (אופציונלי)" },
   durationMinPlaceholder: { en: "Minutes", he: "דקות" },
+  pacePlaceholder: { en: "Pace (M:SS/km, optional)", he: "קצב (דק:שנ/ק\"מ, אופציונלי)" },
   distanceKmPlaceholder: { en: "Distance km (optional)", he: "מרחק בק\"מ (אופציונלי)" },
 
   workoutWalking: { en: "Walking", he: "הליכה" },
