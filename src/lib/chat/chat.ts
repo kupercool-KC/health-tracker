@@ -7,9 +7,11 @@
  * reliable than trusting the model to decline on its own.
  */
 import "server-only";
+import type OpenAI from "openai";
 import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
+import { lookupUsdaNutrients } from "@/lib/nutrition/usda";
 import type { ChatIntent, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
 
 const CHAT_MODEL = "gpt-4o-mini";
@@ -164,22 +166,88 @@ Each entry in "meals" already includes "netCalories" — the day's net calorie b
   return completion.choices[0]?.message?.content ?? "";
 }
 
+/**
+ * Lets answerGeneralHealth ground any specific calorie/protein number it
+ * states in USDA's database instead of its own (occasionally wrong) memory
+ * — the same class of hallucination fixed for meal logging in
+ * src/lib/nutrition/usda.ts, now available on the advice path too.
+ */
+const NUTRITION_LOOKUP_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "lookup_food_nutrition",
+    description:
+      "Look up verified calories and protein per 100g for a specific food from the USDA FoodData Central database. " +
+      "Call this whenever you're about to state a specific calorie or protein number for a named food, instead of " +
+      "relying on your own memory — USDA is authoritative and your memory sometimes isn't. Returns null if no " +
+      "reliable match is found, in which case fall back to a clearly-labeled estimate.",
+    parameters: {
+      type: "object",
+      properties: {
+        food: {
+          type: "string",
+          description:
+            "A specific, internationally-recognized English food name, qualified with its preparation/state " +
+            "(e.g. \"white rice, cooked\" not just \"rice\"; \"chicken breast, grilled\" not just \"chicken\").",
+        },
+      },
+      required: ["food"],
+    },
+  },
+};
+
+const MAX_TOOL_ROUNDS = 4;
+
 export async function answerGeneralHealth(message: string, lang: "en" | "he", today: string): Promise<string> {
-  const completion = await getOpenAIClient().chat.completions.create({
-    model: CHAT_MODEL,
-    messages: [
-      {
-        role: "system",
-        content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Today's date is ${today} (yyyy-mm-dd) — use it to resolve any relative date reference in the question and tailor advice to that day (e.g. day of week, time of year) when relevant. You can:
+  const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
+    role: "system",
+    content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Today's date is ${today} (yyyy-mm-dd) — use it to resolve any relative date reference in the question and tailor advice to that day (e.g. day of week, time of year) when relevant. You can:
 - Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
 - Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
 - Answer general fitness/health questions.
-If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
-      },
-      { role: "user", content: message },
-    ],
-  });
-  return completion.choices[0]?.message?.content ?? "";
+Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
+  };
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    systemMessage,
+    { role: "user", content: message },
+  ];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: CHAT_MODEL,
+      messages,
+      tools: [NUTRITION_LOOKUP_TOOL],
+    });
+
+    const choice = completion.choices[0]?.message;
+    if (!choice) return "";
+
+    const toolCalls = choice.tool_calls?.filter((c) => c.type === "function");
+    if (!toolCalls || toolCalls.length === 0) {
+      return choice.content ?? "";
+    }
+
+    messages.push(choice);
+    for (const call of toolCalls) {
+      let food = "";
+      try {
+        food = JSON.parse(call.function.arguments).food ?? "";
+      } catch {
+        // malformed arguments — fall through with an empty query, which lookupUsdaNutrients handles as "no match"
+      }
+      const match = food ? await lookupUsdaNutrients(food) : null;
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(match ?? { error: "No reliable USDA match found for this food." }),
+      });
+    }
+  }
+
+  // Ran out of tool-call rounds (unusual) — ask once more without tools so the model must answer directly.
+  const finalCompletion = await getOpenAIClient().chat.completions.create({ model: CHAT_MODEL, messages });
+  return finalCompletion.choices[0]?.message?.content ?? "";
 }
 
 /** How far back "manage_meal" looks for an entry to edit/delete — covers "yesterday" and casual same-week corrections without scanning the whole history. */
