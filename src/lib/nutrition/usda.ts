@@ -7,6 +7,10 @@
  * model's estimate — this is a refinement, not a required dependency.
  */
 import "server-only";
+import { getOpenAIClient } from "@/lib/openai/client";
+
+/** Cheap/fast model for the yes-or-no match verification below — same tier used for chat intent classification, not the (possibly more expensive, admin-configurable) nutrition parser model. */
+const VERIFY_MODEL = "gpt-4o-mini";
 
 /** USDA FDC nutrient IDs (stable across their API, not configurable). */
 const NUTRIENT_ID_ENERGY_KCAL = 1008;
@@ -34,9 +38,8 @@ export interface UsdaMatch {
  * means — "white rice" outranks "Flour, rice, white, unenriched" over
  * "Rice, white, ... cooked" purely because "flour" shares more matched
  * terms. Skip any candidate that names a different processed form than the
- * query asked for, so a confidently-wrong substitution (rice flour standing
- * in for rice, fish sticks standing in for fish) doesn't silently win over
- * just trusting the model's own estimate.
+ * query asked for — a first-pass filter; verifyUsdaMatch below is the real
+ * safety net since this list can never be exhaustive.
  */
 const DISQUALIFYING_TERMS = [
   "flour",
@@ -61,25 +64,71 @@ function isDisqualified(description: string, query: string): boolean {
   return DISQUALIFYING_TERMS.some((term) => lowerDesc.includes(term) && !lowerQuery.includes(term));
 }
 
-export async function lookupUsdaNutrients(query: string): Promise<UsdaMatch | null> {
+function toMatch(food: UsdaFood): UsdaMatch | null {
+  const energy = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_ENERGY_KCAL)?.value;
+  const protein = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_PROTEIN_G)?.value;
+  if (energy == null || protein == null) return null;
+  return { caloriesPer100g: energy, proteinPer100g: protein, matchedName: food.description };
+}
+
+/** Up to `limit` non-disqualified candidates, best-match first (USDA's own relevance order). */
+export async function searchUsdaCandidates(query: string, limit = 4): Promise<UsdaMatch[]> {
   const apiKey = process.env.USDA_FDC_API_KEY || "DEMO_KEY";
   const url =
     `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}` +
-    `&pageSize=5&dataType=${encodeURIComponent("Foundation,SR Legacy")}&query=${encodeURIComponent(query)}`;
+    `&pageSize=8&dataType=${encodeURIComponent("Foundation,SR Legacy")}&query=${encodeURIComponent(query)}`;
 
   try {
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = (await res.json()) as { foods?: UsdaFood[] };
-    const food = data.foods?.find((f) => !isDisqualified(f.description, query));
-    if (!food) return null;
+    const foods = (data.foods ?? []).filter((f) => !isDisqualified(f.description, query));
+    return foods.map(toMatch).filter((m): m is UsdaMatch => m != null).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
 
-    const energy = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_ENERGY_KCAL)?.value;
-    const protein = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_PROTEIN_G)?.value;
-    if (energy == null || protein == null) return null;
-
-    return { caloriesPer100g: energy, proteinPer100g: protein, matchedName: food.description };
+/**
+ * A static keyword filter can't anticipate every mismatch (it didn't catch
+ * "rice cakes"/"rice crackers" outranking plain cooked rice, for instance).
+ * This asks a cheap model to actually judge whether any candidate matches
+ * what a person means by the query — the closest thing to a human sanity
+ * check without one in the loop. Returns null (meaning: fall back to the
+ * caller's own estimate) on any failure or if the model finds no good match.
+ */
+export async function verifyUsdaMatch(query: string, candidates: UsdaMatch[]): Promise<UsdaMatch | null> {
+  if (candidates.length === 0) return null;
+  try {
+    const list = candidates.map((c, i) => `${i}: ${c.matchedName}`).join("\n");
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: VERIFY_MODEL,
+      response_format: { type: "json_object" },
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You verify whether a USDA FoodData Central database entry correctly represents a food item as commonly eaten. " +
+            "Reject a candidate if it's a different processed form, a snack/derivative product, or simply a different food " +
+            "than what's described — even if it shares keywords. Respond with JSON {\"matchIndex\": number|null} — the " +
+            "0-based index of the one correct candidate, or null if none of them correctly represent the food.",
+        },
+        { role: "user", content: `Food: "${query}"\n\nCandidates:\n${list}` },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { matchIndex: number | null };
+    if (parsed.matchIndex == null) return null;
+    return candidates[parsed.matchIndex] ?? null;
   } catch {
     return null;
   }
+}
+
+/** Convenience wrapper: search + verify in one call. */
+export async function lookupUsdaNutrients(query: string): Promise<UsdaMatch | null> {
+  const candidates = await searchUsdaCandidates(query);
+  return verifyUsdaMatch(query, candidates);
 }
