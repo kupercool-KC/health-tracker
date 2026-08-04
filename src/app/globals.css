@@ -32,6 +32,16 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  /* Safety net against any child accidentally overflowing the viewport
+     width (a too-wide table, a long unbroken string) forcing the whole page
+     to scroll sideways — inner elements that need horizontal scroll (like
+     the desktop workouts table) still get it via their own overflow-x. */
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -43,6 +53,21 @@ main {
   max-width: 640px;
   margin: 0 auto;
   padding: 24px 16px 96px;
+}
+
+/* Below this width, wide multi-column tables (e.g. Today's workouts table)
+   switch to a stacked card layout instead of a horizontally-scrolling
+   table — see the paired .desktop-table/.mobile-cards blocks in Today.tsx. */
+.mobile-cards {
+  display: none;
+}
+@media (max-width: 640px) {
+  .desktop-table {
+    display: none;
+  }
+  .mobile-cards {
+    display: grid;
+  }
 }
 
 .card {

@@ -109,6 +109,7 @@ export default function Today() {
   const [workoutText, setWorkoutText] = useState("");
   const [workoutFile, setWorkoutFile] = useState<File | null>(null);
   const [workoutBusy, setWorkoutBusy] = useState(false);
+  const [workoutsRefreshBusy, setWorkoutsRefreshBusy] = useState(false);
 
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [editWorkoutType, setEditWorkoutType] = useState("");
@@ -890,7 +891,20 @@ export default function Today() {
           <section style={{ marginTop: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h2 style={{ margin: 0 }}>{t("workouts")}</h2>
-              <button onClick={() => user && refresh(user.uid)}>{t("refresh")}</button>
+              <button
+                disabled={workoutsRefreshBusy}
+                onClick={async () => {
+                  if (!user) return;
+                  setWorkoutsRefreshBusy(true);
+                  try {
+                    await refresh(user.uid);
+                  } finally {
+                    setWorkoutsRefreshBusy(false);
+                  }
+                }}
+              >
+                {workoutsRefreshBusy ? t("working") : t("refresh")}
+              </button>
             </div>
             {lastSynced && (
               <p style={{ color: "var(--muted)", fontSize: 13 }}>
@@ -900,7 +914,7 @@ export default function Today() {
             {workouts.length === 0 ? (
               <p style={{ color: "var(--muted)" }}>{t("noWorkoutsToday")}</p>
             ) : (
-              <div className="card" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+              <div className="card desktop-table" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
@@ -1042,6 +1056,143 @@ export default function Today() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {workouts.length > 0 && (
+              <div className="mobile-cards" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                {workouts.map((w) => {
+                  const editing = editingWorkoutId === w.id;
+                  return (
+                    <div key={w.id} className="card" style={{ display: "grid", gap: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        {editing ? (
+                          <input
+                            value={editWorkoutType}
+                            onChange={(e) => setEditWorkoutType(e.target.value)}
+                            style={{ flex: 1, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                        ) : (
+                          <strong>{w.type}</strong>
+                        )}
+                        <div style={{ whiteSpace: "nowrap" }}>
+                          {editing ? (
+                            <>
+                              <button
+                                onClick={() => saveWorkoutEdit(w.id)}
+                                disabled={workoutBusy}
+                                style={{ border: "none", background: "none", color: "var(--protein)", padding: 6 }}
+                                aria-label={t("save")}
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => setEditingWorkoutId(null)}
+                                disabled={workoutBusy}
+                                style={{ border: "none", background: "none", color: "var(--muted)", padding: 6 }}
+                                aria-label={t("close")}
+                              >
+                                ✕
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => startEditWorkout(w)}
+                                disabled={workoutBusy}
+                                style={{ border: "none", background: "none", padding: 6 }}
+                                aria-label={t("edit")}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                onClick={() => deleteWorkout(w.id)}
+                                disabled={workoutBusy}
+                                style={{ border: "none", background: "none", color: "var(--calories)", padding: 6 }}
+                                aria-label={t("deleteWorkout")}
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", fontSize: 13, color: "var(--muted)" }}>
+                        <span>
+                          {t("colDuration")}:{" "}
+                          {editing ? (
+                            <input
+                              type="number"
+                              value={editWorkoutDurationMin}
+                              onChange={(e) => setEditWorkoutDurationMin(e.target.value)}
+                              style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          ) : (
+                            <bdi dir="ltr">{formatDuration(w.duration)}</bdi>
+                          )}
+                        </span>
+                        <span>
+                          {t("colDistance")}:{" "}
+                          {editing ? (
+                            <input
+                              type="number"
+                              value={editWorkoutDistanceKm}
+                              onChange={(e) => setEditWorkoutDistanceKm(e.target.value)}
+                              placeholder="km"
+                              style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          ) : w.distance != null ? (
+                            <bdi dir="ltr">{(w.distance / 1000).toFixed(1)} km</bdi>
+                          ) : (
+                            "—"
+                          )}
+                        </span>
+                        {w.pace != null && (
+                          <span>
+                            {t("colPace")}: <bdi dir="ltr">{formatPace(w.pace)}</bdi>
+                          </span>
+                        )}
+                        <span>
+                          {t("calories")}:{" "}
+                          {editing ? (
+                            <input
+                              type="number"
+                              value={editWorkoutCalories}
+                              onChange={(e) => setEditWorkoutCalories(e.target.value)}
+                              style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          ) : w.calories != null ? (
+                            <bdi dir="ltr">{Math.round(w.calories)}</bdi>
+                          ) : (
+                            "—"
+                          )}
+                        </span>
+                        {w.heartRate?.avg != null && (
+                          <span>
+                            {t("avgHr")}: <bdi dir="ltr">{Math.round(w.heartRate.avg)}</bdi>
+                          </span>
+                        )}
+                        <span>
+                          {t("colElevation")}:{" "}
+                          {editing ? (
+                            <input
+                              type="number"
+                              value={editWorkoutElevation}
+                              onChange={(e) => setEditWorkoutElevation(e.target.value)}
+                              placeholder="m"
+                              style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                            />
+                          ) : w.elevationGain != null ? (
+                            <bdi dir="ltr">+{Math.round(w.elevationGain)}m</bdi>
+                          ) : (
+                            "—"
+                          )}
+                        </span>
+                        <span>{w.source === "manual" ? t("manuallyLogged") : w.source}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

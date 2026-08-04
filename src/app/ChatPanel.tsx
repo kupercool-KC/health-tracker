@@ -23,6 +23,10 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // "Extended" = wider drawer (more room to read full session titles);
+  // default is a slimmer drawer that still leaves the message thread visible
+  // underneath the backdrop on wider screens.
+  const [sidebarExtended, setSidebarExtended] = useState(false);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [manualCalories, setManualCalories] = useState("");
@@ -36,6 +40,13 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   // Separate from `busy` (which also covers confirm/rename/etc.) so the
   // thinking indicator only shows while actually waiting on /api/chat.
   const [awaitingReply, setAwaitingReply] = useState(false);
+  // Message content is only ever written server-side (see file header), so
+  // the real message list (activeSession.messages) doesn't show what you
+  // just sent until the whole /api/chat round-trip finishes and Firestore's
+  // onSnapshot delivers it. This renders it locally right away instead —
+  // cleared once the persisted session actually contains it (see the effect
+  // below), so there's no gap where "sent" isn't reflected on screen.
+  const [pendingUserMessage, setPendingUserMessage] = useState<{ content: string } | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -47,6 +58,17 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   }, [user]);
 
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+
+  // Drop the optimistic bubble the moment the real (persisted) message
+  // shows up in the session — avoids a duplicate or a flash of "un-sent".
+  useEffect(() => {
+    if (!pendingUserMessage) return;
+    const msgs = activeSession?.messages ?? [];
+    const last = msgs[msgs.length - 1];
+    if (last?.role === "user" && last.content === pendingUserMessage.content) {
+      setPendingUserMessage(null);
+    }
+  }, [activeSession, pendingUserMessage]);
 
   async function send(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
@@ -64,6 +86,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setAwaitingReply(true);
     setError(null);
+    setPendingUserMessage({ content: messageText.trim() || (lang === "he" ? "[תמונה]" : "[photo]") });
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
@@ -98,6 +121,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       setFile(messageFile);
       setManualCalories(messageCalories);
       setManualProtein(messageProtein);
+      setPendingUserMessage(null);
     } finally {
       setBusy(false);
       setAwaitingReply(false);
@@ -242,79 +266,123 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
       }}
     >
+      {/* Overlay drawer rather than a flex sibling that squeezes the message
+          thread — on a narrow phone screen a fixed-width inline sidebar left
+          barely any room for the chat itself. Tapping the backdrop or a
+          session closes it, same as any standard mobile drawer. */}
       {sidebarOpen && (
-        <aside style={{ width: 180, borderInlineEnd: "0.5px solid var(--border)", overflowY: "auto", padding: 12 }}>
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 1 }}
+        />
+      )}
+      <aside
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          width: sidebarExtended ? "min(88vw, 340px)" : "min(75vw, 220px)",
+          transition: "inset-inline-start 0.2s ease",
+          insetInlineStart: sidebarOpen ? 0 : "-100%",
+          background: "var(--panel)",
+          borderInlineEnd: "0.5px solid var(--border)",
+          overflowY: "auto",
+          padding: 12,
+          zIndex: 2,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <button
             onClick={() => {
               setActiveId(null);
               setSidebarOpen(false);
             }}
-            style={{ width: "100%", marginBottom: 10 }}
+            style={{ flex: 1, marginInlineEnd: 6 }}
           >
             ➕ {t("newChat")}
           </button>
-          {sessions.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>{t("noSessions")}</p>}
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              className="card"
-              style={{
-                marginBottom: 8,
-                padding: 8,
-                background: s.id === activeId ? "var(--protein-bg)" : "var(--panel)",
-              }}
-            >
-              {renamingId === s.id ? (
-                <input
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => renameSession(s.id)}
-                  onKeyDown={(e) => e.key === "Enter" && renameSession(s.id)}
-                  autoFocus
-                  style={{ width: "100%", fontSize: 12, padding: 4 }}
-                />
-              ) : (
-                <button
-                  onClick={() => {
-                    setActiveId(s.id);
-                    setSidebarOpen(false);
-                  }}
-                  style={{
-                    width: "100%",
-                    textAlign: "start",
-                    fontSize: 12,
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                  }}
-                >
-                  💬 {s.title}
-                </button>
-              )}
-              <div style={{ display: "flex", gap: 10, fontSize: 11, marginTop: 6 }}>
-                <button
-                  onClick={() => {
-                    setRenamingId(s.id);
-                    setRenameValue(s.title);
-                  }}
-                  style={{ border: "none", background: "none", padding: 2 }}
-                >
-                  ✏️ {t("rename")}
-                </button>
-                <button onClick={() => shareSession(s.id)} style={{ border: "none", background: "none", padding: 2 }}>
-                  🔗 {t("share")}
-                </button>
-                <button
-                  onClick={() => deleteSession(s.id)}
-                  style={{ border: "none", background: "none", padding: 2, color: "var(--calories)" }}
-                >
-                  🗑️ {t("delete")}
-                </button>
-              </div>
+          <button
+            onClick={() => setSidebarExtended((v) => !v)}
+            aria-label={sidebarExtended ? t("minimize") : t("extend")}
+            title={sidebarExtended ? t("minimize") : t("extend")}
+            style={{ border: "none", background: "none", padding: 6, fontSize: 14, flexShrink: 0 }}
+          >
+            {sidebarExtended ? "⇤⇥" : "⇥⇤"}
+          </button>
+        </div>
+        {sessions.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>{t("noSessions")}</p>}
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            className="card"
+            style={{
+              marginBottom: 8,
+              padding: 8,
+              background: s.id === activeId ? "var(--protein-bg)" : "var(--panel)",
+            }}
+          >
+            {renamingId === s.id ? (
+              <input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => renameSession(s.id)}
+                onKeyDown={(e) => e.key === "Enter" && renameSession(s.id)}
+                autoFocus
+                style={{ width: "100%", fontSize: 12, padding: 4 }}
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  setActiveId(s.id);
+                  setSidebarOpen(false);
+                }}
+                style={{
+                  width: "100%",
+                  textAlign: "start",
+                  fontSize: 12,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                💬 {s.title}
+              </button>
+            )}
+            <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+              <button
+                onClick={() => {
+                  setRenamingId(s.id);
+                  setRenameValue(s.title);
+                }}
+                aria-label={t("rename")}
+                title={t("rename")}
+                style={{ border: "none", background: "none", padding: 2, fontSize: 13 }}
+              >
+                ✏️
+              </button>
+              <button
+                onClick={() => shareSession(s.id)}
+                aria-label={t("share")}
+                title={t("share")}
+                style={{ border: "none", background: "none", padding: 2, fontSize: 13 }}
+              >
+                🔗
+              </button>
+              <button
+                onClick={() => deleteSession(s.id)}
+                aria-label={t("delete")}
+                title={t("delete")}
+                style={{ border: "none", background: "none", padding: 2, fontSize: 13, color: "var(--calories)" }}
+              >
+                🗑️
+              </button>
             </div>
-          ))}
-        </aside>
-      )}
+          </div>
+        ))}
+      </aside>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 12, minWidth: 0 }}>
         <div
@@ -394,6 +462,23 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
               )}
             </div>
           ))}
+          {pendingUserMessage && (
+            <div style={{ alignSelf: "flex-end", maxWidth: "85%" }}>
+              <div
+                className="card"
+                style={{
+                  padding: 8,
+                  background: "var(--protein-bg)",
+                  fontSize: 13,
+                  whiteSpace: "pre-line",
+                  lineHeight: 1.6,
+                  opacity: 0.7,
+                }}
+              >
+                {pendingUserMessage.content}
+              </div>
+            </div>
+          )}
           {awaitingReply && (
             <div style={{ alignSelf: "flex-start", maxWidth: "85%" }}>
               <div className="card thinking-bubble" style={{ padding: "10px 12px", background: "var(--bg-muted)" }}>

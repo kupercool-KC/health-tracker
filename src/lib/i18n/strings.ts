@@ -143,6 +143,8 @@ export const strings = {
   deleteConfirm: { en: "Delete this chat?", he: "למחוק את השיחה הזו?" },
   shareLinkCreated: { en: "Share link created — copied to clipboard.", he: "קישור שיתוף נוצר — הועתק ללוח." },
   noSessions: { en: "No chats yet.", he: "אין שיחות עדיין." },
+  extend: { en: "Extend sidebar", he: "הרחב סרגל צד" },
+  minimize: { en: "Minimize sidebar", he: "מזער סרגל צד" },
   sharedChatTitle: { en: "Shared chat", he: "שיחה משותפת" },
   sharedChatNotFound: { en: "Not found.", he: "לא נמצא." },
 
