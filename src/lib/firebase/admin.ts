@@ -35,3 +35,10 @@ function initAdmin(): App {
 const app = initAdmin();
 export const adminAuth = getAuth(app);
 export const adminDb = getFirestore(app);
+// Firestore rejects `undefined` field values by default (e.g. an optional
+// field an API route didn't strip before writing) — several write paths
+// already work around this ad hoc (see /api/workouts' JSON.stringify
+// round-trip); doing it once here at the source removes the whole class of
+// bug instead of relying on every call site remembering to strip. Must be
+// set before any Firestore operation runs.
+adminDb.settings({ ignoreUndefinedProperties: true });
