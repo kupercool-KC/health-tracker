@@ -139,6 +139,8 @@ export default function Today() {
   const [pickerCalories, setPickerCalories] = useState("");
   const [pickerProtein, setPickerProtein] = useState("");
   const [pickerMealBusy, setPickerMealBusy] = useState(false);
+  /** Per-100g USDA values for the picked meal name, used to auto-fill whichever of grams/calories/protein the user didn't type. */
+  const [pickerPer100g, setPickerPer100g] = useState<{ caloriesPer100g: number; proteinPer100g: number } | null>(null);
 
   const [frequentWorkouts, setFrequentWorkouts] = useState<FrequentWorkout[]>([]);
   const [pickedWorkout, setPickedWorkout] = useState("");
@@ -247,12 +249,68 @@ export default function Today() {
     }
   }
 
-  function selectFrequentMeal(name: string) {
+  async function selectFrequentMeal(name: string) {
     setPickedMeal(name);
+    setPickerPer100g(null);
     const m = frequentMeals.find((f) => f.name === name);
+    const hasHistory = !!m && (m.avgCalories > 0 || m.avgProtein > 0);
     setPickerGrams(m?.avgGrams != null ? String(m.avgGrams) : "");
-    setPickerCalories(m ? String(m.avgCalories) : "");
-    setPickerProtein(m ? String(m.avgProtein) : "");
+    setPickerCalories(hasHistory ? String(m!.avgCalories) : "");
+    setPickerProtein(hasHistory ? String(m!.avgProtein) : "");
+    if (!name) return;
+
+    // No logged history yet (e.g. first time picking "Edamame") means
+    // avgCalories/avgProtein are 0 — look up USDA per-100g values so the
+    // row isn't logged with zeroed-out nutrition, and so typing any one of
+    // grams/calories/protein below can derive the other two.
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ query: name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const match = data.match as { caloriesPer100g: number; proteinPer100g: number } | null | undefined;
+      if (!match) return;
+      setPickerPer100g({ caloriesPer100g: match.caloriesPer100g, proteinPer100g: match.proteinPer100g });
+      if (!hasHistory) {
+        const grams = m?.avgGrams || 100;
+        setPickerGrams(String(grams));
+        setPickerCalories(String(Math.round((match.caloriesPer100g * grams) / 100)));
+        setPickerProtein(String(Math.round(((match.proteinPer100g * grams) / 100) * 10) / 10));
+      }
+    } catch {
+      // best-effort — manual entry still works without per-100g data
+    }
+  }
+
+  function onPickerGramsChange(value: string) {
+    setPickerGrams(value);
+    const grams = Number(value);
+    if (!pickerPer100g || !value || Number.isNaN(grams)) return;
+    setPickerCalories(String(Math.round((pickerPer100g.caloriesPer100g * grams) / 100)));
+    setPickerProtein(String(Math.round(((pickerPer100g.proteinPer100g * grams) / 100) * 10) / 10));
+  }
+
+  function onPickerCaloriesChange(value: string) {
+    setPickerCalories(value);
+    const calories = Number(value);
+    if (!pickerPer100g || !pickerPer100g.caloriesPer100g || !value || Number.isNaN(calories)) return;
+    const grams = (calories / pickerPer100g.caloriesPer100g) * 100;
+    setPickerGrams(String(Math.round(grams)));
+    setPickerProtein(String(Math.round(((pickerPer100g.proteinPer100g * grams) / 100) * 10) / 10));
+  }
+
+  function onPickerProteinChange(value: string) {
+    setPickerProtein(value);
+    const protein = Number(value);
+    if (!pickerPer100g || !pickerPer100g.proteinPer100g || !value || Number.isNaN(protein)) return;
+    const grams = (protein / pickerPer100g.proteinPer100g) * 100;
+    setPickerGrams(String(Math.round(grams)));
+    setPickerCalories(String(Math.round((pickerPer100g.caloriesPer100g * grams) / 100)));
   }
 
   async function submitPickedMeal(e: React.FormEvent) {
@@ -286,6 +344,7 @@ export default function Today() {
       setPickerGrams("");
       setPickerCalories("");
       setPickerProtein("");
+      setPickerPer100g(null);
       await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -682,7 +741,7 @@ export default function Today() {
                       type="number"
                       inputMode="numeric"
                       value={pickerGrams}
-                      onChange={(e) => setPickerGrams(e.target.value)}
+                      onChange={(e) => onPickerGramsChange(e.target.value)}
                       placeholder={t("gramsPlaceholder")}
                       style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
@@ -690,7 +749,7 @@ export default function Today() {
                       type="number"
                       inputMode="numeric"
                       value={pickerCalories}
-                      onChange={(e) => setPickerCalories(e.target.value)}
+                      onChange={(e) => onPickerCaloriesChange(e.target.value)}
                       placeholder={t("manualCaloriesPlaceholder")}
                       style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
@@ -698,7 +757,7 @@ export default function Today() {
                       type="number"
                       inputMode="numeric"
                       value={pickerProtein}
-                      onChange={(e) => setPickerProtein(e.target.value)}
+                      onChange={(e) => onPickerProteinChange(e.target.value)}
                       placeholder={t("manualProteinPlaceholder")}
                       style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
