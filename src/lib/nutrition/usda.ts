@@ -132,3 +132,43 @@ export async function lookupUsdaNutrients(query: string): Promise<UsdaMatch | nu
   const candidates = await searchUsdaCandidates(query);
   return verifyUsdaMatch(query, candidates);
 }
+
+/**
+ * USDA's Foundation/SR Legacy datasets only cover common, largely
+ * US-centric foods — regional dishes, branded products, and less common
+ * ingredients often have nothing to match at all (not a wrong match, just
+ * zero candidates). For those, search the web instead of letting the
+ * caller fall back straight to the model's unverified memory. Only worth
+ * trying once USDA has already come up empty — an extra network round trip
+ * per call, not something to run on every lookup.
+ */
+export async function webSearchNutrition(query: string): Promise<UsdaMatch | null> {
+  try {
+    const response = await getOpenAIClient().responses.create({
+      model: "gpt-4o-mini",
+      tools: [{ type: "web_search_preview" }],
+      input:
+        `Search the web for reliable nutrition data (per 100g) for: "${query}". ` +
+        `Respond with ONLY a JSON object, no other text: ` +
+        `{"caloriesPer100g": number, "proteinPer100g": number, "source": string} — "source" is the name of the ` +
+        `site/database the numbers came from. If you can't find reliable data, respond with ` +
+        `{"caloriesPer100g": null, "proteinPer100g": null, "source": null}.`,
+    });
+    const text = response.output_text;
+    const match = text?.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]) as {
+      caloriesPer100g: number | null;
+      proteinPer100g: number | null;
+      source?: string | null;
+    };
+    if (parsed.caloriesPer100g == null || parsed.proteinPer100g == null) return null;
+    return {
+      caloriesPer100g: parsed.caloriesPer100g,
+      proteinPer100g: parsed.proteinPer100g,
+      matchedName: parsed.source ? `${query} (web: ${parsed.source})` : query,
+    };
+  } catch {
+    return null;
+  }
+}

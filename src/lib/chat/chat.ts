@@ -11,7 +11,7 @@ import type OpenAI from "openai";
 import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
-import { lookupUsdaNutrients } from "@/lib/nutrition/usda";
+import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
 import type { ChatIntent, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
 
 const CHAT_MODEL = "gpt-4o-mini";
@@ -237,11 +237,15 @@ Use the lookup_food_nutrition tool to verify any specific calorie/protein number
       } catch {
         // malformed arguments — fall through with an empty query, which lookupUsdaNutrients handles as "no match"
       }
-      const match = food ? await lookupUsdaNutrients(food) : null;
+      // USDA's own datasets skew US-centric and miss plenty of regional/branded
+      // foods entirely (not a wrong match — no candidates at all). Try a web
+      // search before giving up and letting the model fall back to its own
+      // unverified memory.
+      const match = food ? (await lookupUsdaNutrients(food)) ?? (await webSearchNutrition(food)) : null;
       messages.push({
         role: "tool",
         tool_call_id: call.id,
-        content: JSON.stringify(match ?? { error: "No reliable USDA match found for this food." }),
+        content: JSON.stringify(match ?? { error: "No reliable match found for this food, from USDA or the web." }),
       });
     }
   }
