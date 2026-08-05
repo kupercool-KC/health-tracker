@@ -29,6 +29,20 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const [sidebarExtended, setSidebarExtended] = useState(false);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  // A picked file previously gave zero visual feedback — this renders a
+  // thumbnail so the user can actually see something was attached before
+  // sending. Revoked whenever `file` changes, so picking a new photo (or
+  // sending/clearing) doesn't leak the previous object URL.
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -534,14 +548,49 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        <form onSubmit={send} style={{ display: "flex", gap: 4, marginTop: 8 }}>
+        <form onSubmit={send} style={{ display: "flex", gap: 4, marginTop: 8, alignItems: "center" }}>
+          {file && filePreviewUrl && (
+            <div style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
+              <img
+                src={filePreviewUrl}
+                alt=""
+                style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+              />
+              <button
+                type="button"
+                onClick={() => setFile(null)}
+                aria-label={t("removePhoto")}
+                title={t("removePhoto")}
+                style={{
+                  position: "absolute",
+                  top: -6,
+                  insetInlineEnd: -6,
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  border: "none",
+                  background: "var(--danger)",
+                  color: "#fff",
+                  fontSize: 10,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) send(e);
             }}
-            placeholder={t("chatPlaceholder")}
+            placeholder={file ? t("photoCaptionPlaceholder") : t("chatPlaceholder")}
             style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", minWidth: 0 }}
           />
           <label title={t("photoUploadHint")} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>

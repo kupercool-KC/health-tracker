@@ -136,6 +136,8 @@ export const strings = {
 
   newChat: { en: "+ New chat", he: "+ שיחה חדשה" },
   chatPlaceholder: { en: "Ask about your history, plans, or nutrition…", he: "שאל על ההיסטוריה שלך, תוכניות או תזונה…" },
+  photoCaptionPlaceholder: { en: "Describe the photo (optional)…", he: "תאר את התמונה (אופציונלי)…" },
+  removePhoto: { en: "Remove photo", he: "הסר תמונה" },
   send: { en: "Send", he: "שלח" },
   confirm: { en: "Confirm", he: "אשר" },
   rename: { en: "Rename", he: "שנה שם" },
