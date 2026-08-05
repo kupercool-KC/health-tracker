@@ -13,7 +13,7 @@ import { z } from "zod";
 import type { ParsedNutrition } from "@/lib/types";
 import { getNutritionParserConfig } from "./config";
 import { getOpenAIClient } from "@/lib/openai/client";
-import { lookupUsdaNutrients } from "./usda";
+import { lookupUsdaNutrients, webSearchNutrition } from "./usda";
 
 // estimatedGrams/explicitCalories/explicitProtein are internal to this
 // module (used for USDA grounding below) and stripped before returning —
@@ -51,7 +51,8 @@ export interface ParseInput {
 const EXPLICIT_VALUE_INSTRUCTION =
   "\n\nIf the user's text explicitly states a calorie or protein value for an item (e.g. \"140 calorie protein shake\", \"an apple, 95 kcal\"), you MUST use that exact number for that field — do not substitute your own estimate — and set that field's boolean flag (\"explicitCalories\"/\"explicitProtein\") to true. Otherwise estimate normally and omit or leave that flag false." +
   " Also include for each item an \"estimatedGrams\" field: your best-guess portion weight in grams as a plain number." +
-  " Also include a \"usdaSearchTerm\" field: a specific, internationally-recognized English search phrase for looking up this food in the USDA nutrition database — name the base ingredient AND its preparation/state (e.g. \"white rice, cooked\" not just \"rice\"; \"tilapia\" for a fish called \"אמנון\"/\"Amnon\" in Hebrew/Israeli usage, plus \"raw\" or \"cooked\" if known). A bare single-word term like \"rice\" tends to match unrelated products (crackers, flour, snacks) — always qualify it. This is always in English regardless of what language the \"description\" field is written in, and should never be a regional or brand name.";
+  " Also include a \"usdaSearchTerm\" field: a specific search phrase for grounding this food's real nutrition values — name the base ingredient AND its preparation/state (e.g. \"white rice, cooked\" not just \"rice\"; \"tilapia\" for a fish called \"אמנון\"/\"Amnon\" in Hebrew/Israeli usage, plus \"raw\" or \"cooked\" if known), always in English regardless of what language the \"description\" field is written in. A bare single-word term like \"rice\" tends to match unrelated products (crackers, flour, snacks) — always qualify it." +
+  " EXCEPTION: if this is a specific packaged/branded product (a bottled drink, a snack bar, anything with a visible brand name and product line on its label/packaging), put the exact brand + product name here instead (e.g. \"Yotvata PRO Breakfast banana oat protein drink\", not a generic description) — a generic ingredient database won't have it, but naming it exactly lets a web lookup find the real label values instead of guessing.";
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
   if (!input.text && !input.imageUrl) {
@@ -94,21 +95,25 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
 
   const parsed = parsedSchema.parse(JSON.parse(raw));
 
-  // Ground simple, named foods against USDA's database instead of trusting
-  // the model's own calorie/protein guess. Skipped for photos — a
-  // photographed composite dish doesn't map to a single USDA food entry —
-  // and skipped for any field the user explicitly stated (that always wins).
-  if (!input.imageUrl) {
-    for (const item of parsed.items) {
-      if (!item.estimatedGrams || (item.explicitCalories && item.explicitProtein)) continue;
-      const usda = await lookupUsdaNutrients(item.usdaSearchTerm || item.description);
-      if (!usda) continue;
-      if (!item.explicitCalories) {
-        item.calories = Math.round((usda.caloriesPer100g * item.estimatedGrams) / 100);
-      }
-      if (!item.explicitProtein) {
-        item.protein = Math.round(((usda.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
-      }
+  // Ground simple, named foods against USDA's database (or, failing that, a
+  // web search — see webSearchNutrition) instead of trusting the model's
+  // own calorie/protein guess. Applies to photo-parsed items too, not just
+  // text: a composite home-cooked plate genuinely won't match anything and
+  // just keeps the model's own estimate (usda/web come back null), but a
+  // specific packaged/branded product often DOES have real data findable
+  // this way, and a photo with no visible calorie count on the label is
+  // exactly the case where the model's freehand guess is least reliable.
+  // Skipped for any field the user explicitly stated (that always wins).
+  for (const item of parsed.items) {
+    if (!item.estimatedGrams || (item.explicitCalories && item.explicitProtein)) continue;
+    const term = item.usdaSearchTerm || item.description;
+    const usda = (await lookupUsdaNutrients(term)) ?? (await webSearchNutrition(term));
+    if (!usda) continue;
+    if (!item.explicitCalories) {
+      item.calories = Math.round((usda.caloriesPer100g * item.estimatedGrams) / 100);
+    }
+    if (!item.explicitProtein) {
+      item.protein = Math.round(((usda.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
     }
   }
 

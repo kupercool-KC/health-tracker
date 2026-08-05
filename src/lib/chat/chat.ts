@@ -12,7 +12,19 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
 import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
-import type { ChatIntent, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
+import type { ChatIntent, ChatMessage, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
+
+/**
+ * How many prior turns of conversation to give the classifier/advice model
+ * as context — enough to resolve "check for this one" or a one-word answer
+ * to the assistant's own follow-up question, without ballooning every call
+ * with the whole session history.
+ */
+const HISTORY_CONTEXT_TURNS = 8;
+
+function toContextMessages(history: ChatMessage[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  return history.slice(-HISTORY_CONTEXT_TURNS).map((m) => ({ role: m.role, content: m.content }));
+}
 
 const CHAT_MODEL = "gpt-4o-mini";
 
@@ -25,6 +37,29 @@ export function outOfScopeReply(lang: "en" | "he"): string {
   return OUT_OF_SCOPE_REPLY[lang];
 }
 
+/**
+ * A bare "hi"/"שלום" was landing on the hard out_of_scope refusal — technically
+ * correct (a greeting isn't a nutrition/fitness question) but reads as
+ * needlessly blunt for the very first thing a lot of users type. Handled as
+ * its own fast path (skips the classifier entirely) rather than folding it
+ * into "general_health", so it stays a fixed, free, zero-latency reply
+ * instead of a model call.
+ */
+const GREETING_REGEX = /^(hi+|hello+|hey+|yo|sup|shalom|שלום|היי+|הי|אהלן|מה נשמע)[!.\s]*$/i;
+
+export function isGreeting(message: string): boolean {
+  return GREETING_REGEX.test(message.trim());
+}
+
+const GREETING_REPLY: Record<"en" | "he", string> = {
+  en: "Hi! I can log meals or workouts (just describe them or send a photo), answer nutrition/fitness questions, or look up your history. What would you like to do?",
+  he: "היי! אני יכול לתעד ארוחות או אימונים (רק תכתוב או תשלח תמונה), לענות על שאלות תזונה וכושר, או לחפש בהיסטוריה שלך. במה אפשר לעזור?",
+};
+
+export function greetingReply(lang: "en" | "he"): string {
+  return GREETING_REPLY[lang];
+}
+
 const INTENTS: ChatIntent[] = [
   "log_meal",
   "log_workout",
@@ -35,7 +70,7 @@ const INTENTS: ChatIntent[] = [
   "out_of_scope",
 ];
 
-export async function classifyIntent(message: string): Promise<ChatIntent> {
+export async function classifyIntent(message: string, history: ChatMessage[] = []): Promise<ChatIntent> {
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     response_format: { type: "json_object" },
@@ -43,16 +78,17 @@ export async function classifyIntent(message: string): Promise<ChatIntent> {
     messages: [
       {
         role: "system",
-        content: `Classify the user's message into exactly one intent:
+        content: `Classify the user's LATEST message into exactly one intent. Recent conversation turns are included for context — the latest message is very often a short follow-up (a one-word answer to a question you just asked, "check this one" referring to a photo sent a few messages back, a product name given after being asked to clarify) rather than a complete standalone sentence. Read it in light of what was just discussed before classifying.
 - "log_meal": user is describing food they ate, to be logged (for today OR any other day — "add 2 eggs for yesterday" is still log_meal, not manage_meal).
 - "log_workout": user is describing a workout/exercise session to be logged (running, gym, swimming, etc.), for today or any other day.
 - "log_steps": user is reporting a step count to be logged, for today or any other day (e.g. "I walked 8500 steps yesterday", "log 10k steps for Monday").
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
-- "general_health": a nutrition/fitness/health question NOT about their own logged history — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat".
+- "general_health": a nutrition/fitness/health question NOT about their own logged history — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", or answering the assistant's own request for a food/drink/product name so it can answer a nutrition question from earlier in the conversation.
 - "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
-- "out_of_scope": anything unrelated to nutrition, fitness, or health (coding help, trivia, unrelated small talk, etc).
+- "out_of_scope": ONLY when the message is clearly unrelated to nutrition/fitness/health even accounting for the conversation so far (coding help, trivia, unrelated small talk, etc). A short, oddly-phrased, or terse message that plausibly continues the current topic (e.g. it names a food/product/brand right after the assistant asked "which drink?") is NOT out_of_scope just because it's ambiguous in isolation — use the conversation to resolve it instead of defaulting to a refusal.
 Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
       },
+      ...toContextMessages(history),
       { role: "user", content: message },
     ],
   });
@@ -199,18 +235,25 @@ const NUTRITION_LOOKUP_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
 
 const MAX_TOOL_ROUNDS = 4;
 
-export async function answerGeneralHealth(message: string, lang: "en" | "he", today: string): Promise<string> {
+export async function answerGeneralHealth(
+  message: string,
+  lang: "en" | "he",
+  today: string,
+  history: ChatMessage[] = [],
+): Promise<string> {
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
     content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Today's date is ${today} (yyyy-mm-dd) — use it to resolve any relative date reference in the question and tailor advice to that day (e.g. day of week, time of year) when relevant. You can:
 - Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
 - Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
 - Answer general fitness/health questions.
+Recent conversation turns are included for context — the user's latest message may be a short follow-up (a product/brand name given after you asked "which drink?", "check this one" referring to a photo sent earlier) rather than a complete standalone question. Use that context to figure out what's actually being asked instead of asking the user to repeat themselves, unless it's genuinely still unclear.
 Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. The tool always returns values per 100g. Most real questions aren't phrased per 100g ("how many calories in a date", "in a slice of bread", "in a cup of rice") — when that's the case, use your own knowledge of a typical weight for that unit (one date ≈ 8g, one slice of bread ≈ 30g, a cup of cooked rice ≈ 158g, etc.) to convert the per-100g figure into a direct answer for the actual unit asked about. Always give that concrete converted number — mentioning the per-100g figure along the way is fine, but never stop at "it's X per 100g" and leave the original question unanswered. If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
   };
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     systemMessage,
+    ...toContextMessages(history),
     { role: "user", content: message },
   ];
 

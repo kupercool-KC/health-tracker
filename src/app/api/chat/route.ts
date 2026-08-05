@@ -23,6 +23,8 @@ import {
   answerHistoryQuery,
   classifyIntent,
   generateSessionTitle,
+  greetingReply,
+  isGreeting,
   outOfScopeReply,
   resolveLogDate,
   resolveMealAction,
@@ -89,11 +91,25 @@ async function handleChat(req: Request) {
   // skip the classifier call entirely rather than trust it to guess right
   // from a placeholder string. But an image WITH text ("log this workout")
   // still goes through the classifier so it can route to log_workout/log_steps.
+  // History excludes the message just pushed above — classifyIntent/
+  // answerGeneralHealth take it separately and append it themselves.
+  const priorMessages = messages.slice(0, -1);
+
+  // A bare greeting ("hi", "שלום") isn't a nutrition/fitness question, but
+  // answering it with the same hard out_of_scope refusal used for genuinely
+  // unrelated requests reads as needlessly blunt for what's often the very
+  // first thing a user types. Handled before classification, as its own
+  // free/instant fast path, rather than letting it fall through to the
+  // classifier and the canned refusal.
+  const greeting = !safety.flagged && !imageUrl && !!message?.trim() && isGreeting(message);
+
   const intent: ChatIntent = safety.flagged
     ? "out_of_scope"
-    : imageUrl && !message?.trim()
-      ? "log_meal"
-      : await classifyIntent(userContent);
+    : greeting
+      ? "out_of_scope"
+      : imageUrl && !message?.trim()
+        ? "log_meal"
+        : await classifyIntent(userContent, priorMessages);
   const today = date ?? now.slice(0, 10);
 
   let replyContent: string;
@@ -104,6 +120,8 @@ async function handleChat(req: Request) {
 
   if (safety.flagged) {
     replyContent = securityReply(lang);
+  } else if (greeting) {
+    replyContent = greetingReply(lang);
   } else if (intent === "log_meal") {
     let parsed = await parseNutrition({ text: message, imageUrl, lang });
     if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
@@ -168,7 +186,7 @@ async function handleChat(req: Request) {
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {
-    replyContent = await answerGeneralHealth(userContent, lang, today);
+    replyContent = await answerGeneralHealth(userContent, lang, today, priorMessages);
   } else if (intent === "manage_meal") {
     const result = await resolveMealAction(uid, today, userContent, lang);
     replyContent = result.replyContent;
