@@ -85,7 +85,7 @@ export default function Onboarding() {
   const [workoutTypes, setWorkoutTypes] = useState<WorkoutType[]>([]);
   const [dietaryPrefs, setDietaryPrefs] = useState<DietaryPref[]>(["everything"]);
   const [averageDailySteps, setAverageDailySteps] = useState(6000);
-  const [stepGoal, setStepGoal] = useState(8000);
+  const [stepGoal, setStepGoal] = useState(10000);
 
   const [otherWorkoutText, setOtherWorkoutText] = useState("");
   const [matchingWorkout, setMatchingWorkout] = useState(false);

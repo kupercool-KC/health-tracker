@@ -101,7 +101,7 @@ export default function Today() {
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
-    stepGoal: 8000,
+    stepGoal: 10000,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1403,7 +1403,7 @@ export default function Today() {
               </div>
               <div style={{ color: "var(--burned)", fontSize: 13, opacity: 0.85 }}>
                 <bdi dir="ltr">
-                  {steps?.steps ?? 0} / {goals.stepGoal ?? 8000}
+                  {steps?.steps ?? 0} / {goals.stepGoal ?? 10000}
                 </bdi>{" "}
                 {t("goal")}
               </div>

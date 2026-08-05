@@ -440,7 +440,7 @@ export default function History() {
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
-    stepGoal: 8000,
+    stepGoal: 10000,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -705,7 +705,7 @@ export default function History() {
           <MetricBarChart
             days={days}
             valueKey="steps"
-            goal={goals.stepGoal ?? 8000}
+            goal={goals.stepGoal ?? 10000}
             label={t("stepsVsGoal")}
             identityColorVar="var(--burned)"
             badColorVar="var(--danger)"
@@ -715,7 +715,7 @@ export default function History() {
             badLabel={t("stepsGoalMissed")}
             goalLabel={
               <>
-                {t("goal")}: <bdi dir="ltr">{goals.stepGoal ?? 8000}</bdi>
+                {t("goal")}: <bdi dir="ltr">{goals.stepGoal ?? 10000}</bdi>
               </>
             }
             unit=""
@@ -789,7 +789,7 @@ export default function History() {
           </p>
           {selected.steps > 0 && (
             <p style={{ color: "var(--burned)", margin: "4px 0 0" }}>
-              {t("steps")}: <bdi dir="ltr">{selected.steps}</bdi> / <bdi dir="ltr">{goals.stepGoal ?? 8000}</bdi>
+              {t("steps")}: <bdi dir="ltr">{selected.steps}</bdi> / <bdi dir="ltr">{goals.stepGoal ?? 10000}</bdi>
             </p>
           )}
 

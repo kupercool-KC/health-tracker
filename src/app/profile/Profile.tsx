@@ -30,7 +30,7 @@ export default function Profile() {
   // the parsed number is correct). Parsing only happens on save.
   const [calorieGoal, setCalorieGoal] = useState("1950");
   const [proteinGoal, setProteinGoal] = useState("145");
-  const [stepGoal, setStepGoal] = useState("8000");
+  const [stepGoal, setStepGoal] = useState("10000");
   const [netFactor, setNetFactor] = useState("50");
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
@@ -46,7 +46,7 @@ export default function Profile() {
     getUserGoals(user.uid).then((g) => {
       setCalorieGoal(String(g.calorieGoal));
       setProteinGoal(String(g.proteinGoal));
-      setStepGoal(String(g.stepGoal ?? 8000));
+      setStepGoal(String(g.stepGoal ?? 10000));
       setNetFactor(String(g.netCalorieBurnFactor ?? 50));
     });
   }, [user]);
