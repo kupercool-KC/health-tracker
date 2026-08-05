@@ -88,13 +88,20 @@ async function handleChat(req: Request) {
   // text, not an image upload (which produces the "[photo]" placeholder).
   const safety = message?.trim() ? await checkPromptSafety(message.trim()) : { flagged: false };
 
-  // A bare image with no text essentially always means "log this food" —
-  // skip the classifier call entirely rather than trust it to guess right
-  // from a placeholder string. But an image WITH text ("log this workout")
-  // still goes through the classifier so it can route to log_workout/log_steps.
   // History excludes the message just pushed above — classifyIntent/
   // answerGeneralHealth take it separately and append it themselves.
   const priorMessages = messages.slice(0, -1);
+
+  // A bare image with no text and no prior conversation essentially always
+  // means "log this food" — skip the classifier entirely rather than trust
+  // it to guess right from just a placeholder string. But when there IS
+  // prior conversation, a captionless photo might be answering an open
+  // general_health question ("send me a photo of the menu/dish") instead
+  // of starting a fresh log — let the (now history-aware) classifier decide
+  // rather than blindly assuming log_meal, which previously sent a restaurant
+  // menu screenshot straight into meal-logging's vision parser and produced
+  // confidently wrong, unrelated dish names with no way to say "I don't know".
+  const bareImageNoHistory = !!imageUrl && !message?.trim() && priorMessages.length === 0;
 
   // A bare greeting ("hi", "שלום") isn't a nutrition/fitness question, but
   // answering it with the same hard out_of_scope refusal used for genuinely
@@ -108,7 +115,7 @@ async function handleChat(req: Request) {
     ? "out_of_scope"
     : greeting
       ? "out_of_scope"
-      : imageUrl && !message?.trim()
+      : bareImageNoHistory
         ? "log_meal"
         : await classifyIntent(userContent, priorMessages);
   const today = date ?? now.slice(0, 10);
@@ -207,7 +214,7 @@ async function handleChat(req: Request) {
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {
-    replyContent = await answerGeneralHealth(userContent, lang, today, priorMessages);
+    replyContent = await answerGeneralHealth(userContent, lang, today, priorMessages, imageUrl);
   } else if (intent === "manage_meal") {
     const result = await resolveMealAction(uid, today, userContent, lang);
     replyContent = result.replyContent;
