@@ -106,6 +106,14 @@ export default function Today() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The error banner renders once, near the top of a long scrolling page —
+  // an error from a form further down (e.g. the workout section) previously
+  // just appeared off-screen with no visible feedback, reading as "nothing
+  // happened" rather than as a failure.
+  useEffect(() => {
+    if (error) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [error]);
+
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [manualCalories, setManualCalories] = useState("");

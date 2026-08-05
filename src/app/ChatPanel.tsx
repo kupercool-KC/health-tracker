@@ -64,10 +64,12 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!pendingUserMessage) return;
     const msgs = activeSession?.messages ?? [];
-    const last = msgs[msgs.length - 1];
-    if (last?.role === "user" && last.content === pendingUserMessage.content) {
-      setPendingUserMessage(null);
-    }
+    // Check the whole list, not just the last entry — once the assistant's
+    // reply is appended after the user's message, the last entry is the
+    // assistant's, so a last-only check never matches again and the
+    // optimistic bubble stays stuck on screen below the real reply forever.
+    const found = msgs.some((m) => m.role === "user" && m.content === pendingUserMessage.content);
+    if (found) setPendingUserMessage(null);
   }, [activeSession, pendingUserMessage]);
 
   async function send(e: React.FormEvent | React.KeyboardEvent) {
