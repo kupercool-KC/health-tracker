@@ -506,7 +506,12 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           }
         `}</style>
 
-        {error && <p style={{ color: "#ff6b6b", fontSize: 12 }}>{error}</p>}
+        {error && (
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ color: "#ff6b6b", fontSize: 12, cursor: "pointer" }}>{t("somethingWentWrong")}</summary>
+            <p style={{ color: "#ff6b6b", fontSize: 11, marginTop: 4, whiteSpace: "pre-wrap" }}>{error}</p>
+          </details>
+        )}
 
         {file && (
           <div style={{ display: "flex", gap: 4, marginTop: 8 }}>

@@ -30,6 +30,7 @@ export const strings = {
   },
   logIt: { en: "Log it", he: "שמור" },
   logging: { en: "Logging…", he: "שומר…" },
+  somethingWentWrong: { en: "Something went wrong — tap for details", he: "משהו השתבש — הקש לפרטים" },
   time: { en: "Time", he: "שעה" },
   meal: { en: "Meal", he: "ארוחה" },
   total: { en: "Total", he: "סה\"כ" },

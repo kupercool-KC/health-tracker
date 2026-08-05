@@ -19,6 +19,8 @@ export interface ParseStepsInput {
   text?: string;
   /** A data URL or https URL for a screenshot of a step count. Optional. */
   imageUrl?: string;
+  /** Recent chat turns preceding this message — see the same field on nutrition/parser.ts's ParseInput. */
+  history?: { role: "user" | "assistant"; content: string }[];
 }
 
 const SYSTEM_PROMPT = `You are a step-count extractor. Given a text description and/or a screenshot of a
@@ -41,12 +43,21 @@ export async function parseSteps(input: ParseStepsInput): Promise<ParsedSteps> {
     content.push({ type: "image_url", image_url: { url: input.imageUrl } });
   }
 
+  const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = (input.history ?? [])
+    .slice(-8)
+    .map((m) => ({ role: m.role, content: m.content }));
+  const historyInstruction =
+    historyMessages.length > 0
+      ? "\n\nRecent conversation turns are included before the final message for context — if that final message doesn't itself state a step count (e.g. it's just \"add it\"/\"log that\"), figure out which count was being discussed and extract that instead of failing."
+      : "";
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     response_format: { type: "json_object" },
     temperature: 0,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT + historyInstruction },
+      ...historyMessages,
       { role: "user", content },
     ],
   });

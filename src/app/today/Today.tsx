@@ -658,7 +658,12 @@ export default function Today() {
     <main>
       <h1>{t("today")}</h1>
 
-      {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
+      {error && (
+        <details style={{ marginTop: 4 }}>
+          <summary style={{ color: "#ff6b6b", cursor: "pointer" }}>{t("somethingWentWrong")}</summary>
+          <p style={{ color: "#ff6b6b", fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{error}</p>
+        </details>
+      )}
 
       {loading ? (
         <p style={{ color: "var(--muted)" }}>{t("loading")}</p>

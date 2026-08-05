@@ -26,6 +26,7 @@ import {
   greetingReply,
   isGreeting,
   outOfScopeReply,
+  parseFailureReply,
   resolveLogDate,
   resolveMealAction,
 } from "@/lib/chat/chat";
@@ -123,66 +124,86 @@ async function handleChat(req: Request) {
   } else if (greeting) {
     replyContent = greetingReply(lang);
   } else if (intent === "log_meal") {
-    let parsed = await parseNutrition({ text: message, imageUrl, lang });
-    if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
-      const [item] = parsed.items;
-      parsed = {
-        items: [
-          {
-            ...item,
-            ...(overrideCalories != null ? { calories: overrideCalories } : {}),
-            ...(overrideProtein != null ? { protein: overrideProtein } : {}),
-          },
-        ],
-      };
+    try {
+      let parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
+      if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
+        const [item] = parsed.items;
+        parsed = {
+          items: [
+            {
+              ...item,
+              ...(overrideCalories != null ? { calories: overrideCalories } : {}),
+              ...(overrideProtein != null ? { protein: overrideProtein } : {}),
+            },
+          ],
+        };
+      }
+      // Only worth a date-resolution call when there's actual text to resolve
+      // against — an image-only message ("[photo]" placeholder) has no
+      // calendar phrase to find, so it always means today.
+      const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+      pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
+
+      const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
+      const avoidFoods = (profileSnap.data() as UserProfile | undefined)?.avoidFoods ?? [];
+      const hits = avoidFoods.filter((f) =>
+        parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
+      );
+      const warning =
+        hits.length > 0
+          ? lang === "he"
+            ? `⚠️ שים לב: זה עשוי להכיל ${hits.join(", ")}, שסימנת כמאכל שאתה נמנע ממנו.\n`
+            : `⚠️ Heads up: this looks like it contains ${hits.join(", ")}, which you've marked as a food to avoid.\n`
+          : "";
+
+      const lines = parsed.items
+        .map(
+          (item) =>
+            `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
+        )
+        .join("\n");
+
+      const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+      replyContent = `${warning}${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+    } catch (err) {
+      // Nothing extractable (no food named anywhere nearby, or the model's
+      // output failed schema validation) previously threw all the way out to
+      // the route's generic catch-all 500 ("Internal error" with no way to
+      // recover). Give the user a next step instead of a dead end.
+      console.error("[chat] parseNutrition failed:", err);
+      pendingMeal = undefined;
+      replyContent = parseFailureReply(lang);
     }
-    // Only worth a date-resolution call when there's actual text to resolve
-    // against — an image-only message ("[photo]" placeholder) has no
-    // calendar phrase to find, so it always means today.
-    const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
-    pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
-
-    const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
-    const avoidFoods = (profileSnap.data() as UserProfile | undefined)?.avoidFoods ?? [];
-    const hits = avoidFoods.filter((f) =>
-      parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
-    );
-    const warning =
-      hits.length > 0
-        ? lang === "he"
-          ? `⚠️ שים לב: זה עשוי להכיל ${hits.join(", ")}, שסימנת כמאכל שאתה נמנע ממנו.\n`
-          : `⚠️ Heads up: this looks like it contains ${hits.join(", ")}, which you've marked as a food to avoid.\n`
-        : "";
-
-    const lines = parsed.items
-      .map(
-        (item) =>
-          `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
-      )
-      .join("\n");
-
-    const dateNote = targetDate !== today ? ` (${targetDate})` : "";
-    replyContent = `${warning}${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
   } else if (intent === "log_workout") {
-    const parsed = await parseWorkout({ text: message, imageUrl, lang });
-    const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
-    pendingWorkout = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
+    try {
+      const parsed = await parseWorkout({ text: message, imageUrl, lang, history: priorMessages });
+      const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+      pendingWorkout = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
 
-    const dateNote = targetDate !== today ? ` (${targetDate})` : "";
-    const summary =
-      `${parsed.type}: ${Math.round(parsed.durationSec / 60)} min` +
-      (parsed.distanceMeters != null ? `, ${(parsed.distanceMeters / 1000).toFixed(1)} km` : "") +
-      (parsed.calories != null ? `, ${Math.round(parsed.calories)} kcal` : "");
-    replyContent = `${summary}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+      const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+      const summary =
+        `${parsed.type}: ${Math.round(parsed.durationSec / 60)} min` +
+        (parsed.distanceMeters != null ? `, ${(parsed.distanceMeters / 1000).toFixed(1)} km` : "") +
+        (parsed.calories != null ? `, ${Math.round(parsed.calories)} kcal` : "");
+      replyContent = `${summary}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+    } catch (err) {
+      console.error("[chat] parseWorkout failed:", err);
+      replyContent = parseFailureReply(lang);
+    }
   } else if (intent === "log_steps") {
-    const parsed = await parseSteps({ text: message, imageUrl });
-    const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
-    pendingSteps = { steps: parsed.steps, date: targetDate };
+    try {
+      const parsed = await parseSteps({ text: message, imageUrl, history: priorMessages });
+      const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+      pendingSteps = { steps: parsed.steps, date: targetDate };
 
-    const dateNote = targetDate !== today ? ` (${targetDate})` : "";
-    replyContent =
-      `${parsed.steps} ${strings.steps[lang].toLowerCase()}${dateNote}\n` +
-      (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+      const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+      replyContent =
+        `${parsed.steps} ${strings.steps[lang].toLowerCase()}${dateNote}\n` +
+        (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+    } catch (err) {
+      console.error("[chat] parseSteps failed:", err);
+      replyContent = parseFailureReply(lang);
+    }
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {

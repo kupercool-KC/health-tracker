@@ -60,6 +60,23 @@ export function greetingReply(lang: "en" | "he"): string {
   return GREETING_REPLY[lang];
 }
 
+/**
+ * A log_meal/log_workout/log_steps message that turns out to have nothing
+ * extractable (e.g. "add it" with no food named anywhere nearby, or the
+ * model returning something that fails schema validation) previously threw
+ * all the way out to the route's generic catch-all 500 — surfaced to the
+ * user as a bare "Internal error" with no way to recover except retyping
+ * from scratch. This gives them a next step instead of a dead end.
+ */
+const PARSE_FAILURE_REPLY: Record<"en" | "he", string> = {
+  en: "I couldn't figure out what to log from that — could you describe the food/workout and amount again?",
+  he: "לא הצלחתי להבין מה לתעד מזה — אפשר לתאר שוב את המאכל/האימון והכמות?",
+};
+
+export function parseFailureReply(lang: "en" | "he"): string {
+  return PARSE_FAILURE_REPLY[lang];
+}
+
 const INTENTS: ChatIntent[] = [
   "log_meal",
   "log_workout",

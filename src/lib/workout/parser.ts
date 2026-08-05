@@ -31,6 +31,8 @@ export interface ParseWorkoutInput {
   imageUrl?: string;
   /** Language the "type" field should be written in. Defaults to English. */
   lang?: "en" | "he";
+  /** Recent chat turns preceding this message — see the same field on nutrition/parser.ts's ParseInput. */
+  history?: { role: "user" | "assistant"; content: string }[];
 }
 
 const SYSTEM_PROMPT = `You are a workout log estimator. Given a text description of a workout and/or
@@ -67,12 +69,21 @@ export async function parseWorkout(input: ParseWorkoutInput): Promise<ParsedWork
       ? "\n\nWrite the \"type\" field in Hebrew, regardless of what language the input is in."
       : "\n\nWrite the \"type\" field in English, regardless of what language the input is in.";
 
+  const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = (input.history ?? [])
+    .slice(-8)
+    .map((m) => ({ role: m.role, content: m.content }));
+  const historyInstruction =
+    historyMessages.length > 0
+      ? "\n\nRecent conversation turns are included before the final message for context — if that final message doesn't itself describe a workout (e.g. it's just \"add it\"/\"log that\"), figure out which workout was being discussed and extract that instead of failing."
+      : "";
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: "gpt-4o",
     response_format: { type: "json_object" },
     temperature: 0,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT + languageInstruction },
+      { role: "system", content: SYSTEM_PROMPT + languageInstruction + historyInstruction },
+      ...historyMessages,
       { role: "user", content },
     ],
   });

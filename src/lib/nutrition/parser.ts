@@ -40,6 +40,14 @@ export interface ParseInput {
   imageUrl?: string;
   /** Language the "description" field should be written in. Defaults to English. */
   lang?: "en" | "he";
+  /**
+   * Recent chat turns preceding this message — a chat log_meal message is
+   * often a bare confirmation ("add it", "log that") referring to a food
+   * named a few turns earlier, not a standalone food description. Without
+   * this, the model has nothing to extract an item from and either
+   * hallucinates something ungrounded or fails schema validation outright.
+   */
+  history?: { role: "user" | "assistant"; content: string }[];
 }
 
 /**
@@ -75,6 +83,10 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
       ? "\n\nWrite the \"description\" field in Hebrew, regardless of what language the input is in."
       : "\n\nWrite the \"description\" field in English, regardless of what language the input is in.";
 
+  const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = (input.history ?? [])
+    .slice(-8)
+    .map((m) => ({ role: m.role, content: m.content }));
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: config.model,
     response_format: { type: "json_object" },
@@ -85,7 +97,17 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     temperature: config.temperature,
     seed: config.seed,
     messages: [
-      { role: "system", content: config.systemPrompt + languageInstruction + EXPLICIT_VALUE_INSTRUCTION },
+      {
+        role: "system",
+        content:
+          config.systemPrompt +
+          languageInstruction +
+          EXPLICIT_VALUE_INSTRUCTION +
+          (historyMessages.length > 0
+            ? "\n\nRecent conversation turns are included before the final message for context — if that final message doesn't itself describe food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed and extract that instead of failing."
+            : ""),
+      },
+      ...historyMessages,
       { role: "user", content },
     ],
   });
