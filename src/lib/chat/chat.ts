@@ -180,7 +180,8 @@ const NUTRITION_LOOKUP_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
       "Look up verified calories and protein per 100g for a specific food from the USDA FoodData Central database. " +
       "Call this whenever you're about to state a specific calorie or protein number for a named food, instead of " +
       "relying on your own memory — USDA is authoritative and your memory sometimes isn't. Returns null if no " +
-      "reliable match is found, in which case fall back to a clearly-labeled estimate.",
+      "reliable match is found — in that case, still answer using your own best estimate (clearly labeled as an " +
+      "estimate); never refuse to answer or leave the question unanswered just because this lookup came back empty.",
     parameters: {
       type: "object",
       properties: {
@@ -205,7 +206,7 @@ export async function answerGeneralHealth(message: string, lang: "en" | "he", to
 - Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
 - Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
 - Answer general fitness/health questions.
-Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
+Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. The tool always returns values per 100g. Most real questions aren't phrased per 100g ("how many calories in a date", "in a slice of bread", "in a cup of rice") — when that's the case, use your own knowledge of a typical weight for that unit (one date ≈ 8g, one slice of bread ≈ 30g, a cup of cooked rice ≈ 158g, etc.) to convert the per-100g figure into a direct answer for the actual unit asked about. Always give that concrete converted number — mentioning the per-100g figure along the way is fine, but never stop at "it's X per 100g" and leave the original question unanswered. If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
   };
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
