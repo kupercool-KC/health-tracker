@@ -5,7 +5,7 @@
  * this becomes the chat FAB's "log a meal" mode in a later phase), and a
  * workouts section synced from Apple Health via Health Auto Export.
  */
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
@@ -199,6 +199,73 @@ export default function Today() {
   useEffect(() => {
     if (user) load(user.uid);
   }, [user, load]);
+
+  // Mobile Safari/PWA often keeps this page's JS alive in the background
+  // instead of reloading it — reopening the app the next day previously
+  // still showed the stale day loaded before it was backgrounded, since
+  // nothing re-ran `refresh` (which recomputes "today" fresh each call).
+  // Re-checking whenever the tab becomes visible/focused again covers both
+  // the day-rollover case and general staleness from being away a while.
+  useEffect(() => {
+    if (!user) return;
+    function onVisible() {
+      if (document.visibilityState === "visible") refresh(user!.uid);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [user, refresh]);
+
+  // Pull-to-refresh: only engages when already scrolled to the very top,
+  // so it never fights normal scrolling further down the page.
+  const PULL_THRESHOLD = 70;
+  const pullStartYRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+
+  useEffect(() => {
+    function onTouchStart(e: TouchEvent) {
+      pullStartYRef.current = window.scrollY <= 0 ? e.touches[0].clientY : null;
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (pullStartYRef.current == null) return;
+      const delta = e.touches[0].clientY - pullStartYRef.current;
+      if (delta > 0 && window.scrollY <= 0) {
+        const capped = Math.min(delta, 100);
+        pullDistanceRef.current = capped;
+        setPullDistance(capped);
+        if (delta > 10 && e.cancelable) e.preventDefault();
+      } else {
+        pullStartYRef.current = null;
+        pullDistanceRef.current = 0;
+        setPullDistance(0);
+      }
+    }
+    async function onTouchEnd() {
+      const pulled = pullDistanceRef.current;
+      pullStartYRef.current = null;
+      pullDistanceRef.current = 0;
+      if (pulled > PULL_THRESHOLD && user) {
+        setPullRefreshing(true);
+        setPullDistance(PULL_THRESHOLD);
+        await refresh(user.uid);
+        setPullRefreshing(false);
+      }
+      setPullDistance(0);
+    }
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [user, refresh]);
 
   async function submitMeal(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
@@ -656,6 +723,40 @@ export default function Today() {
 
   return (
     <main>
+      {(pullDistance > 0 || pullRefreshing) && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 6,
+            height: pullRefreshing ? 36 : pullDistance,
+            overflow: "hidden",
+            color: "var(--muted)",
+            fontSize: 12,
+            transition: pullRefreshing ? "height 0.15s ease" : undefined,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              border: "2px solid currentColor",
+              borderInlineEndColor: "transparent",
+              animation: pullRefreshing ? "pull-refresh-spin 0.7s linear infinite" : undefined,
+              transform: pullRefreshing ? undefined : `rotate(${Math.min(pullDistance / PULL_THRESHOLD, 1) * 180}deg)`,
+            }}
+          />
+          {pullRefreshing ? t("refreshing") : pullDistance > PULL_THRESHOLD ? t("releaseToRefresh") : t("pullToRefresh")}
+        </div>
+      )}
+      <style>{`
+        @keyframes pull-refresh-spin { to { transform: rotate(360deg); } }
+      `}</style>
+
       <h1>{t("today")}</h1>
 
       {error && (

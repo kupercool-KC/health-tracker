@@ -49,6 +49,9 @@ export const strings = {
   workouts: { en: "Workouts", he: "אימונים" },
   lastSynced: { en: "Last synced", he: "סונכרן לאחרונה" },
   refresh: { en: "Refresh", he: "רענן" },
+  pullToRefresh: { en: "Pull to refresh", he: "משוך לרענון" },
+  releaseToRefresh: { en: "Release to refresh", he: "שחרר לרענון" },
+  refreshing: { en: "Refreshing…", he: "מרענן…" },
   noWorkoutsToday: { en: "—", he: "—" },
   logWorkout: { en: "Log a workout", he: "רשום אימון" },
   workoutPlaceholder: {

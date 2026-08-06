@@ -29,6 +29,7 @@ import {
   parseFailureReply,
   resolveLogDate,
   resolveMealAction,
+  summarizeProfileForChat,
 } from "@/lib/chat/chat";
 import { checkPromptSafety, securityReply } from "@/lib/chat/security";
 import { sendSecurityAlert } from "@/lib/security/alertEmail";
@@ -72,6 +73,11 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: "Invalid request", details: parsedBody.error.flatten() }, { status: 400 });
   }
   const { sessionId, message, imageUrl, lang, date, overrideCalories, overrideProtein } = parsedBody.data;
+
+  // Fetched once and reused by both log_meal's avoid-food warning and
+  // general_health's personalization — same doc, no reason to read it twice.
+  const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
+  const profile = profileSnap.data() as UserProfile | undefined;
 
   const sessionsCol = adminDb.collection("users").doc(uid).collection("chatSessions");
   const sessionRef = sessionId ? sessionsCol.doc(sessionId) : sessionsCol.doc();
@@ -151,8 +157,7 @@ async function handleChat(req: Request) {
       const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
       pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
 
-      const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
-      const avoidFoods = (profileSnap.data() as UserProfile | undefined)?.avoidFoods ?? [];
+      const avoidFoods = profile?.avoidFoods ?? [];
       const hits = avoidFoods.filter((f) =>
         parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
       );
@@ -214,7 +219,14 @@ async function handleChat(req: Request) {
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {
-    replyContent = await answerGeneralHealth(userContent, lang, today, priorMessages, imageUrl);
+    replyContent = await answerGeneralHealth(
+      userContent,
+      lang,
+      today,
+      priorMessages,
+      imageUrl,
+      summarizeProfileForChat(profile),
+    );
   } else if (intent === "manage_meal") {
     const result = await resolveMealAction(uid, today, userContent, lang);
     replyContent = result.replyContent;

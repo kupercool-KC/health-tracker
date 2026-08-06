@@ -252,12 +252,33 @@ const NUTRITION_LOOKUP_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
 
 const MAX_TOOL_ROUNDS = 4;
 
+/** Compact one-line summary of the fields most relevant to fitness/nutrition advice — omits anything unset rather than showing "age: unknown". */
+export function summarizeProfileForChat(profile: Partial<UserProfile> | undefined): string | null {
+  if (!profile) return null;
+  const parts: string[] = [];
+  if (profile.age != null) parts.push(`age ${profile.age}`);
+  if (profile.gender) parts.push(profile.gender);
+  if (profile.weight != null) parts.push(`${profile.weight}kg`);
+  if (profile.height != null) parts.push(`${profile.height}cm`);
+  if (profile.activityLevel) parts.push(`activity level: ${profile.activityLevel}`);
+  if (profile.goals?.length) parts.push(`goal(s): ${profile.goals.join(", ")}`);
+  if (profile.workoutTypes?.length) parts.push(`does: ${profile.workoutTypes.join(", ")}`);
+  if (profile.dietaryPrefs?.length) parts.push(`diet: ${profile.dietaryPrefs.join(", ")}`);
+  if (profile.allergies?.length) parts.push(`allergies: ${profile.allergies.join(", ")}`);
+  if (profile.avoidFoods?.length) parts.push(`avoids: ${profile.avoidFoods.join(", ")}`);
+  if (profile.calorieGoal != null) parts.push(`calorie goal ${profile.calorieGoal}/day`);
+  if (profile.proteinGoal != null) parts.push(`protein goal ${profile.proteinGoal}g/day`);
+  if (profile.stepGoal != null) parts.push(`step goal ${profile.stepGoal}/day`);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 export async function answerGeneralHealth(
   message: string,
   lang: "en" | "he",
   today: string,
   history: ChatMessage[] = [],
   imageUrl?: string,
+  profileSummary?: string | null,
 ): Promise<string> {
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
@@ -265,7 +286,7 @@ export async function answerGeneralHealth(
 - Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
 - Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
 - Answer general fitness/health questions.
-Recent conversation turns are included for context — the user's latest message may be a short follow-up (a product/brand name given after you asked "which drink?", "check this one" referring to a photo sent earlier) rather than a complete standalone question. Use that context to figure out what's actually being asked instead of asking the user to repeat themselves, unless it's genuinely still unclear.
+${profileSummary ? `This user's own profile: ${profileSummary}. Use it to personalize your answer whenever it's relevant (e.g. calorie-burn estimates depend heavily on body weight and intensity — use their actual weight/activity level instead of a generic range; respect their allergies/avoided foods/dietary prefs in any suggestion) — don't ask them to repeat information you already have here.\n` : ""}Recent conversation turns are included for context — the user's latest message may be a short follow-up (a product/brand name given after you asked "which drink?", "check this one" referring to a photo sent earlier) rather than a complete standalone question. Use that context to figure out what's actually being asked instead of asking the user to repeat themselves, unless it's genuinely still unclear.
 A message may include a photo — a menu, an ingredient list, a nutrition label, a product package. Read what's actually written/shown in it (a dish name, its listed ingredients) and use THAT as the basis for your lookup_food_nutrition call; don't answer about a different, more "typical" dish than what's actually pictured. A restaurant menu entry usually lists ingredients but never calories — that's expected, not a reason to guess a generic substitute; look up the specific named dish (or, if it's not a standalone well-known dish, estimate from its listed ingredients and their typical portions) and say plainly when you're estimating rather than presenting a made-up number as fact.
 Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. The tool always returns values per 100g. Most real questions aren't phrased per 100g ("how many calories in a date", "in a slice of bread", "in a cup of rice") — when that's the case, use your own knowledge of a typical weight for that unit (one date ≈ 8g, one slice of bread ≈ 30g, a cup of cooked rice ≈ 158g, etc.) to convert the per-100g figure into a direct answer for the actual unit asked about. Always give that concrete converted number — mentioning the per-100g figure along the way is fine, but never stop at "it's X per 100g" and leave the original question unanswered.
 If you genuinely can't identify the specific food being asked about (image too unclear, dish name not resolvable to anything, no ingredient info at all) say so plainly instead of inventing an answer about a different, unrelated food — a wrong confident number is worse than an honest "I can't tell from this."

@@ -8,7 +8,7 @@
  * existing POST /api/nutrition (passing the already-parsed result so it
  * doesn't get re-parsed).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -28,6 +28,16 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   // underneath the backdrop on wider screens.
   const [sidebarExtended, setSidebarExtended] = useState(false);
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Resets the auto-grow textarea's height whenever `text` changes for any
+  // reason — typing (handled inline in onChange too) but also programmatic
+  // clears after sending, which don't fire a DOM input event.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [text]);
   const [file, setFile] = useState<File | null>(null);
   // A picked file previously gave zero visual feedback — this renders a
   // thumbnail so the user can actually see something was attached before
@@ -584,14 +594,27 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           )}
-          <input
+          <textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) send(e);
             }}
             placeholder={file ? t("photoCaptionPlaceholder") : t("chatPlaceholder")}
-            style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", minWidth: 0 }}
+            rows={1}
+            style={{
+              flex: 1,
+              padding: 8,
+              borderRadius: 8,
+              border: "0.5px solid var(--border)",
+              minWidth: 0,
+              resize: "none",
+              maxHeight: 120,
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              lineHeight: 1.4,
+            }}
           />
           <label title={t("photoUploadHint")} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
             📷
