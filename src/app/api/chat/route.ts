@@ -220,6 +220,7 @@ async function handleChat(req: Request) {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today);
   } else if (intent === "general_health") {
     replyContent = await answerGeneralHealth(
+      uid,
       userContent,
       lang,
       today,

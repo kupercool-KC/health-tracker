@@ -156,29 +156,47 @@ export async function resolveLogDate(message: string, today: string): Promise<st
 
 /** Bounded window — a personal app doesn't need unbounded history in every prompt. */
 const HISTORY_WINDOW_DAYS = 90;
+/** Smaller window for general_health's "personalize using recent activity" context — a nutrition-advice question doesn't need 90 days of data on every call, just what's recent enough to be relevant (today's intake so far, this week's pattern). */
+const RECENT_CONTEXT_WINDOW_DAYS = 7;
 
-export async function answerHistoryQuery(uid: string, message: string, lang: "en" | "he", today: string): Promise<string> {
+interface RecentHistoryData {
+  meals: { date: string; totals: MealDay["totals"]; burnedCalories: number; netCalories: number }[];
+  workouts: { date: string; type: string; durationSec: number; calories?: number; distanceMeters?: number }[];
+  steps: { date: string; steps: number }[];
+  calorieGoal?: number;
+  netCalorieBurnFactor: number;
+}
+
+/**
+ * Reads the user's own logged meals/workouts/steps (plus the profile
+ * fields needed to compute net calories) from Firestore — shared by
+ * answerHistoryQuery (deep "how did I do last month" questions) and
+ * answerGeneralHealth (so a generic nutrition/fitness question can factor
+ * in what's actually been logged instead of only static profile fields).
+ */
+async function fetchRecentHistory(uid: string, windowDays: number): Promise<RecentHistoryData> {
   const since = new Date();
-  since.setDate(since.getDate() - HISTORY_WINDOW_DAYS);
+  since.setDate(since.getDate() - windowDays);
   const sinceDate = since.toISOString().slice(0, 10);
 
-  const [mealsSnap, workoutsSnap, profileSnap] = await Promise.all([
-    adminDb.collection("users").doc(uid).collection("meals").get(),
+  const [mealsSnap, workoutsSnap, stepsSnap, profileSnap] = await Promise.all([
+    adminDb.collection("users").doc(uid).collection("meals").where("date", ">=", sinceDate).get(),
     adminDb.collection("users").doc(uid).collection("workouts").where("date", ">=", sinceDate).get(),
+    adminDb.collection("users").doc(uid).collection("steps").where("date", ">=", sinceDate).get(),
     adminDb.collection("users").doc(uid).collection("meta").doc("profile").get(),
   ]);
 
   const profile = profileSnap.data() as UserProfile | undefined;
-  const calorieGoal = profile?.calorieGoal;
   const netCalorieBurnFactor = profile?.netCalorieBurnFactor ?? DEFAULT_NET_CALORIE_BURN_FACTOR;
 
-  const meals = mealsSnap.docs
-    .map((d) => d.data() as { date: string; totals: { calories?: number; protein?: number } })
-    .filter((d) => d.date >= sinceDate);
-
+  const meals = mealsSnap.docs.map((d) => d.data() as { date: string; totals: MealDay["totals"] });
   const workouts = workoutsSnap.docs.map((d) => {
     const w = d.data() as { date: string; type: string; duration: number; calories?: number; distance?: number };
     return { date: w.date, type: w.type, durationSec: w.duration, calories: w.calories, distanceMeters: w.distance };
+  });
+  const steps = stepsSnap.docs.map((d) => {
+    const s = d.data() as { date: string; steps: number };
+    return { date: s.date, steps: s.steps };
   });
 
   const burnedByDate = new Map<string, number>();
@@ -200,18 +218,24 @@ export async function answerHistoryQuery(uid: string, message: string, lang: "en
     };
   });
 
+  return { meals: mealsWithNet, workouts, steps, calorieGoal: profile?.calorieGoal, netCalorieBurnFactor };
+}
+
+export async function answerHistoryQuery(uid: string, message: string, lang: "en" | "he", today: string): Promise<string> {
+  const { meals, workouts, steps, calorieGoal, netCalorieBurnFactor } = await fetchRecentHistory(uid, HISTORY_WINDOW_DAYS);
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     messages: [
       {
         role: "system",
-        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.
+        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout/step history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. If the question needs data outside the last ${HISTORY_WINDOW_DAYS} days, say so honestly instead of guessing. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.
 
 Each entry in "meals" already includes "netCalories" — the day's net calorie balance, computed as consumed calories minus (burned calories × ${netCalorieBurnFactor}%), i.e. only ${netCalorieBurnFactor}% of a workout's burned calories count toward the deficit (this is the user's configured factor, meant to keep the deficit conservative since burn estimates run optimistic). When asked about deficit/surplus/"net calories"/"caloric balance", use "netCalories" directly rather than recomputing it, and compare it against the calorie goal${calorieGoal != null ? ` (${calorieGoal} kcal/day)` : ""} — under or at goal is a deficit, over goal is a surplus.`,
       },
       {
         role: "user",
-        content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals: mealsWithNet, workouts })}\n\nQuestion: ${message}`,
+        content: `Data (last ${HISTORY_WINDOW_DAYS} days):\n${JSON.stringify({ meals, workouts, steps })}\n\nQuestion: ${message}`,
       },
     ],
   });
@@ -273,6 +297,7 @@ export function summarizeProfileForChat(profile: Partial<UserProfile> | undefine
 }
 
 export async function answerGeneralHealth(
+  uid: string,
   message: string,
   lang: "en" | "he",
   today: string,
@@ -280,13 +305,16 @@ export async function answerGeneralHealth(
   imageUrl?: string,
   profileSummary?: string | null,
 ): Promise<string> {
+  const { meals, workouts, steps } = await fetchRecentHistory(uid, RECENT_CONTEXT_WINDOW_DAYS);
+  const recentActivityJson = meals.length || workouts.length || steps.length ? JSON.stringify({ meals, workouts, steps }) : null;
+
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
     content: `You are a helpful nutrition and fitness assistant inside a personal health-tracking app. Today's date is ${today} (yyyy-mm-dd) — use it to resolve any relative date reference in the question and tailor advice to that day (e.g. day of week, time of year) when relevant. You can:
 - Build workout plans/programs (e.g. a weekly split, a running progression, warm-up/cool-down structure).
 - Give detailed, practical advice comparing foods, meals, or menus by calories/macros, and general nutrition guidance.
 - Answer general fitness/health questions.
-${profileSummary ? `This user's own profile: ${profileSummary}. Use it to personalize your answer whenever it's relevant (e.g. calorie-burn estimates depend heavily on body weight and intensity — use their actual weight/activity level instead of a generic range; respect their allergies/avoided foods/dietary prefs in any suggestion) — don't ask them to repeat information you already have here.\n` : ""}Recent conversation turns are included for context — the user's latest message may be a short follow-up (a product/brand name given after you asked "which drink?", "check this one" referring to a photo sent earlier) rather than a complete standalone question. Use that context to figure out what's actually being asked instead of asking the user to repeat themselves, unless it's genuinely still unclear.
+${profileSummary ? `This user's own profile: ${profileSummary}. Use it to personalize your answer whenever it's relevant (e.g. calorie-burn estimates depend heavily on body weight and intensity — use their actual weight/activity level instead of a generic range; respect their allergies/avoided foods/dietary prefs in any suggestion) — don't ask them to repeat information you already have here.\n` : ""}${recentActivityJson ? `This user's own logged meals/workouts/steps from the last ${RECENT_CONTEXT_WINDOW_DAYS} days (JSON, date-keyed): ${recentActivityJson}. Use this real data whenever the question calls for it — "have I eaten enough protein today", "should I do a workout today", "how am I doing this week" — instead of answering in the abstract. This is a light dataset for personalizing general advice, not exhaustive history; for a deep/long-range question about their history, that's handled by a different, more thorough path, so don't claim certainty about data outside this window.\n` : ""}Recent conversation turns are included for context — the user's latest message may be a short follow-up (a product/brand name given after you asked "which drink?", "check this one" referring to a photo sent earlier) rather than a complete standalone question. Use that context to figure out what's actually being asked instead of asking the user to repeat themselves, unless it's genuinely still unclear.
 A message may include a photo — a menu, an ingredient list, a nutrition label, a product package. Read what's actually written/shown in it (a dish name, its listed ingredients) and use THAT as the basis for your lookup_food_nutrition call; don't answer about a different, more "typical" dish than what's actually pictured. A restaurant menu entry usually lists ingredients but never calories — that's expected, not a reason to guess a generic substitute; look up the specific named dish (or, if it's not a standalone well-known dish, estimate from its listed ingredients and their typical portions) and say plainly when you're estimating rather than presenting a made-up number as fact.
 Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. The tool always returns values per 100g. Most real questions aren't phrased per 100g ("how many calories in a date", "in a slice of bread", "in a cup of rice") — when that's the case, use your own knowledge of a typical weight for that unit (one date ≈ 8g, one slice of bread ≈ 30g, a cup of cooked rice ≈ 158g, etc.) to convert the per-100g figure into a direct answer for the actual unit asked about. Always give that concrete converted number — mentioning the per-100g figure along the way is fine, but never stop at "it's X per 100g" and leave the original question unanswered.
 If you genuinely can't identify the specific food being asked about (image too unclear, dish name not resolvable to anything, no ingredient info at all) say so plainly instead of inventing an answer about a different, unrelated food — a wrong confident number is worse than an honest "I can't tell from this."
