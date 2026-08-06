@@ -156,8 +156,8 @@ export async function resolveLogDate(message: string, today: string): Promise<st
 
 /** Bounded window — a personal app doesn't need unbounded history in every prompt. */
 const HISTORY_WINDOW_DAYS = 90;
-/** Smaller window for general_health's "personalize using recent activity" context — a nutrition-advice question doesn't need 90 days of data on every call, just what's recent enough to be relevant (today's intake so far, this week's pattern). */
-const RECENT_CONTEXT_WINDOW_DAYS = 7;
+/** Window for general_health's "personalize using recent activity" context — 3 months, same as the deep-history path, so a nutrition-advice question can reference anything recent enough to still be relevant. */
+const RECENT_CONTEXT_WINDOW_DAYS = 90;
 
 interface RecentHistoryData {
   meals: { date: string; totals: MealDay["totals"]; burnedCalories: number; netCalories: number }[];

@@ -99,9 +99,13 @@ export interface FrequentMeal {
  * Ranks the user's own logged meals by how often they've logged that exact
  * name, for a "recent/frequent meals" picker — grouping is case/whitespace
  * normalized so "Omelet" and "omelet " count as the same meal, but the most
- * recently-seen casing is what's displayed.
+ * recently-seen casing is what's displayed. Window is short (30 days, not
+ * the full history) so this tracks CURRENT habits — a meal eaten daily for
+ * a month five months ago but not since would otherwise keep dominating
+ * the picker indefinitely purely on raw historical count, never making
+ * room for what's actually being eaten now.
  */
-export async function getFrequentMeals(uid: string, sinceDaysAgo = 180, limit = 8): Promise<FrequentMeal[]> {
+export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8): Promise<FrequentMeal[]> {
   const days = await getMealDaysSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
   const groups = new Map<
     string,
@@ -143,8 +147,8 @@ export interface FrequentWorkout {
   avgCalories?: number;
 }
 
-/** Ranks the user's own logged workouts by type frequency, for a "past workouts" picker. */
-export async function getFrequentWorkouts(uid: string, sinceDaysAgo = 180, limit = 8): Promise<FrequentWorkout[]> {
+/** Ranks the user's own logged workouts by type frequency, for a "past workouts" picker — same short window rationale as getFrequentMeals. */
+export async function getFrequentWorkouts(uid: string, sinceDaysAgo = 30, limit = 8): Promise<FrequentWorkout[]> {
   const workouts = await getWorkoutsSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
   const groups = new Map<
     string,
