@@ -29,6 +29,7 @@ import {
   parseFailureReply,
   resolveLogDate,
   resolveMealAction,
+  resolvePendingMealFollowUp,
   summarizeProfileForChat,
 } from "@/lib/chat/chat";
 import { checkPromptSafety, securityReply } from "@/lib/chat/security";
@@ -98,6 +99,22 @@ async function handleChat(req: Request) {
   // answerGeneralHealth take it separately and append it themselves.
   const priorMessages = messages.slice(0, -1);
 
+  // Once a pendingMeal proposal is on screen (unconfirmed — "Confirm to
+  // save it?"), the user's very next message is often about THAT specific
+  // proposal — a correction ("no, it's 249") or a question ("why 468
+  // calories?") — not a request to log something new. Previously every
+  // message re-ran log_meal's parseNutrition from scratch regardless, which
+  // has no memory of the number just discussed and (being deterministic at
+  // temperature 0) kept regenerating the exact same wrong estimate no
+  // matter what the user said, ignoring corrections and questions alike.
+  const lastMessage = priorMessages.at(-1);
+  const openPendingMeal = !safety.flagged && lastMessage?.role === "assistant" ? lastMessage.pendingMeal : undefined;
+  const pendingMealFollowUp =
+    openPendingMeal && message?.trim()
+      ? await resolvePendingMealFollowUp(message.trim(), openPendingMeal, lang, priorMessages)
+      : null;
+  const followUpHandled = !!pendingMealFollowUp && pendingMealFollowUp.kind !== "new";
+
   // A bare image with no text and no prior conversation essentially always
   // means "log this food" — skip the classifier entirely rather than trust
   // it to guess right from just a placeholder string. But when there IS
@@ -117,13 +134,18 @@ async function handleChat(req: Request) {
   // classifier and the canned refusal.
   const greeting = !safety.flagged && !imageUrl && !!message?.trim() && isGreeting(message);
 
-  const intent: ChatIntent = safety.flagged
-    ? "out_of_scope"
-    : greeting
+  // Skip the classifier call entirely once the pending-meal follow-up has
+  // already resolved this turn — one fewer model call, and its intent
+  // would be irrelevant anyway.
+  const intent: ChatIntent = followUpHandled
+    ? "log_meal"
+    : safety.flagged
       ? "out_of_scope"
-      : bareImageNoHistory
-        ? "log_meal"
-        : await classifyIntent(userContent, priorMessages);
+      : greeting
+        ? "out_of_scope"
+        : bareImageNoHistory
+          ? "log_meal"
+          : await classifyIntent(userContent, priorMessages);
   const today = date ?? now.slice(0, 10);
 
   let replyContent: string;
@@ -132,7 +154,10 @@ async function handleChat(req: Request) {
   let pendingWorkout: ChatMessage["pendingWorkout"];
   let pendingSteps: ChatMessage["pendingSteps"];
 
-  if (safety.flagged) {
+  if (followUpHandled) {
+    replyContent = pendingMealFollowUp!.replyContent!;
+    pendingMeal = pendingMealFollowUp!.pendingMeal;
+  } else if (safety.flagged) {
     replyContent = securityReply(lang);
   } else if (greeting) {
     replyContent = greetingReply(lang);

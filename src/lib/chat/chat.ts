@@ -12,7 +12,23 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
 import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
+import { strings } from "@/lib/i18n/strings";
 import type { ChatIntent, ChatMessage, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
+
+/**
+ * The model is repeatedly told to reply in plain text (this renders in a
+ * chat bubble, not a markdown viewer) but doesn't always comply — belt and
+ * suspenders: strip the common markdown markers it occasionally leaves in
+ * literally (e.g. "**249 calories**" showing its asterisks) rather than
+ * relying on the instruction alone.
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^[-*]\s+/gm, "");
+}
 
 /**
  * How many prior turns of conversation to give the classifier/advice model
@@ -240,7 +256,7 @@ Each entry in "meals" already includes "netCalories" — the day's net calorie b
     ],
   });
 
-  return completion.choices[0]?.message?.content ?? "";
+  return stripMarkdown(completion.choices[0]?.message?.content ?? "");
 }
 
 /**
@@ -342,7 +358,7 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 
     const toolCalls = choice.tool_calls?.filter((c) => c.type === "function");
     if (!toolCalls || toolCalls.length === 0) {
-      return choice.content ?? "";
+      return stripMarkdown(choice.content ?? "");
     }
 
     messages.push(choice);
@@ -368,7 +384,91 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 
   // Ran out of tool-call rounds (unusual) — ask once more without tools so the model must answer directly.
   const finalCompletion = await getOpenAIClient().chat.completions.create({ model: CHAT_MODEL, messages });
-  return finalCompletion.choices[0]?.message?.content ?? "";
+  return stripMarkdown(finalCompletion.choices[0]?.message?.content ?? "");
+}
+
+export interface PendingMealFollowUpResult {
+  kind: "correction" | "question" | "new";
+  replyContent?: string;
+  pendingMeal?: ChatMessage["pendingMeal"];
+}
+
+/**
+ * Determines whether the user's latest message is reacting to an already
+ * open (unconfirmed) pendingMeal proposal — correcting its numbers, or
+ * asking about them — rather than describing a new food to log. Called
+ * BEFORE the normal intent classifier whenever the previous assistant
+ * message carried a pendingMeal; if this returns "new", the caller falls
+ * through to the regular log_meal/general_health/etc. flow untouched.
+ */
+export async function resolvePendingMealFollowUp(
+  message: string,
+  openPendingMeal: NonNullable<ChatMessage["pendingMeal"]>,
+  lang: "en" | "he",
+  history: ChatMessage[],
+): Promise<PendingMealFollowUpResult> {
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The assistant just proposed logging this meal, not yet saved: ${JSON.stringify(openPendingMeal.items)}. Classify the user's LATEST message as exactly one of:
+- "correction": they're stating the calories/protein should be a specific different value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories").
+- "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
+- "new": anything else — describing a different food to log, confirming as-is, or unrelated.
+Respond ONLY as JSON: { "kind": "correction"|"question"|"new", "calories"?: number, "protein"?: number, "explanation"?: string }
+For "correction": include whichever of calories/protein the user specified (omit the other if only one was mentioned).
+For "question": include a concise "explanation" answering what they asked about the estimate — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.`,
+      },
+      ...toContextMessages(history),
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content;
+  let parsed: { kind?: string; calories?: number; protein?: number; explanation?: string };
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return { kind: "new" };
+  }
+
+  if (parsed.kind === "correction" && (parsed.calories != null || parsed.protein != null)) {
+    if (openPendingMeal.items.length !== 1) {
+      // Can't unambiguously map one stated total to a specific item in a multi-item proposal.
+      return {
+        kind: "question",
+        replyContent:
+          lang === "he" ? "יש כאן כמה פריטים — איזה מהם צריך לתקן?" : "There are multiple items here — which one should I correct?",
+      };
+    }
+    const [item] = openPendingMeal.items;
+    const updatedItem = {
+      ...item,
+      ...(parsed.calories != null ? { calories: parsed.calories } : {}),
+      ...(parsed.protein != null ? { protein: parsed.protein } : {}),
+    };
+    const updatedPendingMeal = { ...openPendingMeal, items: [updatedItem] };
+    const summary = `${updatedItem.description}: ${Math.round(updatedItem.calories)} kcal, ${Math.round(updatedItem.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`;
+    return {
+      kind: "correction",
+      pendingMeal: updatedPendingMeal,
+      replyContent: `${summary}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
+  }
+
+  if (parsed.kind === "question") {
+    return {
+      kind: "question",
+      replyContent: stripMarkdown(
+        parsed.explanation || (lang === "he" ? "אין לי הסבר נוסף לתת כרגע." : "I don't have a further explanation to give right now."),
+      ),
+    };
+  }
+
+  return { kind: "new" };
 }
 
 /** How far back "manage_meal" looks for an entry to edit/delete — covers "yesterday" and casual same-week corrections without scanning the whole history. */

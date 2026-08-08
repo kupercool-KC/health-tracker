@@ -116,6 +116,18 @@ export default function Today() {
 
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  // Same thumbnail-preview treatment as the chat panel's photo attach — a
+  // filename-only confirmation is easy to miss; a visible thumbnail isn't.
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -892,32 +904,65 @@ export default function Today() {
                     submitMeal(e);
                   }
                 }}
-                placeholder={t("addMealPlaceholder")}
+                placeholder={file ? t("photoCaptionPlaceholder") : t("addMealPlaceholder")}
                 rows={2}
                 style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
               />
-              <label
-                title={t("photoUploadHint")}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-              >
-                <span
-                  style={{
-                    border: "0.5px solid var(--border)",
-                    borderRadius: 8,
-                    padding: "8px 14px",
-                    background: "var(--panel)",
-                  }}
-                >
-                  📷 {t("chooseFile")}
-                </span>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>{file?.name}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  style={{ display: "none" }}
-                />
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <label title={t("photoUploadHint")} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <span
+                    style={{
+                      border: "0.5px solid var(--border)",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      background: "var(--panel)",
+                    }}
+                  >
+                    📷 {t("chooseFile")}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    style={{ display: "none" }}
+                  />
+                </label>
+                {file && filePreviewUrl && (
+                  <div style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
+                    <img
+                      src={filePreviewUrl}
+                      alt=""
+                      style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      aria-label={t("removePhoto")}
+                      title={t("removePhoto")}
+                      style={{
+                        position: "absolute",
+                        top: -6,
+                        insetInlineEnd: -6,
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        border: "none",
+                        background: "var(--danger)",
+                        color: "#fff",
+                        fontSize: 10,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
