@@ -28,13 +28,14 @@ import {
   outOfScopeReply,
   parseFailureReply,
   resolveLogDate,
+  resolveLogFromPriorAnswer,
   resolveMealAction,
   resolvePendingMealFollowUp,
   summarizeProfileForChat,
 } from "@/lib/chat/chat";
 import { checkPromptSafety, securityReply } from "@/lib/chat/security";
 import { sendSecurityAlert } from "@/lib/security/alertEmail";
-import type { ChatIntent, ChatMessage, ChatSession, UserProfile } from "@/lib/types";
+import type { ChatIntent, ChatMessage, ChatSession, ParsedNutrition, UserProfile } from "@/lib/types";
 
 const bodySchema = z
   .object({
@@ -163,7 +164,27 @@ async function handleChat(req: Request) {
     replyContent = greetingReply(lang);
   } else if (intent === "log_meal") {
     try {
-      let parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
+      // "add it"/"log it" right after a general_health answer that already
+      // computed a specific total (not a pendingMeal — that case is handled
+      // above by resolvePendingMealFollowUp) previously still went through
+      // parseNutrition from scratch, which has no memory of that number and
+      // regularly produced a different, ungrounded guess of its own. Try
+      // reusing the number that was already given before re-deriving one.
+      const reused = !imageUrl ? await resolveLogFromPriorAnswer(message ?? "", priorMessages, lang, today) : null;
+
+      let parsed: ParsedNutrition;
+      let targetDate: string;
+      if (reused) {
+        parsed = reused.parsed;
+        targetDate = reused.date ?? today;
+      } else {
+        parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
+        // Only worth a date-resolution call when there's actual text to
+        // resolve against — an image-only message ("[photo]" placeholder)
+        // has no calendar phrase to find, so it always means today.
+        targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+      }
+
       if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
         const [item] = parsed.items;
         parsed = {
@@ -176,10 +197,6 @@ async function handleChat(req: Request) {
           ],
         };
       }
-      // Only worth a date-resolution call when there's actual text to resolve
-      // against — an image-only message ("[photo]" placeholder) has no
-      // calendar phrase to find, so it always means today.
-      const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
       pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
 
       const avoidFoods = profile?.avoidFoods ?? [];

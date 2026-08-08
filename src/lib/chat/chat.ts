@@ -13,7 +13,7 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
 import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
 import { strings } from "@/lib/i18n/strings";
-import type { ChatIntent, ChatMessage, MealDay, PendingMealAction, UserProfile } from "@/lib/types";
+import type { ChatIntent, ChatMessage, MealDay, ParsedNutrition, PendingMealAction, UserProfile } from "@/lib/types";
 
 /**
  * The model is repeatedly told to reply in plain text (this renders in a
@@ -469,6 +469,71 @@ For "question": include a concise "explanation" answering what they asked about 
   }
 
   return { kind: "new" };
+}
+
+export interface ReusedLogAnswer {
+  parsed: ParsedNutrition;
+  date?: string;
+}
+
+/**
+ * "add it"/"log it" right after a general_health answer that already
+ * computed a specific calorie/protein total for a named food (not a
+ * pendingMeal proposal — that's resolvePendingMealFollowUp's job) should
+ * reuse that exact number, not have log_meal's parseNutrition re-derive its
+ * own independent guess from scratch with no memory of what was just
+ * calculated. Returns null whenever the message isn't actually this
+ * pattern (new food being described, no concrete prior number to reuse,
+ * etc.), so the caller falls through to the normal parseNutrition flow.
+ */
+export async function resolveLogFromPriorAnswer(
+  message: string,
+  history: ChatMessage[],
+  lang: "en" | "he",
+  today: string,
+): Promise<ReusedLogAnswer | null> {
+  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
+  if (!lastAssistant || lastAssistant.pendingMeal) return null;
+
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The assistant's previous message was: ${JSON.stringify(lastAssistant.content)}
+The user's latest message might be asking to log/save the food from that previous message (e.g. "add it", "log it", "add this to my intake") — determine whether that's actually the case AND that previous message contains a specific, already-computed calorie number for one identifiable food/meal (not just general advice with no concrete total).
+Respond ONLY as JSON: { "applies": boolean, "description"?: string, "calories"?: number, "protein"?: number, "grams"?: number }
+If "applies" is true: extract EXACTLY the final total number(s) already stated there — do not recalculate, round differently, or adjust them. "description" should name the food in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" if not stated.
+If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false }.`,
+      },
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content;
+  let parsed: { applies?: boolean; description?: string; calories?: number; protein?: number; grams?: number };
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return null;
+  }
+  if (!parsed.applies || parsed.calories == null || !parsed.description) return null;
+
+  return {
+    parsed: {
+      items: [
+        {
+          description: parsed.description,
+          calories: parsed.calories,
+          protein: parsed.protein ?? 0,
+          ...(parsed.grams != null ? { grams: parsed.grams } : {}),
+        },
+      ],
+    },
+    date: today,
+  };
 }
 
 /** How far back "manage_meal" looks for an entry to edit/delete — covers "yesterday" and casual same-week corrections without scanning the whole history. */
