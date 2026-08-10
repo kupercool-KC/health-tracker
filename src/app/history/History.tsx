@@ -804,6 +804,11 @@ export default function History() {
                   {Math.round(e.calories)} kcal, {Math.round(e.protein)}
                   {t("unitG")}
                 </bdi>
+                {e.ingredients && e.ingredients.length > 0 && (
+                  <div style={{ color: "var(--muted)", fontSize: 12 }}>
+                    {t("ingredients")}: {e.ingredients.join(", ")}
+                  </div>
+                )}
               </div>
             ))
           )}

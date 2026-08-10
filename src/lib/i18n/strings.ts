@@ -41,6 +41,7 @@ export const strings = {
   fat: { en: "fat", he: "שומן" },
   fiber: { en: "fiber", he: "סיבים" },
   confidence: { en: "confidence", he: "רמת ביטחון" },
+  ingredients: { en: "Ingredients", he: "רכיבים" },
   deleteMeal: { en: "Delete meal", he: "מחק ארוחה" },
   deleteMealConfirm: { en: "Delete this meal?", he: "למחוק את הארוחה הזו?" },
   deleteWorkout: { en: "Delete workout", he: "מחק אימון" },

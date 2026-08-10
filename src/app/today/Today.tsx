@@ -1107,6 +1107,11 @@ export default function Today() {
                             {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
                             {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
                           </bdi>
+                          {entry.ingredients && entry.ingredients.length > 0 && (
+                            <div style={{ marginTop: 4 }}>
+                              {t("ingredients")}: {entry.ingredients.join(", ")}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}

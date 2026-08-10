@@ -19,6 +19,8 @@ export interface MealEntry {
   fiber?: number;
   /** Estimated portion weight in grams, when known — used for USDA grounding and the frequent-meals picker. */
   grams?: number;
+  /** Individual ingredients the user mentioned, when this entry is a composite dish (e.g. a salad) rather than a single named food — shown on expand. */
+  ingredients?: string[];
   mealType?: "breakfast" | "lunch" | "dinner" | "snack";
   /** Where this came from, for auditing the parse. */
   source: "text" | "photo";
@@ -105,6 +107,8 @@ export interface ParsedNutritionItem {
   confidence?: number;
   /** Estimated portion weight in grams, when known. */
   grams?: number;
+  /** Individual ingredients the user mentioned, when this item is a composite dish rather than a single named food. */
+  ingredients?: string[];
 }
 
 /**
