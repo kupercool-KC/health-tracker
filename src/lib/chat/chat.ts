@@ -388,7 +388,7 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 }
 
 export interface PendingMealFollowUpResult {
-  kind: "correction" | "question" | "new";
+  kind: "correction" | "question" | "combine" | "new";
   replyContent?: string;
   pendingMeal?: ChatMessage["pendingMeal"];
 }
@@ -414,13 +414,15 @@ export async function resolvePendingMealFollowUp(
     messages: [
       {
         role: "system",
-        content: `The assistant just proposed logging this meal, not yet saved: ${JSON.stringify(openPendingMeal.items)}. Classify the user's LATEST message as exactly one of:
+        content: `The assistant just proposed logging this meal, not yet saved: ${JSON.stringify(openPendingMeal.items)}. This is the ONLY thing the user's latest message can be about — conversation history below is included purely to help interpret phrasing (pronouns, "it", short replies), never as a source of a different food to substitute in. Classify the user's LATEST message as exactly one of:
 - "correction": they're stating the calories/protein should be a specific different value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories").
 - "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
+- "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'").
 - "new": anything else — describing a different food to log, confirming as-is, or unrelated.
-Respond ONLY as JSON: { "kind": "correction"|"question"|"new", "calories"?: number, "protein"?: number, "explanation"?: string }
+Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"new", "calories"?: number, "protein"?: number, "explanation"?: string, "combinedName"?: string }
 For "correction": include whichever of calories/protein the user specified (omit the other if only one was mentioned).
-For "question": include a concise "explanation" answering what they asked about the estimate — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.`,
+For "question": include a concise "explanation" answering what they asked about the estimate, about THIS meal only — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.
+For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.`,
       },
       ...toContextMessages(history),
       { role: "user", content: message },
@@ -428,7 +430,7 @@ For "question": include a concise "explanation" answering what they asked about 
   });
 
   const raw = completion.choices[0]?.message?.content;
-  let parsed: { kind?: string; calories?: number; protein?: number; explanation?: string };
+  let parsed: { kind?: string; calories?: number; protein?: number; explanation?: string; combinedName?: string };
   try {
     parsed = JSON.parse(raw ?? "{}");
   } catch {
@@ -454,6 +456,21 @@ For "question": include a concise "explanation" answering what they asked about 
     const summary = `${updatedItem.description}: ${Math.round(updatedItem.calories)} kcal, ${Math.round(updatedItem.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`;
     return {
       kind: "correction",
+      pendingMeal: updatedPendingMeal,
+      replyContent: `${summary}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
+  }
+
+  if (parsed.kind === "combine" && parsed.combinedName) {
+    // Sums the already-proposed items' own numbers — no re-derivation, so
+    // this can't drift from whatever total the user already saw/agreed to.
+    const totalCalories = openPendingMeal.items.reduce((sum, i) => sum + i.calories, 0);
+    const totalProtein = openPendingMeal.items.reduce((sum, i) => sum + i.protein, 0);
+    const combinedItem = { description: parsed.combinedName, calories: totalCalories, protein: totalProtein };
+    const updatedPendingMeal = { ...openPendingMeal, items: [combinedItem] };
+    const summary = `${combinedItem.description}: ${Math.round(combinedItem.calories)} kcal, ${Math.round(combinedItem.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`;
+    return {
+      kind: "combine",
       pendingMeal: updatedPendingMeal,
       replyContent: `${summary}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
     };
@@ -503,34 +520,32 @@ export async function resolveLogFromPriorAnswer(
       {
         role: "system",
         content: `The assistant's previous message was: ${JSON.stringify(lastAssistant.content)}
-The user's latest message might be asking to log/save the food from that previous message (e.g. "add it", "log it", "add this to my intake") — determine whether that's actually the case AND that previous message contains a specific, already-computed calorie number for one identifiable food/meal (not just general advice with no concrete total).
-Respond ONLY as JSON: { "applies": boolean, "description"?: string, "calories"?: number, "protein"?: number, "grams"?: number }
-If "applies" is true: extract EXACTLY the final total number(s) already stated there — do not recalculate, round differently, or adjust them. "description" should name the food in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" if not stated.
-If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false }.`,
+The user's latest message might be asking to log/save the food(s) from that previous message (e.g. "add it", "log it", "add this to my intake") — determine whether that's actually the case AND that previous message contains specific, already-computed calorie number(s) for one or more identifiable foods/ingredients (a full ingredient-by-ingredient breakdown counts — extract each line as its own item; not just general advice with no concrete numbers).
+Respond ONLY as JSON: { "applies": boolean, "items": [{ "description": string, "calories": number, "protein"?: number, "grams"?: number }] }
+If "applies" is true: extract EXACTLY the number(s) already stated there for each item — do not recalculate, round differently, sum, or combine them, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item if not stated.
+If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false, "items": [] }.`,
       },
       { role: "user", content: message },
     ],
   });
 
   const raw = completion.choices[0]?.message?.content;
-  let parsed: { applies?: boolean; description?: string; calories?: number; protein?: number; grams?: number };
+  let parsed: { applies?: boolean; items?: { description: string; calories: number; protein?: number; grams?: number }[] };
   try {
     parsed = JSON.parse(raw ?? "{}");
   } catch {
     return null;
   }
-  if (!parsed.applies || parsed.calories == null || !parsed.description) return null;
+  if (!parsed.applies || !parsed.items || parsed.items.length === 0) return null;
 
   return {
     parsed: {
-      items: [
-        {
-          description: parsed.description,
-          calories: parsed.calories,
-          protein: parsed.protein ?? 0,
-          ...(parsed.grams != null ? { grams: parsed.grams } : {}),
-        },
-      ],
+      items: parsed.items.map((item) => ({
+        description: item.description,
+        calories: item.calories,
+        protein: item.protein ?? 0,
+        ...(item.grams != null ? { grams: item.grams } : {}),
+      })),
     },
     date: today,
   };
