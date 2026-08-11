@@ -95,29 +95,41 @@ export interface FrequentMeal {
   avgGrams?: number;
 }
 
+/** Halves an entry's contribution to the ranking every this many days since it was eaten. */
+const FREQUENT_MEAL_HALF_LIFE_DAYS = 7;
+
 /**
  * Ranks the user's own logged meals by how often they've logged that exact
  * name, for a "recent/frequent meals" picker — grouping is case/whitespace
  * normalized so "Omelet" and "omelet " count as the same meal, but the most
  * recently-seen casing is what's displayed. Window is short (30 days, not
- * the full history) so this tracks CURRENT habits — a meal eaten daily for
- * a month five months ago but not since would otherwise keep dominating
- * the picker indefinitely purely on raw historical count, never making
- * room for what's actually being eaten now.
+ * the full history) so this tracks CURRENT habits.
+ *
+ * Ranking is by recency-decayed weight, not raw count: each occurrence
+ * contributes 0.5^(daysAgo / HALF_LIFE) instead of a flat 1, so something
+ * eaten several times two-plus weeks ago and not since fades out even
+ * though its raw count within the 30-day window is still high — a food not
+ * eaten in over a week shouldn't keep dominating the picker just because it
+ * was a habit earlier in the window.
  */
 export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8): Promise<FrequentMeal[]> {
   const days = await getMealDaysSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
+  const now = Date.now();
   const groups = new Map<
     string,
-    { name: string; count: number; calories: number; protein: number; grams: number; gramsCount: number }
+    { name: string; count: number; weight: number; calories: number; protein: number; grams: number; gramsCount: number }
   >();
   for (const day of days) {
+    const daysAgo = Math.max(0, (now - new Date(`${day.date}T00:00:00`).getTime()) / 86_400_000);
+    const decay = Math.pow(0.5, daysAgo / FREQUENT_MEAL_HALF_LIFE_DAYS);
     for (const entry of day.entries) {
       const key = entry.name.trim().toLowerCase();
       if (!key) continue;
-      const g = groups.get(key) ?? { name: entry.name.trim(), count: 0, calories: 0, protein: 0, grams: 0, gramsCount: 0 };
+      const g =
+        groups.get(key) ?? { name: entry.name.trim(), count: 0, weight: 0, calories: 0, protein: 0, grams: 0, gramsCount: 0 };
       g.name = entry.name.trim();
       g.count += 1;
+      g.weight += decay;
       g.calories += entry.calories;
       g.protein += entry.protein;
       if (entry.grams != null) {
@@ -128,7 +140,7 @@ export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8
     }
   }
   return Array.from(groups.values())
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => b.weight - a.weight)
     .slice(0, limit)
     .map((g) => ({
       name: g.name,
