@@ -68,6 +68,18 @@ function MetricCard({
   );
 }
 
+/**
+ * API error responses include a "detail" alongside "error" for failures
+ * from an upstream parse (e.g. parseNutrition/parseWorkout's own error
+ * message) — dropping it left the "tap for details" dropdown showing only
+ * the generic "Failed to parse nutrition" with nothing actually diagnostic
+ * underneath.
+ */
+function apiErrorMessage(data: { error?: string; detail?: string }, fallback: string): string {
+  const error = data.error ?? fallback;
+  return data.detail ? `${error}: ${data.detail}` : error;
+}
+
 function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -318,7 +330,7 @@ export default function Today() {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText));
       if (data.flagged) {
         setError(data.message);
         return;
@@ -426,7 +438,7 @@ export default function Today() {
           date: localDateKey(),
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setPickedMeal("");
       setPickerGrams("");
       setPickerCalories("");
@@ -485,7 +497,7 @@ export default function Today() {
           date: localDateKey(),
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setPickedWorkout("");
       setPickerDurationMin("");
       setPickerDistanceKm("");
@@ -577,7 +589,7 @@ export default function Today() {
         body: JSON.stringify({ text: submittedText || undefined, imageUrl, date: localDateKey(), lang }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText));
       if (data.flagged) {
         setError(data.message);
         return;
@@ -690,7 +702,7 @@ export default function Today() {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText));
       if (data.flagged) {
         setError(data.message);
         return;

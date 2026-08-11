@@ -16,6 +16,12 @@ import { useI18n } from "@/lib/i18n/useI18n";
 import { localDateKey } from "@/lib/dashboard/queries";
 import type { ChatMessage, ChatSession } from "@/lib/types";
 
+/** Same rationale as Today.tsx's apiErrorMessage — surface "detail" alongside "error" instead of dropping it. */
+function apiErrorMessage(data: { error?: string; detail?: string }, fallback: string): string {
+  const error = data.error ?? fallback;
+  return data.detail ? `${error}: ${data.detail}` : error;
+}
+
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
@@ -137,7 +143,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           overrideProtein: messageProtein ? Number(messageProtein) : undefined,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       const data: { sessionId: string } = await res.json();
       setActiveId(data.sessionId);
     } catch (err) {
@@ -167,7 +173,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ parsed, imageUrl, date: date ?? localDateKey() }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedIndices((prev) => new Set(prev).add(index));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -189,7 +195,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ parsed, imageUrl, date }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedIndices((prev) => new Set(prev).add(index));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -210,7 +216,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ steps: pendingSteps.steps, date: pendingSteps.date }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedIndices((prev) => new Set(prev).add(index));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -232,7 +238,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify(action === "delete" ? { date, entryId } : { date, entryId, changes }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedIndices((prev) => new Set(prev).add(index));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
