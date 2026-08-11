@@ -30,7 +30,16 @@ const itemSchema = z.object({
   explicitCalories: z.boolean().optional(),
   explicitProtein: z.boolean().optional(),
   usdaSearchTerm: z.string().optional(),
-  ingredients: z.array(z.string()).optional(),
+  // The model doesn't always follow "array of strings" when there's only
+  // one ingredient to list — it sometimes returns a bare string instead
+  // (e.g. "yellow curry" instead of ["yellow curry"]), which used to fail
+  // schema validation outright and crash the whole log with an opaque
+  // Zod error. Coerce a single string into a 1-element array rather than
+  // rejecting it.
+  ingredients: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (typeof v === "string" ? [v] : v)),
 });
 const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 

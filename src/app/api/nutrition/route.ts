@@ -45,7 +45,13 @@ const itemSchema = z.object({
   fiber: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
   grams: z.number().nonnegative().optional(),
-  ingredients: z.array(z.string()).optional(),
+  // Same tolerance as parser.ts's itemSchema — a client-submitted `parsed`
+  // payload (chat confirm flow) may carry the model's raw single-string
+  // form if it slipped past there too; coerce rather than 400.
+  ingredients: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (typeof v === "string" ? [v] : v)),
 });
 
 const parsedNutritionSchema = z.object({ items: z.array(itemSchema).min(1) });
