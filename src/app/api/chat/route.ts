@@ -259,7 +259,7 @@ async function handleChat(req: Request) {
       replyContent = parseFailureReply(lang);
     }
   } else if (intent === "query_history") {
-    replyContent = await answerHistoryQuery(uid, userContent, lang, today);
+    replyContent = await answerHistoryQuery(uid, userContent, lang, today, priorMessages);
   } else if (intent === "general_health") {
     replyContent = await answerGeneralHealth(
       uid,
