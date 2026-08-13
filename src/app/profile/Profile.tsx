@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
-import { useAuth } from "@/lib/firebase/useAuth";
+import { AUTH_REDIRECT_LOST, useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
 import { getUserGoals } from "@/lib/profile/queries";
@@ -123,7 +123,11 @@ export default function Profile() {
         <h1>{t("navProfile")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
-        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
+        {authError && (
+          <p style={{ color: "#ff6b6b", fontSize: 13 }}>
+            {authError === AUTH_REDIRECT_LOST ? t("authRedirectLost") : `${t("signInFailed")}: ${authError}`}
+          </p>
+        )}
       </main>
     );
   }

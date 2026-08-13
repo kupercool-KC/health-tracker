@@ -53,6 +53,24 @@ function isIosSafari(): boolean {
   return isIos && isSafari;
 }
 
+/**
+ * Set right before signInWithRedirect navigates away, cleared once we've
+ * checked for a result on the way back. Distinguishes "the user never
+ * tried to sign in" from "they did, the round trip to Google completed,
+ * but Firebase came back with nothing" — the latter throws no error at
+ * all (getRedirectResult just resolves to null), so without this marker
+ * there's no way to tell the two apart and surface a real message instead
+ * of silence. The actual cause (confirmed against this project's own
+ * Firebase config): authDomain is the default *.firebaseapp.com, a
+ * different site than where the app is hosted, so Safari's cross-site
+ * tracking prevention can partition the storage the redirect needs to
+ * hand the credential back.
+ */
+const REDIRECT_PENDING_KEY = "authRedirectPending";
+
+/** Special (non-Firebase) authError code for the silent-redirect-loss case above — checked by name at every authError display site. */
+export const AUTH_REDIRECT_LOST = "auth/redirect-lost";
+
 export interface UseAuthResult {
   user: User | null;
   loading: boolean;
@@ -71,14 +89,30 @@ export function useAuth(): UseAuthResult {
 
   useEffect(() => {
     setPersistence(auth, indexedDBLocalPersistence).catch(() => {});
+    const hadPendingRedirect =
+      typeof window !== "undefined" && sessionStorage.getItem(REDIRECT_PENDING_KEY) === "1";
     // Completes the sign-in after signInWithRedirect bounces back from
     // Google. This used to swallow errors entirely (`.catch(() => {})`),
     // which is exactly why a failed redirect just silently dumps you back
     // on the sign-in screen with zero clue why — log + surface it instead.
-    getRedirectResult(auth).catch((err) => {
-      console.error("[auth] getRedirectResult failed:", err);
-      setAuthError(authErrorCode(err));
-    });
+    getRedirectResult(auth)
+      .then((result) => {
+        if (!hadPendingRedirect) return;
+        sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+        if (!result) {
+          // No error was thrown, but we know a redirect was actually in
+          // flight (the marker) and Firebase has nothing to show for it —
+          // the round trip to Google completed with no usable credential.
+          // See AUTH_REDIRECT_LOST's definition above for why.
+          console.error("[auth] redirect completed with no credential (likely cross-site storage partitioning)");
+          setAuthError(AUTH_REDIRECT_LOST);
+        }
+      })
+      .catch((err) => {
+        sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+        console.error("[auth] getRedirectResult failed:", err);
+        setAuthError(authErrorCode(err));
+      });
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -91,11 +125,13 @@ export function useAuth(): UseAuthResult {
     const provider = new GoogleAuthProvider();
     try {
       if (isIosSafari()) {
+        sessionStorage.setItem(REDIRECT_PENDING_KEY, "1");
         await signInWithRedirect(auth, provider);
       } else {
         await signInWithPopup(auth, provider);
       }
     } catch (err) {
+      sessionStorage.removeItem(REDIRECT_PENDING_KEY);
       console.error("[auth] sign-in failed:", err);
       setAuthError(authErrorCode(err));
     }

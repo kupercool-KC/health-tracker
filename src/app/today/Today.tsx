@@ -7,7 +7,7 @@
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
-import { useAuth } from "@/lib/firebase/useAuth";
+import { AUTH_REDIRECT_LOST, useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
   getFrequentMeals,
@@ -768,7 +768,11 @@ export default function Today() {
         <h1>{t("today")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
-        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
+        {authError && (
+          <p style={{ color: "#ff6b6b", fontSize: 13 }}>
+            {authError === AUTH_REDIRECT_LOST ? t("authRedirectLost") : `${t("signInFailed")}: ${authError}`}
+          </p>
+        )}
       </main>
     );
   }

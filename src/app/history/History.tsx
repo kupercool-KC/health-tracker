@@ -9,7 +9,7 @@
  * gradient-filled bars, no new dependency needed for this.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/lib/firebase/useAuth";
+import { AUTH_REDIRECT_LOST, useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
   getMealDaysSince,
@@ -581,7 +581,11 @@ export default function History() {
         <h1>{t("navHistory")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
-        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
+        {authError && (
+          <p style={{ color: "#ff6b6b", fontSize: 13 }}>
+            {authError === AUTH_REDIRECT_LOST ? t("authRedirectLost") : `${t("signInFailed")}: ${authError}`}
+          </p>
+        )}
       </main>
     );
   }
