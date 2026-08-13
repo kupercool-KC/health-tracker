@@ -18,10 +18,12 @@ import { parseNutrition } from "@/lib/nutrition/parser";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
 import { strings } from "@/lib/i18n/strings";
+import type { CompositeLogDetection } from "@/lib/chat/chat";
 import {
   answerGeneralHealth,
   answerHistoryQuery,
   classifyIntent,
+  detectCompositeLog,
   genericMealDescription,
   generateSessionTitle,
   greetingReply,
@@ -141,7 +143,18 @@ async function handleChat(req: Request) {
 
   // Skip the classifier call entirely once the pending-meal follow-up has
   // already resolved this turn — one fewer model call, and its intent
-  // would be irrelevant anyway.
+  // would be irrelevant anyway. When none of the fast paths apply, also
+  // check (in parallel, same message — no added latency) whether this one
+  // message actually describes MORE than one kind of log at once (e.g. a
+  // meal AND a workout together) — classifyIntent alone can only pick one
+  // bucket, which silently dropped the other half.
+  const skipClassifier = followUpHandled || safety.flagged || greeting || bareImageNoHistory;
+  const [classifiedIntent, composite] = skipClassifier
+    ? [null as ChatIntent | null, { logs: [] } as CompositeLogDetection]
+    : await Promise.all([
+        classifyIntent(userContent, priorMessages),
+        imageUrl ? Promise.resolve({ logs: [] }) : detectCompositeLog(userContent, priorMessages),
+      ]);
   const intent: ChatIntent = followUpHandled
     ? "log_meal"
     : safety.flagged
@@ -150,7 +163,8 @@ async function handleChat(req: Request) {
         ? "out_of_scope"
         : bareImageNoHistory
           ? "log_meal"
-          : await classifyIntent(userContent, priorMessages);
+          : classifiedIntent!;
+  const isComposite = composite.logs.length >= 2 && !!message?.trim();
 
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
@@ -165,6 +179,74 @@ async function handleChat(req: Request) {
     replyContent = securityReply(lang);
   } else if (greeting) {
     replyContent = greetingReply(lang);
+  } else if (isComposite) {
+    // One message described more than one kind of thing to log at once
+    // (e.g. a meal AND a workout) — parse each detected category in
+    // parallel and build one reply with an independent pendingX per
+    // category, so the client renders a separate Confirm button for each
+    // (see ChatPanel.tsx — a message can carry multiple pending* fields).
+    try {
+      const summaries: string[] = [];
+      await Promise.all([
+        composite.logs.includes("meal")
+          ? (async () => {
+              try {
+                const parsed = await parseNutrition({ text: message, lang, history: priorMessages });
+                const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+                pendingMeal = { ...parsed, date: targetDate };
+                const lines = parsed.items
+                  .map(
+                    (item) =>
+                      `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
+                  )
+                  .join("\n");
+                const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+                summaries.push(`${lines}${dateNote}`);
+              } catch (err) {
+                console.error("[chat] composite parseNutrition failed:", err);
+              }
+            })()
+          : Promise.resolve(),
+        composite.logs.includes("workout")
+          ? (async () => {
+              try {
+                const parsed = await parseWorkout({ text: message, lang, history: priorMessages });
+                const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+                pendingWorkout = { ...parsed, date: targetDate };
+                const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+                const summary =
+                  `${parsed.type}: ${Math.round(parsed.durationSec / 60)} min` +
+                  (parsed.distanceMeters != null ? `, ${(parsed.distanceMeters / 1000).toFixed(1)} km` : "") +
+                  (parsed.calories != null ? `, ${Math.round(parsed.calories)} kcal` : "");
+                summaries.push(`${summary}${dateNote}`);
+              } catch (err) {
+                console.error("[chat] composite parseWorkout failed:", err);
+              }
+            })()
+          : Promise.resolve(),
+        composite.logs.includes("steps")
+          ? (async () => {
+              try {
+                const parsed = await parseSteps({ text: message, history: priorMessages });
+                const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+                pendingSteps = { steps: parsed.steps, date: targetDate };
+                const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+                summaries.push(`${parsed.steps} ${strings.steps[lang].toLowerCase()}${dateNote}`);
+              } catch (err) {
+                console.error("[chat] composite parseSteps failed:", err);
+              }
+            })()
+          : Promise.resolve(),
+      ]);
+
+      replyContent =
+        summaries.length > 0
+          ? `${summaries.join("\n\n")}\n` + (lang === "he" ? "לאשר ולשמור כל אחד?" : "Confirm each to save it?")
+          : parseFailureReply(lang);
+    } catch (err) {
+      console.error("[chat] composite log failed:", err);
+      replyContent = parseFailureReply(lang);
+    }
   } else if (intent === "log_meal") {
     try {
       // "add it"/"log it" right after a general_health answer that already

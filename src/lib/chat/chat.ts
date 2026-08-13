@@ -138,6 +138,49 @@ Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "qu
   return "out_of_scope";
 }
 
+export interface CompositeLogDetection {
+  logs: ("meal" | "workout" | "steps")[];
+}
+
+const LOG_CATEGORIES = ["meal", "workout", "steps"] as const;
+
+/**
+ * A single message can describe more than one KIND of thing to log at
+ * once — "ate a tofu salad, 300 calories, and went for a 5km run" is a
+ * meal AND a workout, not just one or the other. classifyIntent picks a
+ * single bucket, so route.ts calls this alongside it (in parallel, same
+ * message) to catch the multi-category case; when 2+ categories come back,
+ * the caller runs each relevant parser and builds a combined reply with a
+ * separate confirm action per category instead of silently dropping all
+ * but one. Returns a single- or zero-item list for an ordinary message —
+ * the caller then just uses classifyIntent's result as before.
+ */
+export async function detectCompositeLog(message: string, history: ChatMessage[] = []): Promise<CompositeLogDetection> {
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The user's latest message may describe MORE THAN ONE kind of thing to log in a single message — e.g. "ate a tofu salad, 300 calories, and went for a 5km run" describes both a meal AND a workout to log together. Detect every distinct category with actual, concrete content to log in THIS message (not just mentioned in passing or discussed earlier in the conversation).
+Respond ONLY as JSON: { "logs": ("meal"|"workout"|"steps")[] } — list every category actually being logged in this message, deduplicated, in any order. A message describing only one category (or none — a question, a correction, small talk) should list just that one (or none) — this isn't only for the multi-category case.`,
+      },
+      ...toContextMessages(history),
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  try {
+    const parsed = JSON.parse(raw) as { logs?: string[] };
+    const logs = (parsed.logs ?? []).filter((l): l is "meal" | "workout" | "steps" => LOG_CATEGORIES.includes(l as never));
+    return { logs: Array.from(new Set(logs)) };
+  } catch {
+    return { logs: [] };
+  }
+}
+
 /**
  * Resolves which day a log_meal/log_workout/log_steps message applies to —
  * "add this for yesterday", "log 3 days ago", "on Monday" — defaulting to

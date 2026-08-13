@@ -66,7 +66,12 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [shareNotice, setShareNotice] = useState<string | null>(null);
-  const [confirmedIndices, setConfirmedIndices] = useState<Set<number>>(new Set());
+  // Keyed by "{messageIndex}:{kind}", not just messageIndex — a single
+  // message can carry more than one pending kind at once (e.g. a meal AND a
+  // workout described together), each with its own independent Confirm
+  // button; a plain index-only Set would mark all of them "saved" the
+  // moment any ONE of them was confirmed.
+  const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(new Set());
   // Separate from `busy` (which also covers confirm/rename/etc.) so the
   // thinking indicator only shows while actually waiting on /api/chat.
   const [awaitingReply, setAwaitingReply] = useState(false);
@@ -174,7 +179,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ parsed, imageUrl, date: date ?? localDateKey() }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
-      setConfirmedIndices((prev) => new Set(prev).add(index));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:meal`));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -196,7 +201,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ parsed, imageUrl, date }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
-      setConfirmedIndices((prev) => new Set(prev).add(index));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:workout`));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -217,7 +222,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ steps: pendingSteps.steps, date: pendingSteps.date }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
-      setConfirmedIndices((prev) => new Set(prev).add(index));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:steps`));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -239,7 +244,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify(action === "delete" ? { date, entryId } : { date, entryId, changes }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
-      setConfirmedIndices((prev) => new Set(prev).add(index));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:mealAction`));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -457,7 +462,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 {m.content}
               </div>
               {m.pendingMeal && (
-                confirmedIndices.has(i) ? (
+                confirmedKeys.has(`${i}:meal`) ? (
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmMeal(m.pendingMeal!, i)} disabled={busy} style={{ marginTop: 4 }}>
@@ -466,7 +471,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 )
               )}
               {m.pendingMealAction && (
-                confirmedIndices.has(i) ? (
+                confirmedKeys.has(`${i}:mealAction`) ? (
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmMealAction(m.pendingMealAction!, i)} disabled={busy} style={{ marginTop: 4 }}>
@@ -475,7 +480,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 )
               )}
               {m.pendingWorkout && (
-                confirmedIndices.has(i) ? (
+                confirmedKeys.has(`${i}:workout`) ? (
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmWorkout(m.pendingWorkout!, i)} disabled={busy} style={{ marginTop: 4 }}>
@@ -484,7 +489,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 )
               )}
               {m.pendingSteps && (
-                confirmedIndices.has(i) ? (
+                confirmedKeys.has(`${i}:steps`) ? (
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmSteps(m.pendingSteps!, i)} disabled={busy} style={{ marginTop: 4 }}>
