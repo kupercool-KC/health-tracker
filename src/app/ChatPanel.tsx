@@ -286,23 +286,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="card"
-      style={{
-        position: "fixed",
-        bottom: 80,
-        insetInlineEnd: 16,
-        insetInlineStart: 16,
-        top: 64,
-        maxWidth: 420,
-        marginInlineStart: "auto",
-        display: "flex",
-        zIndex: 50,
-        padding: 0,
-        overflow: "hidden",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-      }}
-    >
+    <div className="card chat-panel">
       {/* Overlay drawer rather than a flex sibling that squeezes the message
           thread — on a narrow phone screen a fixed-width inline sidebar left
           barely any room for the chat itself. Tapping the backdrop or a
@@ -435,11 +419,11 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           <button
             onClick={() => setSidebarOpen((v) => !v)}
             aria-label={t("newChat")}
-            style={{ border: "none", background: "none", width: 32, height: 32, fontSize: 18 }}
+            style={{ border: "none", background: "none", width: 40, height: 40, fontSize: 18 }}
           >
             ☰
           </button>
-          <button onClick={onClose} aria-label={t("close")} style={{ border: "none", background: "none", width: 32, height: 32, fontSize: 18 }}>
+          <button onClick={onClose} aria-label={t("close")} style={{ border: "none", background: "none", width: 40, height: 40, fontSize: 18 }}>
             ✕
           </button>
         </div>

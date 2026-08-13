@@ -77,6 +77,40 @@ main {
   padding: 16px;
 }
 
+/* Chat panel — a floating card on desktop, but a real full-screen view on
+   mobile (edge-to-edge, no margins/shadow/rounding) instead of a small
+   floating box you have to scroll and pinch inside of. Base (desktop)
+   sizing lives here rather than inline on the component so this media
+   query can override it — an inline style would otherwise always win over
+   an external stylesheet rule at the same specificity. */
+.chat-panel {
+  position: fixed;
+  top: 64px;
+  bottom: 80px;
+  inset-inline-end: 16px;
+  inset-inline-start: 16px;
+  max-width: 420px;
+  margin-inline-start: auto;
+  display: flex;
+  z-index: 50;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+@media (max-width: 640px) {
+  .chat-panel {
+    top: 0;
+    bottom: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
+    max-width: 100%;
+    margin-inline-start: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+}
+
 .metric-value {
   font-size: 28px;
   font-weight: 700;
@@ -109,6 +143,16 @@ textarea,
 select {
   font-family: inherit;
   font-size: 14px;
+}
+
+/* Buttons/inputs/selects default to a comfortable touch target (~40px) —
+   without this they render around 28-30px tall from font-size + padding
+   alone, uncomfortably small to tap accurately on a phone. Not applied to
+   textarea, which sizes itself via its own `rows`, not a fixed height. */
+button,
+input,
+select {
+  min-height: 40px;
 }
 
 button {

@@ -910,7 +910,7 @@ export default function Today() {
                   ))}
                 </select>
                 {pickedMeal && (
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     <input
                       type="text"
                       value={pickerQuantity}
@@ -924,7 +924,7 @@ export default function Today() {
                       }}
                       placeholder={t("quantityPlaceholder")}
                       disabled={pickerQuantityBusy}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
                     <input
                       type="number"
@@ -932,7 +932,7 @@ export default function Today() {
                       value={pickerGrams}
                       onChange={(e) => onPickerGramsChange(e.target.value)}
                       placeholder={t("gramsPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
                     <input
                       type="number"
@@ -940,7 +940,7 @@ export default function Today() {
                       value={pickerCalories}
                       onChange={(e) => onPickerCaloriesChange(e.target.value)}
                       placeholder={t("manualCaloriesPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
                     <input
                       type="number"
@@ -948,7 +948,7 @@ export default function Today() {
                       value={pickerProtein}
                       onChange={(e) => onPickerProteinChange(e.target.value)}
                       placeholder={t("manualProteinPlaceholder")}
-                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                     />
                   </div>
                 )}
@@ -1027,14 +1027,14 @@ export default function Today() {
                 )}
               </div>
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={manualCalories}
                   onChange={(e) => setManualCalories(e.target.value)}
                   placeholder={t("manualCaloriesPlaceholder")}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                  style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                 />
                 <input
                   type="number"
@@ -1042,7 +1042,7 @@ export default function Today() {
                   value={manualProtein}
                   onChange={(e) => setManualProtein(e.target.value)}
                   placeholder={t("manualProteinPlaceholder")}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                  style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                 />
               </div>
               <button type="submit" disabled={busy || (!text && !file)}>
@@ -1050,7 +1050,7 @@ export default function Today() {
               </button>
             </form>
 
-            <div className="card" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+            <div className="card desktop-table" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
@@ -1196,6 +1196,148 @@ export default function Today() {
                 </tr>
               </tfoot>
             </table>
+            </div>
+
+            <div className="mobile-cards" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              {(mealDay?.entries ?? []).map((entry) => {
+                const editing = editingId === entry.id;
+                const expanded = expandedId === entry.id;
+                return (
+                  <div key={entry.id} className="card" style={{ display: "grid", gap: 6 }}>
+                    <div
+                      onClick={() => !editing && setExpandedId(expanded ? null : entry.id)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 8,
+                        cursor: editing ? "default" : "pointer",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{entry.name}</div>
+                        <div style={{ color: "var(--muted)", fontSize: 12 }}>
+                          <bdi dir="ltr">
+                            {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </bdi>
+                        </div>
+                      </div>
+                      <div style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {editing ? (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                saveMealEdit(entry.id);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--protein)", padding: 8 }}
+                              aria-label={t("save")}
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingId(null);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--muted)", padding: 8 }}
+                              aria-label={t("close")}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditMeal(entry.id, entry.calories, entry.protein);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", padding: 8 }}
+                              aria-label={t("edit")}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMeal(entry.id);
+                              }}
+                              disabled={busy}
+                              style={{ border: "none", background: "none", color: "var(--calories)", padding: 8 }}
+                              aria-label={t("deleteMeal")}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {editing ? (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+                          {t("calories")}
+                          <input
+                            type="number"
+                            value={editCalories}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setEditCalories(e.target.value)}
+                            style={{ width: 64, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+                          {t("protein")}
+                          <input
+                            type="number"
+                            value={editProtein}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setEditProtein(e.target.value)}
+                            style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 14, fontSize: 13, color: "var(--muted)" }}>
+                        <span>
+                          <bdi dir="ltr">{Math.round(entry.calories)}</bdi> {t("calories")}
+                        </span>
+                        <span>
+                          <bdi dir="ltr">{Math.round(entry.protein)}</bdi>
+                          {t("unitG")} {t("protein")}
+                        </span>
+                      </div>
+                    )}
+                    {expanded && (
+                      <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                        <bdi dir="ltr">
+                          {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
+                          {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
+                          {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
+                          {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
+                        </bdi>
+                        {entry.ingredients && entry.ingredients.length > 0 && (
+                          <div style={{ marginTop: 4 }}>
+                            {t("ingredients")}: {entry.ingredients.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {(mealDay?.entries?.length ?? 0) > 0 && (
+                <div className="card" style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                  <span>{t("total")}</span>
+                  <span>
+                    <bdi dir="ltr">{Math.round(totals.calories)}</bdi> {t("calories")} ·{" "}
+                    <bdi dir="ltr">{Math.round(totals.protein)}</bdi>
+                    {t("unitG")} {t("protein")}
+                  </span>
+                </div>
+              )}
             </div>
           </section>
 
