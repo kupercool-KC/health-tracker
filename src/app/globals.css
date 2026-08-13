@@ -32,13 +32,13 @@
   box-sizing: border-box;
 }
 
-html,
-body {
-  /* Safety net against any child accidentally overflowing the viewport
-     width (a too-wide table, a long unbroken string) forcing the whole page
-     to scroll sideways — inner elements that need horizontal scroll (like
-     the desktop workouts table) still get it via their own overflow-x. */
-  overflow-x: hidden;
+/* NOT on html/body: overflow-x:hidden there turns body into a scroll
+   container, which silently breaks position:sticky on its children (the
+   sticky header in NavShell.tsx) — sticky positioning needs the viewport
+   itself as its scrolling ancestor, not a body-level overflow clip. The
+   same safety-net clipping is applied instead to #page-content below,
+   which wraps everything except the sticky header. */
+html {
   max-width: 100%;
 }
 
@@ -53,6 +53,14 @@ main {
   max-width: 640px;
   margin: 0 auto;
   padding: 24px 16px 96px;
+}
+
+/* See the comment on html/body above — the overflow-x safety net lives
+   here instead, on the wrapper around everything except NavShell's sticky
+   header. */
+#page-content {
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 /* Below this width, wide multi-column tables (e.g. Today's workouts table)
@@ -77,38 +85,19 @@ main {
   padding: 16px;
 }
 
-/* Chat panel — a floating card on desktop, but a real full-screen view on
-   mobile (edge-to-edge, no margins/shadow/rounding) instead of a small
-   floating box you have to scroll and pinch inside of. Base (desktop)
-   sizing lives here rather than inline on the component so this media
-   query can override it — an inline style would otherwise always win over
-   an external stylesheet rule at the same specificity. */
+/* Chat panel — a real full-screen view, always, on every viewport width
+   (edge-to-edge, no margins/shadow/rounding, no floating box). */
 .chat-panel {
   position: fixed;
-  top: 64px;
-  bottom: 80px;
-  inset-inline-end: 16px;
-  inset-inline-start: 16px;
-  max-width: 420px;
-  margin-inline-start: auto;
+  inset: 0;
+  max-width: 100%;
   display: flex;
   z-index: 50;
   padding: 0;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-@media (max-width: 640px) {
-  .chat-panel {
-    top: 0;
-    bottom: 0;
-    inset-inline-start: 0;
-    inset-inline-end: 0;
-    max-width: 100%;
-    margin-inline-start: 0;
-    border-radius: 0;
-    border: none;
-    box-shadow: none;
-  }
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
 }
 
 .metric-value {

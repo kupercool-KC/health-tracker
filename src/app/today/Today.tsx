@@ -1198,7 +1198,7 @@ export default function Today() {
             </table>
             </div>
 
-            <div className="mobile-cards" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+            <div className="mobile-cards" style={{ marginTop: 8, gap: 8 }}>
               {(mealDay?.entries ?? []).map((entry) => {
                 const editing = editingId === entry.id;
                 const expanded = expandedId === entry.id;
@@ -1513,7 +1513,7 @@ export default function Today() {
             )}
 
             {workouts.length > 0 && (
-              <div className="mobile-cards" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              <div className="mobile-cards" style={{ marginTop: 8, gap: 8 }}>
                 {workouts.map((w) => {
                   const editing = editingWorkoutId === w.id;
                   return (

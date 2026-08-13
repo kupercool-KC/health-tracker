@@ -115,7 +115,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {children}
+      <div id="page-content">{children}</div>
 
       {user && !pathname?.startsWith("/share") && (
         <>
