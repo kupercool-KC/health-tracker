@@ -66,10 +66,6 @@ export const strings = {
   signInPrompt: { en: "Sign in to log nutrition and view your data.", he: "התחבר כדי לרשום תזונה ולראות את הנתונים שלך." },
   signInWithGoogle: { en: "Sign in with Google", he: "התחברות עם Google" },
   signInFailed: { en: "Sign-in failed", he: "ההתחברות נכשלה" },
-  authRedirectLost: {
-    en: "Signed in with Google, but Safari blocked it from making it back to the app (cross-site tracking prevention). Try again, or turn off \"Prevent Cross-Site Tracking\" in Settings > Safari for this site.",
-    he: "ההתחברות ל-Google הצליחה, אבל Safari חסם אותה מלהגיע חזרה לאפליקציה (מנגנון מניעת מעקב חוצה-אתרים). נסה שוב, או כבה את \"מנע מעקב חוצה-אתרים\" בהגדרות > Safari עבור האתר הזה.",
-  },
   signOut: { en: "Sign out", he: "התנתקות" },
 
   working: { en: "Working…", he: "מעבד…" },
