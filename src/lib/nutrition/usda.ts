@@ -172,3 +172,34 @@ export async function webSearchNutrition(query: string): Promise<UsdaMatch | nul
     return null;
   }
 }
+
+/**
+ * Converts a unit-based quantity ("1 date", "2 slices", "a handful") of a
+ * named food into an estimated portion weight in grams — for when the user
+ * knows how much they ate in everyday terms but not the gram weight. Uses
+ * the model's general knowledge of typical unit weights (same source the
+ * chat nutrition parser already relies on for "one date ≈ 8g" type
+ * conversions), not a lookup — best-effort, returns null on any failure so
+ * the caller falls back to manual gram entry.
+ */
+export async function estimateGramsForQuantity(food: string, quantity: string): Promise<number | null> {
+  try {
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: VERIFY_MODEL,
+      response_format: { type: "json_object" },
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `Estimate the total weight in grams of the stated quantity of the stated food, using typical/average real-world weights for that unit (e.g. one date ≈ 8g, one slice of bread ≈ 30g, one medium banana ≈ 120g). Respond ONLY as JSON: { "grams": number|null } — null only if the quantity is too vague to estimate at all (not just because it's an unusual unit — make a reasonable best guess whenever possible).`,
+        },
+        { role: "user", content: `Food: ${food}\nQuantity: ${quantity}` },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(raw) as { grams?: number | null };
+    return typeof parsed.grams === "number" && parsed.grams > 0 ? parsed.grams : null;
+  } catch {
+    return null;
+  }
+}

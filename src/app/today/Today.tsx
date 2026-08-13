@@ -173,6 +173,9 @@ export default function Today() {
   const [pickerMealBusy, setPickerMealBusy] = useState(false);
   /** Per-100g USDA values for the picked meal name, used to auto-fill whichever of grams/calories/protein the user didn't type. */
   const [pickerPer100g, setPickerPer100g] = useState<{ caloriesPer100g: number; proteinPer100g: number } | null>(null);
+  /** Unit-based amount ("1 date", "2 slices") for when the user knows how much they ate but not the gram weight — converted to grams via /api/nutrition/lookup's quantity estimate. */
+  const [pickerQuantity, setPickerQuantity] = useState("");
+  const [pickerQuantityBusy, setPickerQuantityBusy] = useState(false);
 
   const [frequentWorkouts, setFrequentWorkouts] = useState<FrequentWorkout[]>([]);
   const [pickedWorkout, setPickedWorkout] = useState("");
@@ -351,6 +354,7 @@ export default function Today() {
   async function selectFrequentMeal(name: string) {
     setPickedMeal(name);
     setPickerPer100g(null);
+    setPickerQuantity("");
     const m = frequentMeals.find((f) => f.name === name);
     const hasHistory = !!m && (m.avgCalories > 0 || m.avgProtein > 0);
     setPickerGrams(m?.avgGrams != null ? String(m.avgGrams) : "");
@@ -383,6 +387,37 @@ export default function Today() {
       }
     } catch {
       // best-effort — manual entry still works without per-100g data
+    }
+  }
+
+  /**
+   * Lets the user say how much they ate in everyday units ("1 date", "2
+   * slices") instead of grams — /api/nutrition/lookup estimates the gram
+   * weight for that quantity of this food (via the model's general
+   * knowledge of typical unit weights), then feeds it through the same
+   * grams→calories/protein conversion as typing grams directly.
+   */
+  async function applyPickerQuantity() {
+    if (!pickedMeal || !pickerQuantity.trim()) return;
+    setPickerQuantityBusy(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ query: pickedMeal, quantity: pickerQuantity.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const estimatedGrams = data.estimatedGrams as number | null | undefined;
+      if (estimatedGrams != null) {
+        onPickerGramsChange(String(Math.round(estimatedGrams)));
+      }
+    } catch {
+      // best-effort — manual gram entry still works
+    } finally {
+      setPickerQuantityBusy(false);
     }
   }
 
@@ -444,6 +479,7 @@ export default function Today() {
       setPickerCalories("");
       setPickerProtein("");
       setPickerPer100g(null);
+      setPickerQuantity("");
       await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -875,6 +911,21 @@ export default function Today() {
                 </select>
                 {pickedMeal && (
                   <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="text"
+                      value={pickerQuantity}
+                      onChange={(e) => setPickerQuantity(e.target.value)}
+                      onBlur={applyPickerQuantity}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          applyPickerQuantity();
+                        }
+                      }}
+                      placeholder={t("quantityPlaceholder")}
+                      disabled={pickerQuantityBusy}
+                      style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
                     <input
                       type="number"
                       inputMode="numeric"

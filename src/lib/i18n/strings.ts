@@ -190,6 +190,7 @@ export const strings = {
   pickFrequentMeal: { en: "— Pick a recent meal —", he: "— בחר מאכל שנרשם בעבר —" },
   pickFrequentWorkout: { en: "— Pick a past workout —", he: "— בחר אימון שנרשם בעבר —" },
   gramsPlaceholder: { en: "Grams (optional)", he: "גרם (אופציונלי)" },
+  quantityPlaceholder: { en: "e.g. 1 date", he: 'לדוגמה: תמר אחד' },
   durationMinPlaceholder: { en: "Minutes", he: "דקות" },
   pacePlaceholder: { en: "Pace (M:SS/km, optional)", he: "קצב (דק:שנ/ק\"מ, אופציונלי)" },
   distanceKmPlaceholder: { en: "Distance km (optional)", he: "מרחק בק\"מ (אופציונלי)" },
@@ -224,6 +225,7 @@ export const strings = {
 
   workoutsPerDayTitle: { en: "Workouts per day", he: "אימונים ליום" },
   distancePerDayTitle: { en: "Distance per day (km)", he: "מרחק ליום (ק\"מ)" },
+  distanceFromStepsLabel: { en: "Est. from steps", he: "משוער מצעדים" },
   caloriesBurnedPerDayTitle: { en: "Calories burned per day", he: "קלוריות שנשרפו ליום" },
 } as const;
 
