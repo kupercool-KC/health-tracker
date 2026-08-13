@@ -414,24 +414,26 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 }
 
 export interface PendingMealFollowUpResult {
-  kind: "correction" | "question" | "combine" | "new";
+  kind: "correction" | "question" | "combine" | "reschedule" | "new";
   replyContent?: string;
   pendingMeal?: ChatMessage["pendingMeal"];
 }
 
 /**
  * Determines whether the user's latest message is reacting to an already
- * open (unconfirmed) pendingMeal proposal — correcting its numbers, or
- * asking about them — rather than describing a new food to log. Called
- * BEFORE the normal intent classifier whenever the previous assistant
- * message carried a pendingMeal; if this returns "new", the caller falls
- * through to the regular log_meal/general_health/etc. flow untouched.
+ * open (unconfirmed) pendingMeal proposal — correcting its numbers, asking
+ * about them, or asking to save it under a different day — rather than
+ * describing a new food to log. Called BEFORE the normal intent classifier
+ * whenever the previous assistant message carried a pendingMeal; if this
+ * returns "new", the caller falls through to the regular log_meal/
+ * general_health/etc. flow untouched.
  */
 export async function resolvePendingMealFollowUp(
   message: string,
   openPendingMeal: NonNullable<ChatMessage["pendingMeal"]>,
   lang: "en" | "he",
   history: ChatMessage[],
+  today: string,
 ): Promise<PendingMealFollowUpResult> {
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
@@ -444,11 +446,13 @@ export async function resolvePendingMealFollowUp(
 - "correction": they're stating the calories/protein should be a specific different value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories").
 - "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
 - "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'").
+- "reschedule": they want to save this SAME meal (same food, same numbers) for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead", "save it for the 5th" — NOT changing the food or its numbers, only which day it's recorded under.
 - "new": anything else — describing a different food to log, confirming as-is, or unrelated.
-Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"new", "calories"?: number, "protein"?: number, "explanation"?: string, "combinedName"?: string }
+Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"reschedule"|"new", "calories"?: number, "protein"?: number, "explanation"?: string, "combinedName"?: string }
 For "correction": include whichever of calories/protein the user specified (omit the other if only one was mentioned).
 For "question": include a concise "explanation" answering what they asked about the estimate, about THIS meal only — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.
-For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.`,
+For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.
+For "reschedule": no extra fields needed — the target date is resolved separately.`,
       },
       ...toContextMessages(history),
       { role: "user", content: message },
@@ -461,6 +465,20 @@ For "combine": include "combinedName" — the exact name they gave, in ${lang ==
     parsed = JSON.parse(raw ?? "{}");
   } catch {
     return { kind: "new" };
+  }
+
+  if (parsed.kind === "reschedule") {
+    const targetDate = await resolveLogDate(message, today);
+    const updatedPendingMeal = { ...openPendingMeal, date: targetDate };
+    const lines = openPendingMeal.items
+      .map((item) => `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`)
+      .join("\n");
+    const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+    return {
+      kind: "reschedule",
+      pendingMeal: updatedPendingMeal,
+      replyContent: `${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
   }
 
   if (parsed.kind === "correction" && (parsed.calories != null || parsed.protein != null)) {
@@ -575,6 +593,75 @@ If "applies" is false (a new food is being described instead, there's no concret
     },
     date: today,
   };
+}
+
+export interface GenericMealTotals {
+  isGenericTotals: boolean;
+  calories?: number;
+  protein?: number;
+}
+
+const GENERIC_MEAL_DESCRIPTION: Record<"en" | "he", string> = { en: "Meal", he: "ארוחה" };
+
+/**
+ * Some meals are too large/mixed to describe ingredient-by-ingredient (a
+ * buffet plate, a home-cooked dish with no fixed recipe) — the user just
+ * wants to state the totals directly ("ate a huge mixed meal, about 900
+ * calories and 50g protein") instead of naming a specific food for
+ * parseNutrition to estimate/ground against. This is a distinct case from
+ * naming a specific dish with explicit numbers (e.g. "eggplant lasagna, 283
+ * kcal") — that's handled by parseNutrition itself. Returns
+ * isGenericTotals: false whenever a specific food IS named or the message
+ * isn't this pattern at all, so the caller falls through to the normal flow.
+ */
+export async function parseGenericMealTotals(
+  message: string,
+  lang: "en" | "he",
+  history: ChatMessage[] = [],
+): Promise<GenericMealTotals> {
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The user may want to log a meal WITHOUT naming any specific food — a big, mixed, or hard-to-break-down meal where they just want to state the total calories and/or protein directly (e.g. "ate a huge mixed meal, about 900 calories and 50g protein", "big dinner, no idea what was in it, ~700 kcal", or simply "1200 calories, 60g protein" with no food name at all). This is DIFFERENT from naming a specific food/dish (e.g. "eggplant lasagna, 283 kcal") — that case is handled elsewhere and should NOT be treated as generic here; respond isGenericTotals: false for it.
+Recent conversation is included for context — if your own last message already asked the user for a missing calorie or protein number for a generic meal like this, treat their latest reply (even a bare number) as answering that question, and combine it with whichever value was already given in an earlier turn of this same exchange (e.g. calories stated a message or two ago, protein given just now) — pull both from across the recent turns, not only the latest message in isolation.
+Respond ONLY as JSON: { "isGenericTotals": boolean, "calories": number|null, "protein": number|null }.
+Set "isGenericTotals": true only when the user is clearly logging a meal this way, with no specific food name to log against — extract whichever of calories/protein is known (from the latest message and/or the recent turns that led up to it) as a plain number, null for whichever is still genuinely missing. Otherwise respond { "isGenericTotals": false, "calories": null, "protein": null }.`,
+      },
+      ...toContextMessages(history),
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  try {
+    const parsed = JSON.parse(raw) as { isGenericTotals?: boolean; calories?: number | null; protein?: number | null };
+    return {
+      isGenericTotals: parsed.isGenericTotals === true,
+      calories: parsed.calories ?? undefined,
+      protein: parsed.protein ?? undefined,
+    };
+  } catch {
+    return { isGenericTotals: false };
+  }
+}
+
+export function genericMealDescription(lang: "en" | "he"): string {
+  return GENERIC_MEAL_DESCRIPTION[lang];
+}
+
+/** Which of calories/protein is still needed to save a generic (no-description) meal. */
+export function missingGenericMealInfoReply(lang: "en" | "he", missingCalories: boolean, missingProtein: boolean): string {
+  if (missingCalories && missingProtein) {
+    return lang === "he" ? "כמה קלוריות וכמה חלבון היו בארוחה?" : "How many calories and how much protein was in the meal?";
+  }
+  if (missingCalories) {
+    return lang === "he" ? "כמה קלוריות היו בארוחה?" : "How many calories was the meal?";
+  }
+  return lang === "he" ? "כמה חלבון היה בארוחה?" : "How much protein was in the meal?";
 }
 
 /** How far back "manage_meal" looks for an entry to edit/delete — covers "yesterday" and casual same-week corrections without scanning the whole history. */

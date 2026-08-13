@@ -22,11 +22,14 @@ import {
   answerGeneralHealth,
   answerHistoryQuery,
   classifyIntent,
+  genericMealDescription,
   generateSessionTitle,
   greetingReply,
   isGreeting,
+  missingGenericMealInfoReply,
   outOfScopeReply,
   parseFailureReply,
+  parseGenericMealTotals,
   resolveLogDate,
   resolveLogFromPriorAnswer,
   resolveMealAction,
@@ -110,9 +113,10 @@ async function handleChat(req: Request) {
   // matter what the user said, ignoring corrections and questions alike.
   const lastMessage = priorMessages.at(-1);
   const openPendingMeal = !safety.flagged && lastMessage?.role === "assistant" ? lastMessage.pendingMeal : undefined;
+  const today = date ?? now.slice(0, 10);
   const pendingMealFollowUp =
     openPendingMeal && message?.trim()
-      ? await resolvePendingMealFollowUp(message.trim(), openPendingMeal, lang, priorMessages)
+      ? await resolvePendingMealFollowUp(message.trim(), openPendingMeal, lang, priorMessages, today)
       : null;
   const followUpHandled = !!pendingMealFollowUp && pendingMealFollowUp.kind !== "new";
 
@@ -147,7 +151,6 @@ async function handleChat(req: Request) {
         : bareImageNoHistory
           ? "log_meal"
           : await classifyIntent(userContent, priorMessages);
-  const today = date ?? now.slice(0, 10);
 
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
@@ -172,53 +175,69 @@ async function handleChat(req: Request) {
       // reusing the number that was already given before re-deriving one.
       const reused = !imageUrl ? await resolveLogFromPriorAnswer(message ?? "", priorMessages, lang, today) : null;
 
-      let parsed: ParsedNutrition;
-      let targetDate: string;
-      if (reused) {
-        parsed = reused.parsed;
-        targetDate = reused.date ?? today;
+      // Some meals are too large/mixed to name a specific dish for —
+      // "ate a huge mixed meal, ~900 calories and 50g protein" — the user
+      // just wants to log the stated totals directly rather than have
+      // parseNutrition estimate/ground against a food it can't identify.
+      const generic =
+        !reused && !imageUrl && message?.trim() ? await parseGenericMealTotals(message.trim(), lang, priorMessages) : null;
+
+      if (generic?.isGenericTotals && (generic.calories == null || generic.protein == null)) {
+        // Not enough to save yet — ask for exactly what's missing rather
+        // than guessing a number for the unstated field. No pendingMeal.
+        replyContent = missingGenericMealInfoReply(lang, generic.calories == null, generic.protein == null);
       } else {
-        parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
-        // Only worth a date-resolution call when there's actual text to
-        // resolve against — an image-only message ("[photo]" placeholder)
-        // has no calendar phrase to find, so it always means today.
-        targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+        let parsed: ParsedNutrition;
+        let targetDate: string;
+        if (reused) {
+          parsed = reused.parsed;
+          targetDate = reused.date ?? today;
+        } else if (generic?.isGenericTotals && generic.calories != null && generic.protein != null) {
+          parsed = { items: [{ description: genericMealDescription(lang), calories: generic.calories, protein: generic.protein }] };
+          targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+        } else {
+          parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
+          // Only worth a date-resolution call when there's actual text to
+          // resolve against — an image-only message ("[photo]" placeholder)
+          // has no calendar phrase to find, so it always means today.
+          targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+        }
+
+        if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
+          const [item] = parsed.items;
+          parsed = {
+            items: [
+              {
+                ...item,
+                ...(overrideCalories != null ? { calories: overrideCalories } : {}),
+                ...(overrideProtein != null ? { protein: overrideProtein } : {}),
+              },
+            ],
+          };
+        }
+        pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
+
+        const avoidFoods = profile?.avoidFoods ?? [];
+        const hits = avoidFoods.filter((f) =>
+          parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
+        );
+        const warning =
+          hits.length > 0
+            ? lang === "he"
+              ? `⚠️ שים לב: זה עשוי להכיל ${hits.join(", ")}, שסימנת כמאכל שאתה נמנע ממנו.\n`
+              : `⚠️ Heads up: this looks like it contains ${hits.join(", ")}, which you've marked as a food to avoid.\n`
+            : "";
+
+        const lines = parsed.items
+          .map(
+            (item) =>
+              `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
+          )
+          .join("\n");
+
+        const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+        replyContent = `${warning}${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
       }
-
-      if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
-        const [item] = parsed.items;
-        parsed = {
-          items: [
-            {
-              ...item,
-              ...(overrideCalories != null ? { calories: overrideCalories } : {}),
-              ...(overrideProtein != null ? { protein: overrideProtein } : {}),
-            },
-          ],
-        };
-      }
-      pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
-
-      const avoidFoods = profile?.avoidFoods ?? [];
-      const hits = avoidFoods.filter((f) =>
-        parsed.items.some((item) => item.description.toLowerCase().includes(f.toLowerCase())),
-      );
-      const warning =
-        hits.length > 0
-          ? lang === "he"
-            ? `⚠️ שים לב: זה עשוי להכיל ${hits.join(", ")}, שסימנת כמאכל שאתה נמנע ממנו.\n`
-            : `⚠️ Heads up: this looks like it contains ${hits.join(", ")}, which you've marked as a food to avoid.\n`
-          : "";
-
-      const lines = parsed.items
-        .map(
-          (item) =>
-            `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`,
-        )
-        .join("\n");
-
-      const dateNote = targetDate !== today ? ` (${targetDate})` : "";
-      replyContent = `${warning}${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
     } catch (err) {
       // Nothing extractable (no food named anywhere nearby, or the model's
       // output failed schema validation) previously threw all the way out to
