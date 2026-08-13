@@ -64,9 +64,6 @@ function dotDateLabel(date: string): string {
   return `${Number(date.slice(8, 10))}.${Number(date.slice(5, 7))}`;
 }
 
-/** Average steps per kilometer, from a typical ~0.77m stride — used only to estimate a rough walking distance from step count when no GPS-tracked workout distance is logged for the day. */
-const AVERAGE_STEPS_PER_KM = 1300;
-
 /**
  * Always-visible x-axis under a bar chart — date (dot format) over weekday
  * abbreviation, per bar. With more than a handful of bars every label would
@@ -360,9 +357,6 @@ function SimpleBarChart({
   identityColorVar,
   unit,
   yStep,
-  secondValueOf,
-  secondLabel,
-  secondColorVar,
 }: {
   days: DayInfo[];
   valueOf: (d: DayInfo) => number;
@@ -370,19 +364,14 @@ function SimpleBarChart({
   identityColorVar: string;
   unit: string;
   yStep: number;
-  /** Optional second series, e.g. steps-estimated distance alongside GPS-tracked workout distance — rendered as a narrower bar next to the first, sharing the same y-axis/scale. */
-  secondValueOf?: (d: DayInfo) => number;
-  secondLabel?: string;
-  secondColorVar?: string;
 }) {
   const { lang } = useI18n();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const height = 100;
-  const rawMax = Math.max(...days.map(valueOf), ...(secondValueOf ? days.map(secondValueOf) : []), 1) * 1.15;
+  const rawMax = Math.max(...days.map(valueOf), 1) * 1.15;
   const max = Math.max(Math.ceil(rawMax / yStep) * yStep, yStep);
   const barWidth = 100 / Math.max(days.length, 1);
   const gradId = `grad-simple-${label.replace(/\s+/g, "-")}`;
-  const gradId2 = `grad-simple-2-${label.replace(/\s+/g, "-")}`;
   const tickCount = max / yStep;
   const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => ({
     y: height - (i / tickCount) * height,
@@ -391,15 +380,8 @@ function SimpleBarChart({
 
   return (
     <div className="card" style={{ marginTop: 16, position: "relative" }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, display: "flex", gap: 10 }}>
-        <span>
-          <span style={{ color: identityColorVar }}>■</span> {label}
-        </span>
-        {secondValueOf && secondLabel && (
-          <span>
-            <span style={{ color: secondColorVar }}>■</span> {secondLabel}
-          </span>
-        )}
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+        <span style={{ color: identityColorVar }}>■</span> {label}
       </div>
       <div style={{ display: "flex" }}>
         <div style={{ position: "relative", width: 34, height, flexShrink: 0 }}>
@@ -431,12 +413,6 @@ function SimpleBarChart({
               <stop offset="0%" stopColor={`${identityColorVar}`} stopOpacity={0.55} />
               <stop offset="100%" stopColor={identityColorVar} />
             </linearGradient>
-            {secondValueOf && (
-              <linearGradient id={gradId2} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={`${secondColorVar}`} stopOpacity={0.55} />
-                <stop offset="100%" stopColor={secondColorVar} />
-              </linearGradient>
-            )}
           </defs>
           {yTicks.map((tick) => (
             <line key={tick.y} x1={0} y1={tick.y} x2={100} y2={tick.y} stroke="var(--border)" strokeWidth={0.5} />
@@ -445,13 +421,12 @@ function SimpleBarChart({
             const val = valueOf(d);
             const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
             const x = i * barWidth;
-            const w = secondValueOf ? barWidth * 0.32 : barWidth * 0.7;
             return (
               <rect
                 key={d.date}
-                x={x + (secondValueOf ? barWidth * 0.12 : barWidth * 0.15)}
+                x={x + barWidth * 0.15}
                 y={height - barHeight}
-                width={w}
+                width={barWidth * 0.7}
                 height={barHeight}
                 fill={`url(#${gradId})`}
                 opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
@@ -461,27 +436,6 @@ function SimpleBarChart({
               />
             );
           })}
-          {secondValueOf &&
-            days.map((d, i) => {
-              const val = secondValueOf(d);
-              const barHeight = Math.max((val / max) * height, val > 0 ? 1 : 0);
-              const x = i * barWidth;
-              const w = barWidth * 0.32;
-              return (
-                <rect
-                  key={`second-${d.date}`}
-                  x={x + barWidth * 0.52}
-                  y={height - barHeight}
-                  width={w}
-                  height={barHeight}
-                  fill={`url(#${gradId2})`}
-                  opacity={hoverIdx === null || hoverIdx === i ? 0.95 : 0.45}
-                  onMouseEnter={() => setHoverIdx(i)}
-                  onClick={() => setHoverIdx(i)}
-                  style={{ cursor: "pointer" }}
-                />
-              );
-            })}
         </svg>
       </div>
       <ChartXAxis days={days} lang={lang} />
@@ -503,15 +457,6 @@ function SimpleBarChart({
             {Math.round(valueOf(days[hoverIdx]) * 10) / 10}
             {unit}
           </bdi>
-          {secondValueOf && secondLabel && (
-            <div style={{ color: secondColorVar, marginTop: 2 }}>
-              {secondLabel}:{" "}
-              <bdi dir="ltr">
-                {Math.round(secondValueOf(days[hoverIdx]) * 10) / 10}
-                {unit}
-              </bdi>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -830,9 +775,6 @@ export default function History() {
             identityColorVar="var(--calories)"
             unit=" km"
             yStep={5}
-            secondValueOf={(d) => d.steps / AVERAGE_STEPS_PER_KM}
-            secondLabel={t("distanceFromStepsLabel")}
-            secondColorVar="var(--burned)"
           />
           <SimpleBarChart
             days={days}

@@ -57,6 +57,9 @@ export default function NavShell({ children }: { children: ReactNode }) {
           padding: "12px 16px",
           borderBottom: "0.5px solid var(--border)",
           background: "var(--panel)",
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>

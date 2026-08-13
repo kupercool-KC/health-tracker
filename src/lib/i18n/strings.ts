@@ -225,7 +225,6 @@ export const strings = {
 
   workoutsPerDayTitle: { en: "Workouts per day", he: "אימונים ליום" },
   distancePerDayTitle: { en: "Distance per day (km)", he: "מרחק ליום (ק\"מ)" },
-  distanceFromStepsLabel: { en: "Est. from steps", he: "משוער מצעדים" },
   caloriesBurnedPerDayTitle: { en: "Calories burned per day", he: "קלוריות שנשרפו ליום" },
 } as const;
 
