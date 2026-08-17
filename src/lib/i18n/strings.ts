@@ -16,6 +16,7 @@ export const strings = {
   net: { en: "Net", he: "נטו" },
   consumed: { en: "consumed", he: "נאכל" },
   goal: { en: "goal", he: "מטרה" },
+  goalChangedLabel: { en: "Goal changed", he: "המטרה השתנתה" },
   remaining: { en: "remaining", he: "נותר" },
   surplus: { en: "surplus", he: "עודף" },
   deficit: { en: "deficit", he: "חוסר" },
@@ -35,6 +36,7 @@ export const strings = {
   meal: { en: "Meal", he: "ארוחה" },
   total: { en: "Total", he: "סה\"כ" },
   carbs: { en: "carbs", he: "פחמימות" },
+  gramsLabel: { en: "grams", he: "גרם" },
   unitG: { en: "g", he: "גר" },
   /** Spelled-out unit for a column header, where the parenthetical carries the unit for every row instead of repeating it per cell. */
   unitGramHeader: { en: "g", he: "גרם" },

@@ -22,6 +22,27 @@ function apiErrorMessage(data: { error?: string; detail?: string }, fallback: st
   return data.detail ? `${error}: ${data.detail}` : error;
 }
 
+/**
+ * Chat replies are freeform text from the model/server — unlike the rest of
+ * the app's numbers (always individually wrapped in <bdi dir="ltr">), there's
+ * no structured JSX to wrap here, just a string. A number-only run (digits,
+ * "+"/"-"/"×"/"="/"%", decimal points) has no strong bidi character of its
+ * own, so embedded in Hebrew text it can reorder unpredictably — e.g. a
+ * multi-term formula like "177 + 119 + 88.4 = 384.4" landing before/after
+ * the wrong Hebrew word, or a trailing sentence period jumping to the wrong
+ * edge. Wrapping each such run in Unicode bidi isolate marks (U+2066/U+2069
+ * — the plain-text equivalent of <bdi dir="ltr">) fixes this without needing
+ * to parse the string into JSX.
+ */
+const BIDI_LTR_ISOLATE_START = "⁦"; // LEFT-TO-RIGHT ISOLATE
+const BIDI_ISOLATE_END = "⁩"; // POP DIRECTIONAL ISOLATE
+const NUMERIC_EXPRESSION_RE = /[+-]?\d+(?:[.,]\d+)?(?:\s*[-+×x*/=%]\s*[+-]?\d+(?:[.,]\d+)?)*/g;
+
+function isolateNumbersForBidi(text: string, lang: "en" | "he"): string {
+  if (lang !== "he") return text;
+  return text.replace(NUMERIC_EXPRESSION_RE, (match) => `${BIDI_LTR_ISOLATE_START}${match}${BIDI_ISOLATE_END}`);
+}
+
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
@@ -35,6 +56,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   const [sidebarExtended, setSidebarExtended] = useState(false);
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   // Resets the auto-grow textarea's height whenever `text` changes for any
   // reason — typing (handled inline in onChange too) but also programmatic
   // clears after sending, which don't fire a DOM input event.
@@ -106,6 +128,14 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const found = msgs.some((m) => m.role === "user" && m.content === pendingUserMessage.content);
     if (found) setPendingUserMessage(null);
   }, [activeSession, pendingUserMessage]);
+
+  // Jump to the bottom of the thread whenever a new message appears — the
+  // user's own message the instant they send it (via pendingUserMessage),
+  // the "thinking" indicator right after, and then the real reply once it
+  // lands — instead of leaving them to scroll down manually each time.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [activeSession?.messages.length, pendingUserMessage, awaitingReply]);
 
   async function send(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
@@ -435,6 +465,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
               <div
                 className="card"
+                dir={lang === "he" ? "rtl" : "ltr"}
                 style={{
                   padding: 8,
                   background: m.role === "user" ? "var(--protein-bg)" : "var(--bg-muted)",
@@ -443,7 +474,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                   lineHeight: 1.6,
                 }}
               >
-                {m.content}
+                {isolateNumbersForBidi(m.content, lang)}
               </div>
               {m.pendingMeal && (
                 confirmedKeys.has(`${i}:meal`) ? (
@@ -487,6 +518,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             <div style={{ alignSelf: "flex-end", maxWidth: "85%" }}>
               <div
                 className="card"
+                dir={lang === "he" ? "rtl" : "ltr"}
                 style={{
                   padding: 8,
                   background: "var(--protein-bg)",
@@ -496,7 +528,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                   opacity: 0.7,
                 }}
               >
-                {pendingUserMessage.content}
+                {isolateNumbersForBidi(pendingUserMessage.content, lang)}
               </div>
             </div>
           )}
@@ -509,6 +541,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         <style>{`

@@ -18,6 +18,8 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import type { StringKey } from "@/lib/i18n/strings";
 import { calculateBmr, calculateGoals, calculateTdee } from "@/lib/goals/calculate";
+import { getUserGoals } from "@/lib/profile/queries";
+import { recordGoalChange } from "@/lib/goals/goalHistory";
 import type {
   ActivityLevel,
   DietaryPref,
@@ -155,6 +157,7 @@ export default function Onboarding() {
     if (!user) return;
     setBusy(true);
     try {
+      const before = await getUserGoals(user.uid);
       const now = new Date().toISOString();
       const ref = doc(db, "users", user.uid, "meta", "profile");
       const update: Partial<UserProfile> = {
@@ -176,6 +179,10 @@ export default function Onboarding() {
         updatedAt: now,
       };
       await setDoc(ref, update, { merge: true });
+      await recordGoalChange(user.uid, before, {
+        calorieGoal: calculated.calorieGoal,
+        proteinGoal: calculated.proteinGoal,
+      });
       router.push("/today");
     } finally {
       setBusy(false);

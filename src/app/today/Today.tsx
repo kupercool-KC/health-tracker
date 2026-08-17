@@ -1165,6 +1165,7 @@ export default function Today() {
                       <tr>
                         <td colSpan={5} style={{ padding: "0 10px 12px", color: "var(--muted)", fontSize: 13 }}>
                           <bdi dir="ltr">
+                            {entry.grams != null && `${Math.round(entry.grams)}${t("unitG")} ${t("gramsLabel")} · `}
                             {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
                             {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
                             {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
@@ -1313,6 +1314,7 @@ export default function Today() {
                     {expanded && (
                       <div style={{ color: "var(--muted)", fontSize: 13 }}>
                         <bdi dir="ltr">
+                          {entry.grams != null && `${Math.round(entry.grams)}${t("unitG")} ${t("gramsLabel")} · `}
                           {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
                           {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
                           {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}

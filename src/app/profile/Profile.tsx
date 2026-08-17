@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
 import { getUserGoals } from "@/lib/profile/queries";
+import { recordGoalChange } from "@/lib/goals/goalHistory";
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 
@@ -56,18 +57,23 @@ export default function Profile() {
     setGoalsBusy(true);
     setGoalsSaved(false);
     try {
+      const before = await getUserGoals(user.uid);
       const ref = doc(db, "users", user.uid, "meta", "profile");
+      const after = {
+        calorieGoal: Number(calorieGoal) || 0,
+        proteinGoal: Number(proteinGoal) || 0,
+        stepGoal: Number(stepGoal) || 0,
+        netCalorieBurnFactor: Math.min(100, Math.max(0, Number(netFactor) || 0)),
+      };
       await setDoc(
         ref,
         {
-          calorieGoal: Number(calorieGoal) || 0,
-          proteinGoal: Number(proteinGoal) || 0,
-          stepGoal: Number(stepGoal) || 0,
-          netCalorieBurnFactor: Math.min(100, Math.max(0, Number(netFactor) || 0)),
+          ...after,
           updatedAt: new Date().toISOString(),
         },
         { merge: true },
       );
+      await recordGoalChange(user.uid, before, after);
       setGoalsSaved(true);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));

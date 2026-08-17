@@ -20,6 +20,8 @@ import {
 } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
+import { getGoalHistory, goalChangeDatesInRange, goalValueOnDate, type GoalHistoryEntry } from "@/lib/goals/goalHistory";
+import type { StringKey } from "@/lib/i18n/strings";
 import type { MealDay, UserProfile, Workout } from "@/lib/types";
 
 interface DayInfo {
@@ -38,6 +40,9 @@ interface DayInfo {
   workouts: Workout[];
   /** 0-100 combined adherence score (see `adherence` below) — average of the calorie and protein scores for the day. */
   overallScore: number;
+  /** The calorie/protein goal actually in effect on this day (see src/lib/goals/goalHistory.ts) — not necessarily today's current goal. */
+  calorieGoalForDay: number;
+  proteinGoalForDay: number;
 }
 
 type Period = "weekly" | "monthly" | "custom";
@@ -93,6 +98,44 @@ function ChartXAxis({ days, lang }: { days: { date: string }[]; lang: "en" | "he
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Small caption under a chart listing any goal changes within the visible range — the dashed goal line already reflects these, this just explains why it moved. */
+function GoalChangeLegend({
+  entries,
+  field,
+  from,
+  to,
+  unit,
+  lang,
+  t,
+}: {
+  entries: GoalHistoryEntry[];
+  field: "calorieGoal" | "proteinGoal";
+  from: string;
+  to: string;
+  unit: string;
+  lang: "en" | "he";
+  t: (key: StringKey) => string;
+}) {
+  const changes = goalChangeDatesInRange(entries, field, from, to);
+  if (changes.length === 0) return null;
+  return (
+    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+      {t("goalChangedLabel")}:{" "}
+      {changes.map((c, i) => (
+        <span key={c.date}>
+          {i > 0 && " · "}
+          <bdi dir="ltr">
+            {dotDateLabel(c.date)} → {c[field]}
+            {unit}
+          </bdi>
+          {" "}
+          {weekdayLabel(c.date, lang)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -485,6 +528,7 @@ export default function History() {
   const [customFrom, setCustomFrom] = useState(localDateKeyDaysAgo(6));
   const [customTo, setCustomTo] = useState(localDateKey());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [goalHistoryEntries, setGoalHistoryEntries] = useState<GoalHistoryEntry[]>([]);
 
   const range = useMemo(() => {
     if (period === "weekly") return { from: localDateKeyDaysAgo(6), to: localDateKey() };
@@ -498,13 +542,15 @@ export default function History() {
       setLoading(true);
       setError(null);
       try {
-        const [mealDays, workouts, stepsDays, g] = await Promise.all([
+        const [mealDays, workouts, stepsDays, g, goalHistory] = await Promise.all([
           getMealDaysSince(user.uid, range.from, range.to),
           getWorkoutsSince(user.uid, range.from, range.to),
           getStepsSince(user.uid, range.from, range.to),
           getUserGoals(user.uid),
+          getGoalHistory(user.uid),
         ]);
         setGoals(g);
+        setGoalHistoryEntries(goalHistory);
 
         const mealByDate = new Map(mealDays.map((m) => [m.date, m]));
         const stepsByDate = new Map(stepsDays.map((s) => [s.date, s.steps]));
@@ -534,6 +580,8 @@ export default function History() {
           const steps = stepsByDate.get(date) ?? 0;
           const netCalories = computeNetCalories(calories, burned, g.netCalorieBurnFactor ?? 50);
           const hasData = (meal?.entries.length ?? 0) > 0 || dayWorkouts.length > 0 || steps > 0;
+          const calorieGoalForDay = goalValueOnDate(goalHistory, date, "calorieGoal", g.calorieGoal);
+          const proteinGoalForDay = goalValueOnDate(goalHistory, date, "proteinGoal", g.proteinGoal);
           built.push({
             date,
             calories,
@@ -546,8 +594,10 @@ export default function History() {
             hasData,
             entries: meal?.entries ?? [],
             workouts: dayWorkouts,
+            calorieGoalForDay,
+            proteinGoalForDay,
             overallScore: hasData
-              ? (adherence(netCalories, g.calorieGoal, "atMost") + adherence(protein, g.proteinGoal, "atLeast")) / 2
+              ? (adherence(netCalories, calorieGoalForDay, "atMost") + adherence(protein, proteinGoalForDay, "atLeast")) / 2
               : 0,
           });
         }
@@ -697,8 +747,9 @@ export default function History() {
             unit=" kcal"
             yStep={500}
             onSelectDay={setSelectedDate}
-            perDayGoal={(d) => goals.calorieGoal + d.burned * ((goals.netCalorieBurnFactor ?? 50) / 100)}
+            perDayGoal={(d) => d.calorieGoalForDay + d.burned * ((goals.netCalorieBurnFactor ?? 50) / 100)}
           />
+          <GoalChangeLegend entries={goalHistoryEntries} field="calorieGoal" from={range.from} to={range.to} unit=" kcal" lang={lang} t={t} />
           <MetricBarChart
             days={days}
             valueKey="protein"
@@ -718,7 +769,9 @@ export default function History() {
             unit={gramsUnit}
             yStep={50}
             onSelectDay={setSelectedDate}
+            perDayGoal={(d) => d.proteinGoalForDay}
           />
+          <GoalChangeLegend entries={goalHistoryEntries} field="proteinGoal" from={range.from} to={range.to} unit={gramsUnit} lang={lang} t={t} />
           <MetricBarChart
             days={days}
             valueKey="overallScore"
@@ -840,6 +893,7 @@ export default function History() {
                 <bdi dir="ltr">
                   {Math.round(e.calories)} kcal, {Math.round(e.protein)}
                   {t("unitG")}
+                  {e.grams != null && ` (${Math.round(e.grams)}${t("unitG")})`}
                 </bdi>
                 {e.ingredients && e.ingredients.length > 0 && (
                   <div style={{ color: "var(--muted)", fontSize: 12 }}>
