@@ -36,7 +36,11 @@ function apiErrorMessage(data: { error?: string; detail?: string }, fallback: st
  */
 const BIDI_LTR_ISOLATE_START = "⁦"; // LEFT-TO-RIGHT ISOLATE
 const BIDI_ISOLATE_END = "⁩"; // POP DIRECTIONAL ISOLATE
-const NUMERIC_EXPRESSION_RE = /[+-]?\d+(?:[.,]\d+)?(?:\s*[-+×x*/=%]\s*[+-]?\d+(?:[.,]\d+)?)*/g;
+// Negative lookbehind on a leading letter — Hebrew uses a bare hyphen
+// glued directly to a word as a prefix ("כ-100", "ל-100" — "approximately"/
+// "per"), not a minus sign; without the lookbehind that hyphen got pulled
+// into the isolated run, leaving it detached from the word it belongs to.
+const NUMERIC_EXPRESSION_RE = /(?<![\p{L}])[+-]?\d+(?:[.,]\d+)?(?:\s*[-+×x*/=%]\s*[+-]?\d+(?:[.,]\d+)?)*/gu;
 
 function isolateNumbersForBidi(text: string, lang: "en" | "he"): string {
   if (lang !== "he") return text;
@@ -435,7 +439,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         ))}
       </aside>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 12, minWidth: 0 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 12, minWidth: 0, minHeight: 0 }}>
         <div
           style={{
             display: "flex",
@@ -460,7 +464,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
 
         {shareNotice && <p style={{ color: "var(--burned)", fontSize: 12 }}>{shareNotice}</p>}
 
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
           {(activeSession?.messages ?? []).map((m, i) => (
             <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
               <div

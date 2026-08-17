@@ -599,6 +599,15 @@ export async function resolveLogFromPriorAnswer(
   const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
   if (!lastAssistant || lastAssistant.pendingMeal) return null;
 
+  // Calories and protein for the same food are often computed in two
+  // separate turns (user asks "how many calories" then, separately, "and
+  // protein?") — looking only at the single last assistant message meant
+  // "add it, calories and protein" right after the protein-only answer
+  // reused the protein number but had no calories in view, so the model
+  // filled in 0 rather than reaching back one more turn for it. Passing the
+  // recent conversation window (same helper/limit classifyIntent etc. use)
+  // instead of just the last message lets it gather both numbers from
+  // wherever each was actually stated.
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     response_format: { type: "json_object" },
@@ -606,12 +615,12 @@ export async function resolveLogFromPriorAnswer(
     messages: [
       {
         role: "system",
-        content: `The assistant's previous message was: ${JSON.stringify(lastAssistant.content)}
-The user's latest message might be asking to log/save the food(s) from that previous message (e.g. "add it", "log it", "add this to my intake") — determine whether that's actually the case AND that previous message contains specific, already-computed calorie number(s) for one or more identifiable foods/ingredients (a full ingredient-by-ingredient breakdown counts — extract each line as its own item; not just general advice with no concrete numbers).
+        content: `Below is the recent conversation. The user's latest message might be asking to log/save food(s) that were discussed there (e.g. "add it", "log it", "add this to my intake", "add it with calories and protein") — determine whether that's actually the case AND that the conversation contains specific, already-computed calorie/protein number(s) for one or more identifiable foods/ingredients (a full ingredient-by-ingredient breakdown counts — extract each line as its own item; not just general advice with no concrete numbers). Calories and protein for the same food may have been given in DIFFERENT messages (e.g. calories in one answer, protein in a later answer to "and protein?") — look across the whole conversation below, not just the very last message, and combine them onto the same item.
 Respond ONLY as JSON: { "applies": boolean, "items": [{ "description": string, "calories": number, "protein"?: number, "grams"?: number }] }
-If "applies" is true: extract EXACTLY the number(s) already stated there for each item — do not recalculate, round differently, sum, or combine them, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item if not stated.
+If "applies" is true: extract EXACTLY the number(s) already stated for each item, from wherever in the conversation below they were stated — do not recalculate, round differently, sum, or combine different foods, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item only if truly never stated anywhere in the conversation below.
 If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false, "items": [] }.`,
       },
+      ...toContextMessages(history),
       { role: "user", content: message },
     ],
   });
