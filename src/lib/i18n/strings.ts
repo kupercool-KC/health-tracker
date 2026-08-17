@@ -84,6 +84,19 @@ export const strings = {
   saved: { en: "Saved.", he: "נשמר." },
   recalculateGoals: { en: "Recalculate goals from formula", he: "חשב מטרות מחדש מנוסחה" },
 
+  goalHistoryTitle: { en: "Goal history", he: "היסטוריית מטרות" },
+  goalHistoryExplainer: {
+    en: "Effective-from date for each goal. History's charts use whichever goal was active on each past day instead of applying today's goal retroactively. Add an entry here to backfill a change made before this existed, or to correct one.",
+    he: "תאריך התחלת תוקף לכל מטרה. הגרפים בהיסטוריה משתמשים במטרה שהייתה בתוקף בכל יום בעבר, במקום להחיל את המטרה הנוכחית רטרואקטיבית. אפשר להוסיף כאן רשומה כדי להשלים שינוי שנעשה לפני שהתכונה הזו הייתה קיימת, או לתקן רשומה קיימת.",
+  },
+  goalHistoryDateLabel: { en: "Effective from", he: "בתוקף מתאריך" },
+  goalHistoryAddEntry: { en: "Add entry", he: "הוסף רשומה" },
+  goalHistoryNoEntries: { en: "No recorded changes yet.", he: "אין עדיין שינויים שנרשמו." },
+  goalHistoryLeaveBlankHint: {
+    en: "Leave a field blank to leave that goal unchanged on this date.",
+    he: "אפשר להשאיר שדה ריק אם המטרה הזו לא השתנתה בתאריך הזה.",
+  },
+
   onboardingStep1Title: { en: "Basic stats", he: "מדדים בסיסיים" },
   ageLabel: { en: "Age", he: "גיל" },
   genderLabel: { en: "Gender", he: "מגדר" },

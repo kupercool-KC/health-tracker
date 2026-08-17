@@ -16,7 +16,13 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
 import { getUserGoals } from "@/lib/profile/queries";
-import { recordGoalChange } from "@/lib/goals/goalHistory";
+import {
+  deleteGoalHistoryEntry,
+  getGoalHistory,
+  recordGoalChange,
+  upsertGoalHistoryEntry,
+  type GoalHistoryEntry,
+} from "@/lib/goals/goalHistory";
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 
@@ -36,6 +42,12 @@ export default function Profile() {
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
 
+  const [goalHistoryEntries, setGoalHistoryEntries] = useState<GoalHistoryEntry[]>([]);
+  const [ghDate, setGhDate] = useState(localDateKey());
+  const [ghCalorieGoal, setGhCalorieGoal] = useState("");
+  const [ghProteinGoal, setGhProteinGoal] = useState("");
+  const [ghBusy, setGhBusy] = useState(false);
+
   const [retroDays, setRetroDays] = useState("3");
   const [retroBusy, setRetroBusy] = useState(false);
   const [retroResults, setRetroResults] = useState<
@@ -50,7 +62,47 @@ export default function Profile() {
       setStepGoal(String(g.stepGoal ?? 10000));
       setNetFactor(String(g.netCalorieBurnFactor ?? 50));
     });
+    getGoalHistory(user.uid).then((entries) => {
+      setGoalHistoryEntries([...entries].sort((a, b) => b.date.localeCompare(a.date)));
+    });
   }, [user]);
+
+  async function addGoalHistoryEntry() {
+    if (!user || !ghDate) return;
+    setGhBusy(true);
+    setError(null);
+    try {
+      const entry: GoalHistoryEntry = {
+        date: ghDate,
+        ...(ghCalorieGoal ? { calorieGoal: Number(ghCalorieGoal) } : {}),
+        ...(ghProteinGoal ? { proteinGoal: Number(ghProteinGoal) } : {}),
+      };
+      await upsertGoalHistoryEntry(user.uid, entry);
+      const entries = await getGoalHistory(user.uid);
+      setGoalHistoryEntries([...entries].sort((a, b) => b.date.localeCompare(a.date)));
+      setGhCalorieGoal("");
+      setGhProteinGoal("");
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setGhBusy(false);
+    }
+  }
+
+  async function removeGoalHistoryEntry(date: string) {
+    if (!user) return;
+    setGhBusy(true);
+    setError(null);
+    try {
+      await deleteGoalHistoryEntry(user.uid, date);
+      const entries = await getGoalHistory(user.uid);
+      setGoalHistoryEntries([...entries].sort((a, b) => b.date.localeCompare(a.date)));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setGhBusy(false);
+    }
+  }
 
   async function saveGoals() {
     if (!user) return;
@@ -232,6 +284,73 @@ export default function Profile() {
           </Link>
         </div>
         {goalsSaved && <p style={{ color: "var(--burned)" }}>{t("saved")}</p>}
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("goalHistoryTitle")}</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("goalHistoryExplainer")}</p>
+
+        {goalHistoryEntries.length === 0 ? (
+          <p style={{ color: "var(--muted)", fontSize: 13 }}>{t("goalHistoryNoEntries")}</p>
+        ) : (
+          <div style={{ display: "grid", gap: 4 }}>
+            {goalHistoryEntries.map((entry) => (
+              <div
+                key={entry.date}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, borderTop: "0.5px solid var(--border)", padding: "6px 0" }}
+              >
+                <bdi dir="ltr">{entry.date}</bdi>
+                <bdi dir="ltr" style={{ color: "var(--muted)" }}>
+                  {entry.calorieGoal != null && `${entry.calorieGoal} kcal`}
+                  {entry.calorieGoal != null && entry.proteinGoal != null && " · "}
+                  {entry.proteinGoal != null && `${entry.proteinGoal}${t("unitG")} ${t("protein")}`}
+                </bdi>
+                <button
+                  onClick={() => removeGoalHistoryEntry(entry.date)}
+                  disabled={ghBusy}
+                  aria-label={t("delete")}
+                  title={t("delete")}
+                  style={{ border: "none", background: "none", padding: 2, fontSize: 13, color: "var(--calories)" }}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gap: 8, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("goalHistoryDateLabel")}</span>
+            <input
+              type="date"
+              value={ghDate}
+              max={localDateKey()}
+              onChange={(e) => setGhDate(e.target.value)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number"
+              value={ghCalorieGoal}
+              onChange={(e) => setGhCalorieGoal(e.target.value)}
+              placeholder={t("calorieGoalLabel")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+            <input
+              type="number"
+              value={ghProteinGoal}
+              onChange={(e) => setGhProteinGoal(e.target.value)}
+              placeholder={t("proteinGoalLabel")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </div>
+          <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("goalHistoryLeaveBlankHint")}</p>
+          <button onClick={addGoalHistoryEntry} disabled={ghBusy || (!ghCalorieGoal && !ghProteinGoal)}>
+            {ghBusy ? t("working") : t("goalHistoryAddEntry")}
+          </button>
+        </div>
       </div>
 
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}

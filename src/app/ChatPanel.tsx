@@ -464,7 +464,16 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
 
         {shareNotice && <p style={{ color: "var(--burned)", fontSize: 12 }}>{shareNotice}</p>}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* Forced dir="ltr" here — the bubbles' own alignSelf: flex-end/
+            flex-start below is a layout convention ("own message always on
+            the right"), not text direction, but those logical values still
+            resolve relative to whatever `dir` this container inherits. Under
+            the page's dir="rtl" (Hebrew), flex-end/flex-start silently
+            flipped physical sides, putting the user's own message on the
+            left and the reply on the right. Forcing ltr here decouples the
+            bubble-side convention from the per-message dir already set
+            below on each bubble's own text content. */}
+        <div dir="ltr" style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
           {(activeSession?.messages ?? []).map((m, i) => (
             <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
               <div

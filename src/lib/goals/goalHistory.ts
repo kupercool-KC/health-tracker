@@ -86,6 +86,27 @@ export function goalValueOnDate(
   return value;
 }
 
+/**
+ * Manually add/replace one entry by date — for backfilling a change that
+ * happened before this feature existed (or correcting a wrong auto-recorded
+ * one), from Profile's goal-history editor. Unlike recordGoalChange (which
+ * only ever touches today's date and requires an actual before/after diff),
+ * this takes the date and values as given, no questions asked.
+ */
+export async function upsertGoalHistoryEntry(uid: string, entry: GoalHistoryEntry): Promise<void> {
+  const ref = doc(db, "users", uid, "meta", "goalHistory");
+  const existing = await getGoalHistory(uid);
+  const withoutDate = existing.filter((e) => e.date !== entry.date);
+  await setDoc(ref, { entries: [...withoutDate, entry] }, { merge: true });
+}
+
+/** Remove the entry for one date — from Profile's goal-history editor. */
+export async function deleteGoalHistoryEntry(uid: string, date: string): Promise<void> {
+  const ref = doc(db, "users", uid, "meta", "goalHistory");
+  const existing = await getGoalHistory(uid);
+  await setDoc(ref, { entries: existing.filter((e) => e.date !== date) }, { merge: true });
+}
+
 /** Distinct dates (within `sinceDate..untilDate`, inclusive) where `field` actually changed — used to annotate a chart with "goal changed" markers. */
 export function goalChangeDatesInRange(
   entries: GoalHistoryEntry[],
