@@ -231,6 +231,7 @@ interface RecentHistoryData {
   steps: { date: string; steps: number }[];
   calorieGoal?: number;
   netCalorieBurnFactor: number;
+  profile?: UserProfile;
 }
 
 /**
@@ -290,7 +291,7 @@ async function fetchRecentHistory(uid: string, windowDays: number): Promise<Rece
     };
   });
 
-  return { meals: mealsWithNet, workouts, steps, calorieGoal, netCalorieBurnFactor };
+  return { meals: mealsWithNet, workouts, steps, calorieGoal, netCalorieBurnFactor, profile };
 }
 
 export async function answerHistoryQuery(
@@ -300,8 +301,9 @@ export async function answerHistoryQuery(
   today: string,
   history: ChatMessage[] = [],
 ): Promise<string> {
-  const { meals, workouts, steps, calorieGoal, netCalorieBurnFactor } = await fetchRecentHistory(uid, HISTORY_WINDOW_DAYS);
+  const { meals, workouts, steps, calorieGoal, netCalorieBurnFactor, profile } = await fetchRecentHistory(uid, HISTORY_WINDOW_DAYS);
   const oldestDate = meals[0]?.date;
+  const profileSummary = summarizeProfileForChat(profile);
 
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
@@ -314,7 +316,7 @@ Recent conversation turns are included below for context — the user's latest m
 
 Each entry in "meals" already includes "netCalories" — the day's net calorie balance, computed as consumed calories minus (burned calories × ${netCalorieBurnFactor}%), i.e. only ${netCalorieBurnFactor}% of a workout's burned calories count toward the deficit (this is the user's configured factor, meant to keep the deficit conservative since burn estimates run optimistic)${calorieGoal != null ? `, and "exceededGoal" — a boolean that's already true when that day's netCalories went over the ${calorieGoal} kcal/day goal. When asked which/how many days the user exceeded (or stayed under) their goal, filter/count by the "exceededGoal" field directly — do NOT recompute or re-judge this yourself by comparing numbers, that's exactly the kind of comparison that's already been done correctly for you.` : "."} When asked about deficit/surplus/"net calories"/"caloric balance", use "netCalories" directly rather than recomputing it.
 
-If asked to prepare a meal plan, diet plan, or workout plan based on this history (e.g. "what should I eat this week to stop exceeding my goal"), go ahead and produce a concrete one — specific meals/workouts with portions, calories, and protein — grounded in the patterns in this data (what they actually tend to eat, days they tend to go over) rather than generic advice.`,
+If asked to prepare a meal plan, diet plan, or workout plan based on this history (e.g. "what should I eat this week to stop exceeding my goal"), go ahead and produce a concrete one — specific meals/workouts with portions, calories, and protein — grounded in the patterns in this data (what they actually tend to eat, days they tend to go over) rather than generic advice.${profileSummary ? `\n\nThis user's own profile: ${profileSummary}. Factor it in wherever relevant (e.g. respect allergies/avoided foods/dietary prefs in any plan; a plan should account for their actual goals and body stats, not generic ones).` : ""}`,
       },
       ...toContextMessages(history),
       {
@@ -376,7 +378,11 @@ export function summarizeProfileForChat(profile: Partial<UserProfile> | undefine
   if (profile.avoidFoods?.length) parts.push(`avoids: ${profile.avoidFoods.join(", ")}`);
   if (profile.calorieGoal != null) parts.push(`calorie goal ${profile.calorieGoal}/day`);
   if (profile.proteinGoal != null) parts.push(`protein goal ${profile.proteinGoal}g/day`);
+  if (profile.carbGoal != null) parts.push(`carb goal ${profile.carbGoal}g/day`);
+  if (profile.fatGoal != null) parts.push(`fat goal ${profile.fatGoal}g/day`);
   if (profile.stepGoal != null) parts.push(`step goal ${profile.stepGoal}/day`);
+  if (profile.averageDailySteps != null) parts.push(`usually walks ~${profile.averageDailySteps} steps/day`);
+  if (profile.preferredFoods?.length) parts.push(`likes: ${profile.preferredFoods.join(", ")}`);
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
@@ -386,7 +392,7 @@ export async function answerGeneralHealth(
   lang: "en" | "he",
   today: string,
   history: ChatMessage[] = [],
-  imageUrl?: string,
+  imageUrls?: string[],
   profileSummary?: string | null,
 ): Promise<string> {
   const { meals, workouts, steps } = await fetchRecentHistory(uid, RECENT_CONTEXT_WINDOW_DAYS);
@@ -407,7 +413,9 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
   };
 
   const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: "text", text: message }];
-  if (imageUrl) userContent.push({ type: "image_url", image_url: { url: imageUrl } });
+  for (const url of imageUrls ?? []) {
+    userContent.push({ type: "image_url", image_url: { url } });
+  }
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     systemMessage,

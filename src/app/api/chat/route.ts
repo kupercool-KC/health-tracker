@@ -1,6 +1,6 @@
 /**
  * POST /api/chat
- * Body: { sessionId?: string, message?: string, imageUrl?: string, lang?: "en"|"he" }
+ * Body: { sessionId?: string, message?: string, imageUrls?: string[], lang?: "en"|"he" }
  * Auth: Firebase ID token (Bearer).
  *
  * Loads/creates a chat session, classifies intent, dispatches to the right
@@ -46,7 +46,9 @@ const bodySchema = z
   .object({
     sessionId: z.string().optional(),
     message: z.string().optional(),
-    imageUrl: z.string().url().optional(),
+    // Up to 6 photos in one message — e.g. several angles of one dish, or a
+    // menu page plus a closeup of one item.
+    imageUrls: z.array(z.string().url()).min(1).max(6).optional(),
     lang: z.enum(["en", "he"]).optional().default("en"),
     // Client's local yyyy-mm-dd — used to scope "manage_meal" to today's
     // entries; the server has no timezone context (see /api/nutrition).
@@ -55,8 +57,8 @@ const bodySchema = z
     overrideCalories: z.number().nonnegative().optional(),
     overrideProtein: z.number().nonnegative().optional(),
   })
-  .refine((b) => (b.message && b.message.trim().length > 0) || b.imageUrl, {
-    message: "Provide message or imageUrl",
+  .refine((b) => (b.message && b.message.trim().length > 0) || b.imageUrls?.length, {
+    message: "Provide message or imageUrls",
   });
 
 export async function POST(req: Request) {
@@ -79,7 +81,7 @@ async function handleChat(req: Request) {
   if (!parsedBody.success) {
     return NextResponse.json({ error: "Invalid request", details: parsedBody.error.flatten() }, { status: 400 });
   }
-  const { sessionId, message, imageUrl, lang, date, overrideCalories, overrideProtein } = parsedBody.data;
+  const { sessionId, message, imageUrls, lang, date, overrideCalories, overrideProtein } = parsedBody.data;
 
   // Fetched once and reused by both log_meal's avoid-food warning and
   // general_health's personalization — same doc, no reason to read it twice.
@@ -94,7 +96,9 @@ async function handleChat(req: Request) {
   const existing = snap.data() as ChatSession | undefined;
   const messages: ChatMessage[] = existing?.messages ?? [];
 
-  const userContent = message?.trim() || (lang === "he" ? "[תמונה]" : "[photo]");
+  const multiplePhotos = (imageUrls?.length ?? 0) > 1;
+  const userContent =
+    message?.trim() || (lang === "he" ? (multiplePhotos ? "[תמונות]" : "[תמונה]") : multiplePhotos ? "[photos]" : "[photo]");
   messages.push({ role: "user", content: userContent, createdAt: now });
 
   // Prompt-injection / jailbreak guard — only meaningful for actual typed
@@ -131,7 +135,7 @@ async function handleChat(req: Request) {
   // rather than blindly assuming log_meal, which previously sent a restaurant
   // menu screenshot straight into meal-logging's vision parser and produced
   // confidently wrong, unrelated dish names with no way to say "I don't know".
-  const bareImageNoHistory = !!imageUrl && !message?.trim() && priorMessages.length === 0;
+  const bareImageNoHistory = !!imageUrls?.length && !message?.trim() && priorMessages.length === 0;
 
   // A bare greeting ("hi", "שלום") isn't a nutrition/fitness question, but
   // answering it with the same hard out_of_scope refusal used for genuinely
@@ -139,7 +143,7 @@ async function handleChat(req: Request) {
   // first thing a user types. Handled before classification, as its own
   // free/instant fast path, rather than letting it fall through to the
   // classifier and the canned refusal.
-  const greeting = !safety.flagged && !imageUrl && !!message?.trim() && isGreeting(message);
+  const greeting = !safety.flagged && !imageUrls?.length && !!message?.trim() && isGreeting(message);
 
   // Skip the classifier call entirely once the pending-meal follow-up has
   // already resolved this turn — one fewer model call, and its intent
@@ -153,7 +157,7 @@ async function handleChat(req: Request) {
     ? [null as ChatIntent | null, { logs: [] } as CompositeLogDetection]
     : await Promise.all([
         classifyIntent(userContent, priorMessages),
-        imageUrl ? Promise.resolve({ logs: [] }) : detectCompositeLog(userContent, priorMessages),
+        imageUrls?.length ? Promise.resolve({ logs: [] }) : detectCompositeLog(userContent, priorMessages),
       ]);
   const intent: ChatIntent = followUpHandled
     ? "log_meal"
@@ -255,14 +259,16 @@ async function handleChat(req: Request) {
       // parseNutrition from scratch, which has no memory of that number and
       // regularly produced a different, ungrounded guess of its own. Try
       // reusing the number that was already given before re-deriving one.
-      const reused = !imageUrl ? await resolveLogFromPriorAnswer(message ?? "", priorMessages, lang, today) : null;
+      const reused = !imageUrls?.length ? await resolveLogFromPriorAnswer(message ?? "", priorMessages, lang, today) : null;
 
       // Some meals are too large/mixed to name a specific dish for —
       // "ate a huge mixed meal, ~900 calories and 50g protein" — the user
       // just wants to log the stated totals directly rather than have
       // parseNutrition estimate/ground against a food it can't identify.
       const generic =
-        !reused && !imageUrl && message?.trim() ? await parseGenericMealTotals(message.trim(), lang, priorMessages) : null;
+        !reused && !imageUrls?.length && message?.trim()
+          ? await parseGenericMealTotals(message.trim(), lang, priorMessages)
+          : null;
 
       if (generic?.isGenericTotals && (generic.calories == null || generic.protein == null)) {
         // Not enough to save yet — ask for exactly what's missing rather
@@ -278,7 +284,7 @@ async function handleChat(req: Request) {
           parsed = { items: [{ description: genericMealDescription(lang), calories: generic.calories, protein: generic.protein }] };
           targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
         } else {
-          parsed = await parseNutrition({ text: message, imageUrl, lang, history: priorMessages });
+          parsed = await parseNutrition({ text: message, imageUrls, lang, history: priorMessages });
           // Only worth a date-resolution call when there's actual text to
           // resolve against — an image-only message ("[photo]" placeholder)
           // has no calendar phrase to find, so it always means today.
@@ -297,7 +303,7 @@ async function handleChat(req: Request) {
             ],
           };
         }
-        pendingMeal = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
+        pendingMeal = { ...parsed, ...(imageUrls?.length ? { imageUrls } : {}), date: targetDate };
 
         const avoidFoods = profile?.avoidFoods ?? [];
         const hits = avoidFoods.filter((f) =>
@@ -331,9 +337,9 @@ async function handleChat(req: Request) {
     }
   } else if (intent === "log_workout") {
     try {
-      const parsed = await parseWorkout({ text: message, imageUrl, lang, history: priorMessages });
+      const parsed = await parseWorkout({ text: message, imageUrls, lang, history: priorMessages });
       const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
-      pendingWorkout = { ...parsed, ...(imageUrl ? { imageUrl } : {}), date: targetDate };
+      pendingWorkout = { ...parsed, ...(imageUrls?.length ? { imageUrls } : {}), date: targetDate };
 
       const dateNote = targetDate !== today ? ` (${targetDate})` : "";
       const summary =
@@ -347,7 +353,7 @@ async function handleChat(req: Request) {
     }
   } else if (intent === "log_steps") {
     try {
-      const parsed = await parseSteps({ text: message, imageUrl, history: priorMessages });
+      const parsed = await parseSteps({ text: message, imageUrls, history: priorMessages });
       const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
       pendingSteps = { steps: parsed.steps, date: targetDate };
 
@@ -368,7 +374,7 @@ async function handleChat(req: Request) {
       lang,
       today,
       priorMessages,
-      imageUrl,
+      imageUrls,
       summarizeProfileForChat(profile),
     );
   } else if (intent === "manage_meal") {

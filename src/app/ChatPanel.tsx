@@ -70,21 +70,28 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [text]);
-  const [file, setFile] = useState<File | null>(null);
+  // Up to MAX_PHOTOS at once — several angles of one dish, or a menu page
+  // plus a closeup of one item. Picking again (the input stays `multiple`)
+  // APPENDS to the current selection rather than replacing it, since the
+  // browser's native picker only returns whatever was just chosen in that
+  // one dialog — capped so a reload-heavy accidental multi-select doesn't
+  // silently blow past what the server accepts (see /api/chat's schema).
+  const MAX_PHOTOS = 6;
+  const [files, setFiles] = useState<File[]>([]);
   // A picked file previously gave zero visual feedback — this renders a
-  // thumbnail so the user can actually see something was attached before
-  // sending. Revoked whenever `file` changes, so picking a new photo (or
-  // sending/clearing) doesn't leak the previous object URL.
-  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  // thumbnail per photo so the user can actually see what's attached before
+  // sending. Revoked whenever `files` changes, so picking new photos (or
+  // sending/clearing) doesn't leak the previous object URLs.
+  const [filePreviewUrls, setFilePreviewUrls] = useState<string[]>([]);
   useEffect(() => {
-    if (!file) {
-      setFilePreviewUrl(null);
+    if (files.length === 0) {
+      setFilePreviewUrls([]);
       return;
     }
-    const url = URL.createObjectURL(file);
-    setFilePreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setFilePreviewUrls(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -143,30 +150,32 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
 
   async function send(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
-    if (!user || (!text.trim() && !file) || busy) return;
+    if (!user || (!text.trim() && files.length === 0) || busy) return;
     const messageText = text;
-    const messageFile = file;
+    const messageFiles = files;
     const messageCalories = manualCalories;
     const messageProtein = manualProtein;
     // Clear the input immediately so it's ready for the next message —
     // the thinking indicator below covers the wait, not the input box.
     setText("");
-    setFile(null);
+    setFiles([]);
     setManualCalories("");
     setManualProtein("");
     setBusy(true);
     setAwaitingReply(true);
     setError(null);
-    setPendingUserMessage({ content: messageText.trim() || (lang === "he" ? "[תמונה]" : "[photo]") });
+    const placeholder =
+      lang === "he" ? (messageFiles.length > 1 ? "[תמונות]" : "[תמונה]") : messageFiles.length > 1 ? "[photos]" : "[photo]";
+    setPendingUserMessage({ content: messageText.trim() || placeholder });
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
 
-      let imageUrl: string | undefined;
-      if (messageFile) {
+      let imageUrls: string[] | undefined;
+      if (messageFiles.length > 0) {
         const { uploadNutritionImage } = await import("@/lib/firebase/uploadImage");
-        imageUrl = await uploadNutritionImage(currentUser.uid, messageFile);
+        imageUrls = await Promise.all(messageFiles.map((f) => uploadNutritionImage(currentUser.uid, f)));
       }
 
       const res = await fetch("/api/chat", {
@@ -175,7 +184,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({
           sessionId: activeId ?? undefined,
           message: messageText,
-          imageUrl,
+          imageUrls,
           lang,
           date: localDateKey(),
           overrideCalories: messageCalories ? Number(messageCalories) : undefined,
@@ -189,7 +198,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       setError(String(err instanceof Error ? err.message : err));
       // Restore the input on failure so the user doesn't lose what they typed.
       setText(messageText);
-      setFile(messageFile);
+      setFiles(messageFiles);
       setManualCalories(messageCalories);
       setManualProtein(messageProtein);
       setPendingUserMessage(null);
@@ -206,11 +215,11 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
-      const { imageUrl, date, ...parsed } = pendingMeal;
+      const { imageUrls, date, ...parsed } = pendingMeal;
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ parsed, imageUrl, date: date ?? localDateKey() }),
+        body: JSON.stringify({ parsed, imageUrls, date: date ?? localDateKey() }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:meal`));
@@ -228,11 +237,11 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
-      const { imageUrl, date, ...parsed } = pendingWorkout;
+      const { imageUrls, date, ...parsed } = pendingWorkout;
       const res = await fetch("/api/workouts", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ parsed, imageUrl, date }),
+        body: JSON.stringify({ parsed, imageUrls, date }),
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:workout`));
@@ -578,7 +587,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           </details>
         )}
 
-        {file && (
+        {files.length > 0 && (
           <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
             <input
               type="number"
@@ -599,42 +608,47 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {files.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8, overflowX: "auto" }}>
+            {files.map((f, i) => (
+              <div key={i} style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
+                <img
+                  src={filePreviewUrls[i]}
+                  alt=""
+                  style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                  aria-label={t("removePhoto")}
+                  title={t("removePhoto")}
+                  style={{
+                    position: "absolute",
+                    top: -6,
+                    insetInlineEnd: -6,
+                    width: 16,
+                    height: 16,
+                    borderRadius: "50%",
+                    border: "none",
+                    background: "var(--danger)",
+                    color: "#fff",
+                    fontSize: 10,
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={send} style={{ display: "flex", gap: 4, marginTop: 8, alignItems: "center" }}>
-          {file && filePreviewUrl && (
-            <div style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
-              <img
-                src={filePreviewUrl}
-                alt=""
-                style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
-              />
-              <button
-                type="button"
-                onClick={() => setFile(null)}
-                aria-label={t("removePhoto")}
-                title={t("removePhoto")}
-                style={{
-                  position: "absolute",
-                  top: -6,
-                  insetInlineEnd: -6,
-                  width: 16,
-                  height: 16,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "var(--danger)",
-                  color: "#fff",
-                  fontSize: 10,
-                  lineHeight: 1,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 0,
-                }}
-              >
-                ×
-              </button>
-            </div>
-          )}
           <textarea
             ref={textareaRef}
             value={text}
@@ -642,7 +656,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) send(e);
             }}
-            placeholder={file ? t("photoCaptionPlaceholder") : t("chatPlaceholder")}
+            placeholder={files.length > 0 ? t("photoCaptionPlaceholder") : t("chatPlaceholder")}
             rows={1}
             style={{
               flex: 1,
@@ -659,7 +673,18 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
           />
           <label title={t("photoUploadHint")} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
             📷
-            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} />
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                if (picked.length === 0) return;
+                setFiles((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS));
+                e.target.value = "";
+              }}
+              style={{ display: "none" }}
+            />
           </label>
           <button type="submit" disabled={busy}>
             {awaitingReply ? <span className="send-spinner" aria-label={t("send")} /> : t("send")}

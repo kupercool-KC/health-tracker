@@ -77,6 +77,14 @@ export const strings = {
     he: "מקטעי תזונה, התראות, זיכרון ומטרות יגיעו בעדכון עתידי.",
   },
 
+  yourInfoTitle: { en: "Your info", he: "המידע שלך" },
+  yourInfoNone: {
+    en: "No info saved yet — go through onboarding to set it.",
+    he: "עדיין לא נשמר מידע — עברו את תהליך ההרשמה כדי להגדיר אותו.",
+  },
+  allergiesLabel: { en: "Allergies", he: "אלרגיות" },
+  avoidFoodsLabel: { en: "Foods to avoid", he: "מאכלים להימנע מהם" },
+  preferredFoodsLabel: { en: "Preferred foods", he: "מאכלים מועדפים" },
   goalsTitle: { en: "Goals", he: "מטרות" },
   calorieGoalLabel: { en: "Daily calorie goal", he: "מטרת קלוריות יומית" },
   proteinGoalLabel: { en: "Daily protein goal (g)", he: "מטרת חלבון יומית (גרם)" },

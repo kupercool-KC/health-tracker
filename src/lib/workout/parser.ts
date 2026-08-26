@@ -27,8 +27,8 @@ const parsedSchema = z.object({
 export interface ParseWorkoutInput {
   /** Free-text description from the workout-log box. Optional if an image is provided. */
   text?: string;
-  /** A data URL or https URL for a screenshot of a workout summary. Optional. */
-  imageUrl?: string;
+  /** Data URLs or https URLs for screenshot(s) of a workout summary. Optional. */
+  imageUrls?: string[];
   /** Language the "type" field should be written in. Defaults to English. */
   lang?: "en" | "he";
   /** Recent chat turns preceding this message — see the same field on nutrition/parser.ts's ParseInput. */
@@ -54,14 +54,14 @@ Respond ONLY with JSON matching:
 If the input is ambiguous, make a reasonable single best estimate rather than refusing.`;
 
 export async function parseWorkout(input: ParseWorkoutInput): Promise<ParsedWorkout> {
-  if (!input.text && !input.imageUrl) {
-    throw new Error("parseWorkout requires text or imageUrl");
+  if (!input.text && !input.imageUrls?.length) {
+    throw new Error("parseWorkout requires text or imageUrls");
   }
 
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
   if (input.text) content.push({ type: "text", text: input.text });
-  if (input.imageUrl) {
-    content.push({ type: "image_url", image_url: { url: input.imageUrl } });
+  for (const url of input.imageUrls ?? []) {
+    content.push({ type: "image_url", image_url: { url } });
   }
 
   const languageInstruction =

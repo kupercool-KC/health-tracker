@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     steps = parsedBody.data.steps;
   } else {
     try {
-      steps = (await parseSteps({ text, imageUrl })).steps;
+      steps = (await parseSteps({ text, imageUrls: imageUrl ? [imageUrl] : undefined })).steps;
     } catch (err) {
       return NextResponse.json({ error: "Failed to parse steps", detail: String(err) }, { status: 502 });
     }

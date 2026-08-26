@@ -8,7 +8,8 @@
  * Charts are hand-rolled inline SVG rather than a charting library — simple
  * gradient-filled bars, no new dependency needed for this.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
@@ -536,9 +537,8 @@ export default function History() {
     return { from: customFrom, to: customTo };
   }, [period, customFrom, customTo]);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
-    (async () => {
       setLoading(true);
       setError(null);
       try {
@@ -607,8 +607,69 @@ export default function History() {
       } finally {
         setLoading(false);
       }
-    })();
   }, [user, range.from, range.to]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const [editingMealId, setEditingMealId] = useState<string | null>(null);
+  const [editCalories, setEditCalories] = useState("");
+  const [editProtein, setEditProtein] = useState("");
+  const [mealActionBusy, setMealActionBusy] = useState(false);
+
+  function startEditMeal(entryId: string, calories: number, protein: number) {
+    setEditingMealId(entryId);
+    setEditCalories(String(Math.round(calories)));
+    setEditProtein(String(Math.round(protein)));
+  }
+
+  async function saveMealEdit(date: string, entryId: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    setMealActionBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          date,
+          entryId,
+          changes: { calories: Number(editCalories) || 0, protein: Number(editProtein) || 0 },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setEditingMealId(null);
+      await loadData();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setMealActionBusy(false);
+    }
+  }
+
+  async function deleteMeal(date: string, entryId: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !window.confirm(t("deleteMealConfirm"))) return;
+    setMealActionBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/nutrition", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ date, entryId }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      await loadData();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setMealActionBusy(false);
+    }
+  }
 
   function statusColor(d: DayInfo): string {
     if (!d.hasData) return "var(--muted)";
@@ -889,12 +950,74 @@ export default function History() {
           ) : (
             selected.entries.map((e) => (
               <div key={e.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
-                <strong>{e.name}</strong> —{" "}
-                <bdi dir="ltr">
-                  {Math.round(e.calories)} kcal, {Math.round(e.protein)}
-                  {t("unitG")}
-                  {e.grams != null && ` (${Math.round(e.grams)}${t("unitG")})`}
-                </bdi>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div>
+                    <strong>{e.name}</strong> —{" "}
+                    {editingMealId === e.id ? (
+                      <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                        <input
+                          type="number"
+                          value={editCalories}
+                          onChange={(ev) => setEditCalories(ev.target.value)}
+                          style={{ width: 60, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                        />
+                        <input
+                          type="number"
+                          value={editProtein}
+                          onChange={(ev) => setEditProtein(ev.target.value)}
+                          style={{ width: 52, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                        />
+                      </span>
+                    ) : (
+                      <bdi dir="ltr">
+                        {Math.round(e.calories)} kcal, {Math.round(e.protein)}
+                        {t("unitG")}
+                        {e.grams != null && ` (${Math.round(e.grams)}${t("unitG")})`}
+                      </bdi>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexShrink: 0 }}>
+                    {editingMealId === e.id ? (
+                      <>
+                        <button
+                          onClick={() => saveMealEdit(selected.date, e.id)}
+                          disabled={mealActionBusy}
+                          style={{ border: "none", background: "none", color: "var(--protein)", padding: 4 }}
+                          aria-label={t("save")}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => setEditingMealId(null)}
+                          disabled={mealActionBusy}
+                          style={{ border: "none", background: "none", color: "var(--muted)", padding: 4 }}
+                          aria-label={t("close")}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => startEditMeal(e.id, e.calories, e.protein)}
+                          disabled={mealActionBusy}
+                          style={{ border: "none", background: "none", padding: 4 }}
+                          aria-label={t("edit")}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => deleteMeal(selected.date, e.id)}
+                          disabled={mealActionBusy}
+                          style={{ border: "none", background: "none", color: "var(--calories)", padding: 4 }}
+                          aria-label={t("deleteMeal")}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 {e.ingredients && e.ingredients.length > 0 && (
                   <div style={{ color: "var(--muted)", fontSize: 12 }}>
                     {t("ingredients")}: {e.ingredients.join(", ")}

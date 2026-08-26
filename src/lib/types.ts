@@ -205,11 +205,11 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   /** Present on an assistant message that's proposing meal(s) to log — not yet saved. `date` is the resolved target day (defaults to today, but a message like "add this for Monday" resolves elsewhere). */
-  pendingMeal?: ParsedNutrition & { imageUrl?: string; date?: string };
+  pendingMeal?: ParsedNutrition & { imageUrls?: string[]; date?: string };
   /** Present on an assistant message that's proposing an edit/delete of an existing meal. */
   pendingMealAction?: PendingMealAction;
   /** Present on an assistant message that's proposing a workout to log — not yet saved. */
-  pendingWorkout?: ParsedWorkout & { imageUrl?: string; date: string };
+  pendingWorkout?: ParsedWorkout & { imageUrls?: string[]; date: string };
   /** Present on an assistant message that's proposing a steps count to log — not yet saved. */
   pendingSteps?: { steps: number; date: string };
 }

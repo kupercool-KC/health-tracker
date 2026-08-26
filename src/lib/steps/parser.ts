@@ -17,8 +17,8 @@ const parsedSchema = z.object({
 export interface ParseStepsInput {
   /** Free-text description, e.g. "8500 steps". Optional if an image is provided. */
   text?: string;
-  /** A data URL or https URL for a screenshot of a step count. Optional. */
-  imageUrl?: string;
+  /** Data URLs or https URLs for screenshot(s) of a step count. Optional. */
+  imageUrls?: string[];
   /** Recent chat turns preceding this message — see the same field on nutrition/parser.ts's ParseInput. */
   history?: { role: "user" | "assistant"; content: string }[];
 }
@@ -33,14 +33,14 @@ Respond ONLY with JSON matching: { "steps": number, "confidence": number }
 If the input is ambiguous (e.g. a range), make a reasonable single best estimate rather than refusing.`;
 
 export async function parseSteps(input: ParseStepsInput): Promise<ParsedSteps> {
-  if (!input.text && !input.imageUrl) {
-    throw new Error("parseSteps requires text or imageUrl");
+  if (!input.text && !input.imageUrls?.length) {
+    throw new Error("parseSteps requires text or imageUrls");
   }
 
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
   if (input.text) content.push({ type: "text", text: input.text });
-  if (input.imageUrl) {
-    content.push({ type: "image_url", image_url: { url: input.imageUrl } });
+  for (const url of input.imageUrls ?? []) {
+    content.push({ type: "image_url", image_url: { url } });
   }
 
   const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = (input.history ?? [])

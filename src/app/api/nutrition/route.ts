@@ -59,8 +59,11 @@ const parsedNutritionSchema = z.object({ items: z.array(itemSchema).min(1) });
 const postBodySchema = z
   .object({
     text: z.string().optional(),
-    // Firebase Storage download URL uploaded client-side (see uploadNutritionImage).
+    // Firebase Storage download URL(s) uploaded client-side (see uploadNutritionImage).
+    // `imageUrl` (singular) is the Today screen's own single-photo form; `imageUrls`
+    // is the chat confirm flow, which may carry more than one photo.
     imageUrl: z.string().url().optional(),
+    imageUrls: z.array(z.string().url()).optional(),
     loggedAt: z.string().datetime().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     parsed: parsedNutritionSchema.optional(),
@@ -71,8 +74,8 @@ const postBodySchema = z
     overrideCalories: z.number().nonnegative().optional(),
     overrideProtein: z.number().nonnegative().optional(),
   })
-  .refine((b) => b.text || b.imageUrl || b.parsed, {
-    message: "Provide text, imageUrl, or parsed",
+  .refine((b) => b.text || b.imageUrl || b.imageUrls?.length || b.parsed, {
+    message: "Provide text, imageUrl(s), or parsed",
   });
 
 function recomputeTotals(entries: MealEntry[]): MealDay["totals"] {
@@ -102,7 +105,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const { text, imageUrl, loggedAt, date, lang, overrideCalories, overrideProtein } = parsedBody.data;
+  const { text, imageUrl, imageUrls: bodyImageUrls, loggedAt, date, lang, overrideCalories, overrideProtein } = parsedBody.data;
+  const imageUrls = bodyImageUrls ?? (imageUrl ? [imageUrl] : undefined);
 
   // Only the free-typed description needs the guard — an uploaded photo or
   // an already-parsed payload (chat confirm flow) has no arbitrary text for
@@ -116,7 +120,7 @@ export async function POST(req: Request) {
 
   let parsed: ParsedNutrition;
   try {
-    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrl, lang }));
+    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrls, lang }));
   } catch (err) {
     return NextResponse.json(
       { error: "Failed to parse nutrition", detail: String(err) },
@@ -151,7 +155,7 @@ export async function POST(req: Request) {
     fiber: item.fiber,
     grams: item.grams,
     ingredients: item.ingredients,
-    source: imageUrl ? "photo" : "text",
+    source: imageUrls?.length ? "photo" : "text",
     confidence: item.confidence,
     confirmedAt: now,
   }));

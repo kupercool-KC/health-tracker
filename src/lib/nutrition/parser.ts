@@ -46,8 +46,8 @@ const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 export interface ParseInput {
   /** Free-text message from the chat box. Optional if an image is provided. */
   text?: string;
-  /** A data URL or https URL for the food photo. Optional. */
-  imageUrl?: string;
+  /** Data URLs or https URLs for the food photo(s) — e.g. a dish shot from two angles, or a menu page plus a closeup of one item. Optional. */
+  imageUrls?: string[];
   /** Language the "description" field should be written in. Defaults to English. */
   lang?: "en" | "he";
   /**
@@ -74,16 +74,16 @@ const EXPLICIT_VALUE_INSTRUCTION =
   " Group ingredients of ONE composite dish into a SINGLE item, not one item per ingredient — e.g. \"salad with red bell pepper, a bit of salt and pepper, olive oil, and a bit of parsley\" is ONE item named after the dish (\"salad\"), with its total calories/protein covering everything in it, and an \"ingredients\" field listing each ingredient the user actually mentioned (in the same language as \"description\"). Only split into separate items when the user is clearly describing distinct, separately-eaten foods (e.g. \"rice and grilled chicken\" is 2 items) — components of a single dish are never split out individually. Omit \"ingredients\" entirely for a plain single-food item with nothing to list (e.g. \"an apple\").";
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
-  if (!input.text && !input.imageUrl) {
-    throw new Error("parseNutrition requires text or imageUrl");
+  if (!input.text && !input.imageUrls?.length) {
+    throw new Error("parseNutrition requires text or imageUrls");
   }
 
   const config = await getNutritionParserConfig();
 
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
   if (input.text) content.push({ type: "text", text: input.text });
-  if (input.imageUrl) {
-    content.push({ type: "image_url", image_url: { url: input.imageUrl } });
+  for (const url of input.imageUrls ?? []) {
+    content.push({ type: "image_url", image_url: { url } });
   }
 
   // Appended at call time rather than baked into the (admin-editable, stored
@@ -93,6 +93,11 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     input.lang === "he"
       ? "\n\nWrite the \"description\" field in Hebrew, regardless of what language the input is in."
       : "\n\nWrite the \"description\" field in English, regardless of what language the input is in.";
+
+  const multiImageInstruction =
+    (input.imageUrls?.length ?? 0) > 1
+      ? "\n\nMore than one photo was sent together — they may be different angles of the SAME food/plate (don't double-count it as separate items) or genuinely different foods eaten together (e.g. a plate photo plus a drink's label) — use all of them together to identify what's actually being logged."
+      : "";
 
   const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = (input.history ?? [])
     .slice(-8)
@@ -114,6 +119,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
           config.systemPrompt +
           languageInstruction +
           EXPLICIT_VALUE_INSTRUCTION +
+          multiImageInstruction +
           (historyMessages.length > 0
             ? "\n\nRecent conversation turns are included before the final message for context — if that final message doesn't itself describe food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed and extract that instead of failing."
             : ""),

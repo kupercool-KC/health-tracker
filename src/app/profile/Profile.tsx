@@ -15,7 +15,7 @@ import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
-import { getUserGoals } from "@/lib/profile/queries";
+import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
 import {
   deleteGoalHistoryEntry,
   getGoalHistory,
@@ -25,6 +25,46 @@ import {
 } from "@/lib/goals/goalHistory";
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
+import type { StringKey } from "@/lib/i18n/strings";
+import type { UserProfile } from "@/lib/types";
+
+const GENDER_LABEL: Record<NonNullable<UserProfile["gender"]>, StringKey> = {
+  male: "genderMale",
+  female: "genderFemale",
+  other: "genderOther",
+};
+const GOAL_LABEL: Record<string, StringKey> = {
+  buildMuscle: "goalBuildMuscle",
+  cut: "goalCut",
+  loseWeight: "goalLoseWeight",
+  maintain: "goalMaintain",
+};
+const ACTIVITY_LABEL: Record<string, StringKey> = {
+  sedentary: "activitySedentary",
+  light: "activityLight",
+  moderate: "activityModerate",
+  intense: "activityIntense",
+  veryIntense: "activityVeryIntense",
+};
+const WORKOUT_TYPE_LABEL: Record<string, StringKey> = {
+  strength: "workoutStrength",
+  running: "workoutRunning",
+  walking: "workoutWalking",
+  cycling: "workoutCycling",
+  swimming: "workoutSwimming",
+  yoga: "workoutYoga",
+  padel: "workoutPadel",
+  hiit: "workoutHiit",
+  other: "workoutOther",
+};
+const DIET_LABEL: Record<string, StringKey> = {
+  everything: "dietEverything",
+  vegetarian: "dietVegetarian",
+  vegan: "dietVegan",
+  glutenFree: "dietGlutenFree",
+  lactoseFree: "dietLactoseFree",
+  other: "dietOther",
+};
 
 export default function Profile() {
   const { user, loading: authLoading, authError, signIn, signOutUser } = useAuth();
@@ -41,6 +81,8 @@ export default function Profile() {
   const [netFactor, setNetFactor] = useState("50");
   const [goalsBusy, setGoalsBusy] = useState(false);
   const [goalsSaved, setGoalsSaved] = useState(false);
+
+  const [fullProfile, setFullProfile] = useState<UserProfile | null>(null);
 
   const [goalHistoryEntries, setGoalHistoryEntries] = useState<GoalHistoryEntry[]>([]);
   const [ghDate, setGhDate] = useState(localDateKey());
@@ -65,6 +107,7 @@ export default function Profile() {
     getGoalHistory(user.uid).then((entries) => {
       setGoalHistoryEntries([...entries].sort((a, b) => b.date.localeCompare(a.date)));
     });
+    getFullProfile(user.uid).then((p) => setFullProfile(p ?? null));
   }, [user]);
 
   async function addGoalHistoryEntry() {
@@ -193,6 +236,95 @@ export default function Profile() {
         <button onClick={() => signOutUser()} style={{ background: "none", color: "var(--muted)" }}>
           {t("signOut")} ({user.displayName ?? user.email})
         </button>
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("yourInfoTitle")}</h2>
+        {fullProfile ? (
+          <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+            {fullProfile.age != null && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("ageLabel")}</span>
+                <bdi dir="ltr">{fullProfile.age}</bdi>
+              </div>
+            )}
+            {fullProfile.gender && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("genderLabel")}</span>
+                <span>{t(GENDER_LABEL[fullProfile.gender])}</span>
+              </div>
+            )}
+            {fullProfile.height != null && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("heightLabel")}</span>
+                <bdi dir="ltr">{fullProfile.height}</bdi>
+              </div>
+            )}
+            {fullProfile.weight != null && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("weightLabel")}</span>
+                <bdi dir="ltr">{fullProfile.weight}</bdi>
+              </div>
+            )}
+            {fullProfile.activityLevel && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("onboardingStep3Title")}</span>
+                <span>{t(ACTIVITY_LABEL[fullProfile.activityLevel])}</span>
+              </div>
+            )}
+            {fullProfile.goals && fullProfile.goals.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("onboardingStep2Title")}</span>
+                <span style={{ textAlign: "end" }}>{fullProfile.goals.map((g) => t(GOAL_LABEL[g])).join(", ")}</span>
+              </div>
+            )}
+            {fullProfile.workoutTypes && fullProfile.workoutTypes.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("onboardingStep4Title")}</span>
+                <span style={{ textAlign: "end" }}>
+                  {fullProfile.workoutTypes.map((w) => t(WORKOUT_TYPE_LABEL[w])).join(", ")}
+                </span>
+              </div>
+            )}
+            {fullProfile.dietaryPrefs && fullProfile.dietaryPrefs.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("onboardingStep5Title")}</span>
+                <span style={{ textAlign: "end" }}>
+                  {fullProfile.dietaryPrefs.map((d) => t(DIET_LABEL[d])).join(", ")}
+                </span>
+              </div>
+            )}
+            {fullProfile.averageDailySteps != null && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--muted)" }}>{t("averageDailyStepsLabel")}</span>
+                <bdi dir="ltr">{fullProfile.averageDailySteps}</bdi>
+              </div>
+            )}
+            {fullProfile.allergies && fullProfile.allergies.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("allergiesLabel")}</span>
+                <span style={{ textAlign: "end" }}>{fullProfile.allergies.join(", ")}</span>
+              </div>
+            )}
+            {fullProfile.avoidFoods && fullProfile.avoidFoods.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("avoidFoodsLabel")}</span>
+                <span style={{ textAlign: "end" }}>{fullProfile.avoidFoods.join(", ")}</span>
+              </div>
+            )}
+            {fullProfile.preferredFoods && fullProfile.preferredFoods.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--muted)" }}>{t("preferredFoodsLabel")}</span>
+                <span style={{ textAlign: "end" }}>{fullProfile.preferredFoods.join(", ")}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("yourInfoNone")}</p>
+        )}
+        <Link href="/onboarding" style={{ color: "var(--protein)", fontSize: 13 }}>
+          {t("recalculateGoals")}
+        </Link>
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

@@ -10,7 +10,7 @@
  * implies (see calculateGoals) and just displayed on the final screen,
  * rather than asked as a separate input.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
@@ -18,7 +18,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import type { StringKey } from "@/lib/i18n/strings";
 import { calculateBmr, calculateGoals, calculateTdee } from "@/lib/goals/calculate";
-import { getUserGoals } from "@/lib/profile/queries";
+import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
 import { recordGoalChange } from "@/lib/goals/goalHistory";
 import type {
   ActivityLevel,
@@ -95,6 +95,30 @@ export default function Onboarding() {
   const [otherDietText, setOtherDietText] = useState("");
   const [matchingDiet, setMatchingDiet] = useState(false);
   const [otherDietMessage, setOtherDietMessage] = useState<string | null>(null);
+
+  // Re-running the wizard ("Recalculate goals from formula" on Profile)
+  // previously always started every field back at its hardcoded default
+  // (age 30, height 175cm, etc.) instead of the answers already on file —
+  // silently overwriting real data with defaults for anything the user
+  // didn't happen to re-enter identically. Prefill from whatever's already
+  // saved, falling back to the same defaults only for a genuinely first-time
+  // run (no profile doc yet).
+  useEffect(() => {
+    if (!user) return;
+    getFullProfile(user.uid).then((p) => {
+      if (!p) return;
+      if (p.age != null) setAge(p.age);
+      if (p.gender) setGender(p.gender);
+      if (p.height != null) setHeight(p.height);
+      if (p.weight != null) setWeight(p.weight);
+      if (p.goals) setGoals(p.goals);
+      if (p.activityLevel) setActivityLevel(p.activityLevel);
+      if (p.workoutTypes) setWorkoutTypes(p.workoutTypes);
+      if (p.dietaryPrefs) setDietaryPrefs(p.dietaryPrefs);
+      if (p.averageDailySteps != null) setAverageDailySteps(p.averageDailySteps);
+      if (p.stepGoal != null) setStepGoal(p.stepGoal);
+    });
+  }, [user]);
 
   function toggleGoal(value: Goal) {
     setGoals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));

@@ -47,14 +47,15 @@ const parsedWorkoutSchema = z.object({
 const bodySchema = z
   .object({
     text: z.string().optional(),
-    // Firebase Storage download URL uploaded client-side (see uploadWorkoutImage).
+    // Firebase Storage download URL(s) uploaded client-side (see uploadWorkoutImage).
     imageUrl: z.string().url().optional(),
+    imageUrls: z.array(z.string().url()).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     parsed: parsedWorkoutSchema.optional(),
     lang: z.enum(["en", "he"]).optional(),
   })
-  .refine((b) => b.text || b.imageUrl || b.parsed, {
-    message: "Provide text, imageUrl, or parsed",
+  .refine((b) => b.text || b.imageUrl || b.imageUrls?.length || b.parsed, {
+    message: "Provide text, imageUrl(s), or parsed",
   });
 
 export async function POST(req: Request) {
@@ -72,7 +73,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const { text, imageUrl, date, lang } = parsedBody.data;
+  const { text, imageUrl, imageUrls: bodyImageUrls, date, lang } = parsedBody.data;
+  const imageUrls = bodyImageUrls ?? (imageUrl ? [imageUrl] : undefined);
 
   if (text?.trim()) {
     const guard = await guardFreeText({ uid, email, lang: lang ?? "en", text: text.trim(), context: "workout" });
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
 
   let parsed: ParsedWorkout;
   try {
-    parsed = parsedBody.data.parsed ?? (await parseWorkout({ text, imageUrl, lang }));
+    parsed = parsedBody.data.parsed ?? (await parseWorkout({ text, imageUrls, lang }));
   } catch (err) {
     return NextResponse.json(
       { error: "Failed to parse workout", detail: String(err) },
