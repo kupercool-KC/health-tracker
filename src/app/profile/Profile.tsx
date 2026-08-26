@@ -26,45 +26,56 @@ import {
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { StringKey } from "@/lib/i18n/strings";
-import type { UserProfile } from "@/lib/types";
+import type { ActivityLevel, DietaryPref, Goal, UserProfile, WorkoutType } from "@/lib/types";
 
-const GENDER_LABEL: Record<NonNullable<UserProfile["gender"]>, StringKey> = {
-  male: "genderMale",
-  female: "genderFemale",
-  other: "genderOther",
-};
-const GOAL_LABEL: Record<string, StringKey> = {
-  buildMuscle: "goalBuildMuscle",
-  cut: "goalCut",
-  loseWeight: "goalLoseWeight",
-  maintain: "goalMaintain",
-};
-const ACTIVITY_LABEL: Record<string, StringKey> = {
-  sedentary: "activitySedentary",
-  light: "activityLight",
-  moderate: "activityModerate",
-  intense: "activityIntense",
-  veryIntense: "activityVeryIntense",
-};
-const WORKOUT_TYPE_LABEL: Record<string, StringKey> = {
-  strength: "workoutStrength",
-  running: "workoutRunning",
-  walking: "workoutWalking",
-  cycling: "workoutCycling",
-  swimming: "workoutSwimming",
-  yoga: "workoutYoga",
-  padel: "workoutPadel",
-  hiit: "workoutHiit",
-  other: "workoutOther",
-};
-const DIET_LABEL: Record<string, StringKey> = {
-  everything: "dietEverything",
-  vegetarian: "dietVegetarian",
-  vegan: "dietVegan",
-  glutenFree: "dietGlutenFree",
-  lactoseFree: "dietLactoseFree",
-  other: "dietOther",
-};
+const GENDER_OPTIONS: Array<{ value: NonNullable<UserProfile["gender"]>; labelKey: StringKey }> = [
+  { value: "male", labelKey: "genderMale" },
+  { value: "female", labelKey: "genderFemale" },
+  { value: "other", labelKey: "genderOther" },
+];
+const GOAL_OPTIONS: Array<{ value: Goal; labelKey: StringKey }> = [
+  { value: "buildMuscle", labelKey: "goalBuildMuscle" },
+  { value: "cut", labelKey: "goalCut" },
+  { value: "loseWeight", labelKey: "goalLoseWeight" },
+  { value: "maintain", labelKey: "goalMaintain" },
+];
+const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; labelKey: StringKey }> = [
+  { value: "sedentary", labelKey: "activitySedentary" },
+  { value: "light", labelKey: "activityLight" },
+  { value: "moderate", labelKey: "activityModerate" },
+  { value: "intense", labelKey: "activityIntense" },
+  { value: "veryIntense", labelKey: "activityVeryIntense" },
+];
+const WORKOUT_OPTIONS: Array<{ value: WorkoutType; labelKey: StringKey }> = [
+  { value: "strength", labelKey: "workoutStrength" },
+  { value: "running", labelKey: "workoutRunning" },
+  { value: "walking", labelKey: "workoutWalking" },
+  { value: "cycling", labelKey: "workoutCycling" },
+  { value: "swimming", labelKey: "workoutSwimming" },
+  { value: "yoga", labelKey: "workoutYoga" },
+  { value: "padel", labelKey: "workoutPadel" },
+  { value: "hiit", labelKey: "workoutHiit" },
+  { value: "other", labelKey: "workoutOther" },
+];
+const DIET_OPTIONS: Array<{ value: DietaryPref; labelKey: StringKey }> = [
+  { value: "everything", labelKey: "dietEverything" },
+  { value: "vegetarian", labelKey: "dietVegetarian" },
+  { value: "vegan", labelKey: "dietVegan" },
+  { value: "glutenFree", labelKey: "dietGlutenFree" },
+  { value: "lactoseFree", labelKey: "dietLactoseFree" },
+  { value: "other", labelKey: "dietOther" },
+];
+
+function chipStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: active ? "1.5px solid var(--protein)" : "0.5px solid var(--border)",
+    background: active ? "var(--protein-bg)" : "var(--panel)",
+    color: active ? "var(--protein)" : "var(--text)",
+    fontSize: 13,
+  };
+}
 
 export default function Profile() {
   const { user, loading: authLoading, authError, signIn, signOutUser } = useAuth();
@@ -83,6 +94,27 @@ export default function Profile() {
   const [goalsSaved, setGoalsSaved] = useState(false);
 
   const [fullProfile, setFullProfile] = useState<UserProfile | null>(null);
+
+  // Editable "Your info" fields — same shape as Onboarding's own state, but
+  // seeded from whatever's already saved (see the effect below) rather than
+  // hardcoded defaults, since this is for editing an existing profile, not
+  // starting one from scratch.
+  const [infoAge, setInfoAge] = useState("");
+  const [infoGender, setInfoGender] = useState<UserProfile["gender"]>(undefined);
+  const [infoHeight, setInfoHeight] = useState("");
+  const [infoWeight, setInfoWeight] = useState("");
+  const [infoGoals, setInfoGoals] = useState<Goal[]>([]);
+  const [infoActivityLevel, setInfoActivityLevel] = useState<ActivityLevel | undefined>(undefined);
+  const [infoWorkoutTypes, setInfoWorkoutTypes] = useState<WorkoutType[]>([]);
+  const [infoDietaryPrefs, setInfoDietaryPrefs] = useState<DietaryPref[]>([]);
+  const [infoAverageDailySteps, setInfoAverageDailySteps] = useState("");
+  // Comma-separated free text — simplest input for an unbounded list, no
+  // dedicated tag-input component needed for what's a rarely-edited field.
+  const [infoAllergies, setInfoAllergies] = useState("");
+  const [infoAvoidFoods, setInfoAvoidFoods] = useState("");
+  const [infoPreferredFoods, setInfoPreferredFoods] = useState("");
+  const [infoBusy, setInfoBusy] = useState(false);
+  const [infoSaved, setInfoSaved] = useState(false);
 
   const [goalHistoryEntries, setGoalHistoryEntries] = useState<GoalHistoryEntry[]>([]);
   const [ghDate, setGhDate] = useState(localDateKey());
@@ -107,7 +139,22 @@ export default function Profile() {
     getGoalHistory(user.uid).then((entries) => {
       setGoalHistoryEntries([...entries].sort((a, b) => b.date.localeCompare(a.date)));
     });
-    getFullProfile(user.uid).then((p) => setFullProfile(p ?? null));
+    getFullProfile(user.uid).then((p) => {
+      setFullProfile(p ?? null);
+      if (!p) return;
+      if (p.age != null) setInfoAge(String(p.age));
+      if (p.gender) setInfoGender(p.gender);
+      if (p.height != null) setInfoHeight(String(p.height));
+      if (p.weight != null) setInfoWeight(String(p.weight));
+      if (p.goals) setInfoGoals(p.goals);
+      if (p.activityLevel) setInfoActivityLevel(p.activityLevel);
+      if (p.workoutTypes) setInfoWorkoutTypes(p.workoutTypes);
+      if (p.dietaryPrefs) setInfoDietaryPrefs(p.dietaryPrefs);
+      if (p.averageDailySteps != null) setInfoAverageDailySteps(String(p.averageDailySteps));
+      if (p.allergies) setInfoAllergies(p.allergies.join(", "));
+      if (p.avoidFoods) setInfoAvoidFoods(p.avoidFoods.join(", "));
+      if (p.preferredFoods) setInfoPreferredFoods(p.preferredFoods.join(", "));
+    });
   }, [user]);
 
   async function addGoalHistoryEntry() {
@@ -144,6 +191,57 @@ export default function Profile() {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setGhBusy(false);
+    }
+  }
+
+  function toggleInfoGoal(value: Goal) {
+    setInfoGoals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
+  function toggleInfoWorkoutType(value: WorkoutType) {
+    setInfoWorkoutTypes((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
+  function toggleInfoDietaryPref(value: DietaryPref) {
+    setInfoDietaryPrefs((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  }
+
+  /** Comma-separated free text → a trimmed, non-empty string array (or undefined for an empty field, so it clears rather than writing `[]` forever). */
+  function parseCommaList(text: string): string[] | undefined {
+    const items = text
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
+  }
+
+  async function saveInfo() {
+    if (!user) return;
+    setInfoBusy(true);
+    setInfoSaved(false);
+    setError(null);
+    try {
+      const ref = doc(db, "users", user.uid, "meta", "profile");
+      const update: Partial<UserProfile> = {
+        ...(infoAge ? { age: Number(infoAge) } : {}),
+        ...(infoGender ? { gender: infoGender } : {}),
+        ...(infoHeight ? { height: Number(infoHeight) } : {}),
+        ...(infoWeight ? { weight: Number(infoWeight) } : {}),
+        goals: infoGoals,
+        ...(infoActivityLevel ? { activityLevel: infoActivityLevel } : {}),
+        workoutTypes: infoWorkoutTypes,
+        dietaryPrefs: infoDietaryPrefs,
+        ...(infoAverageDailySteps ? { averageDailySteps: Number(infoAverageDailySteps) } : {}),
+        allergies: parseCommaList(infoAllergies) ?? [],
+        avoidFoods: parseCommaList(infoAvoidFoods) ?? [],
+        preferredFoods: parseCommaList(infoPreferredFoods) ?? [],
+        updatedAt: new Date().toISOString(),
+      };
+      await setDoc(ref, update, { merge: true });
+      setFullProfile((prev) => ({ ...(prev ?? ({} as UserProfile)), ...update }));
+      setInfoSaved(true);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setInfoBusy(false);
     }
   }
 
@@ -238,93 +336,163 @@ export default function Profile() {
         </button>
       </div>
 
-      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 10 }}>
         <h2 style={{ margin: 0 }}>{t("yourInfoTitle")}</h2>
-        {fullProfile ? (
-          <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-            {fullProfile.age != null && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("ageLabel")}</span>
-                <bdi dir="ltr">{fullProfile.age}</bdi>
-              </div>
-            )}
-            {fullProfile.gender && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("genderLabel")}</span>
-                <span>{t(GENDER_LABEL[fullProfile.gender])}</span>
-              </div>
-            )}
-            {fullProfile.height != null && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("heightLabel")}</span>
-                <bdi dir="ltr">{fullProfile.height}</bdi>
-              </div>
-            )}
-            {fullProfile.weight != null && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("weightLabel")}</span>
-                <bdi dir="ltr">{fullProfile.weight}</bdi>
-              </div>
-            )}
-            {fullProfile.activityLevel && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("onboardingStep3Title")}</span>
-                <span>{t(ACTIVITY_LABEL[fullProfile.activityLevel])}</span>
-              </div>
-            )}
-            {fullProfile.goals && fullProfile.goals.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("onboardingStep2Title")}</span>
-                <span style={{ textAlign: "end" }}>{fullProfile.goals.map((g) => t(GOAL_LABEL[g])).join(", ")}</span>
-              </div>
-            )}
-            {fullProfile.workoutTypes && fullProfile.workoutTypes.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("onboardingStep4Title")}</span>
-                <span style={{ textAlign: "end" }}>
-                  {fullProfile.workoutTypes.map((w) => t(WORKOUT_TYPE_LABEL[w])).join(", ")}
-                </span>
-              </div>
-            )}
-            {fullProfile.dietaryPrefs && fullProfile.dietaryPrefs.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("onboardingStep5Title")}</span>
-                <span style={{ textAlign: "end" }}>
-                  {fullProfile.dietaryPrefs.map((d) => t(DIET_LABEL[d])).join(", ")}
-                </span>
-              </div>
-            )}
-            {fullProfile.averageDailySteps != null && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--muted)" }}>{t("averageDailyStepsLabel")}</span>
-                <bdi dir="ltr">{fullProfile.averageDailySteps}</bdi>
-              </div>
-            )}
-            {fullProfile.allergies && fullProfile.allergies.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("allergiesLabel")}</span>
-                <span style={{ textAlign: "end" }}>{fullProfile.allergies.join(", ")}</span>
-              </div>
-            )}
-            {fullProfile.avoidFoods && fullProfile.avoidFoods.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("avoidFoodsLabel")}</span>
-                <span style={{ textAlign: "end" }}>{fullProfile.avoidFoods.join(", ")}</span>
-              </div>
-            )}
-            {fullProfile.preferredFoods && fullProfile.preferredFoods.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ color: "var(--muted)" }}>{t("preferredFoodsLabel")}</span>
-                <span style={{ textAlign: "end" }}>{fullProfile.preferredFoods.join(", ")}</span>
-              </div>
-            )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <label style={{ display: "grid", gap: 4, flex: 1 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("ageLabel")}</span>
+            <input
+              type="number"
+              value={infoAge}
+              onChange={(e) => setInfoAge(e.target.value)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4, flex: 1 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("heightLabel")}</span>
+            <input
+              type="number"
+              value={infoHeight}
+              onChange={(e) => setInfoHeight(e.target.value)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4, flex: 1 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("weightLabel")}</span>
+            <input
+              type="number"
+              value={infoWeight}
+              onChange={(e) => setInfoWeight(e.target.value)}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+          </label>
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("genderLabel")}</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {GENDER_OPTIONS.map((o) => (
+              <button key={o.value} type="button" onClick={() => setInfoGender(o.value)} style={chipStyle(infoGender === o.value)}>
+                {t(o.labelKey)}
+              </button>
+            ))}
           </div>
-        ) : (
-          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("yourInfoNone")}</p>
-        )}
-        <Link href="/onboarding" style={{ color: "var(--protein)", fontSize: 13 }}>
-          {t("recalculateGoals")}
-        </Link>
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("onboardingStep3Title")}</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {ACTIVITY_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setInfoActivityLevel(o.value)}
+                style={chipStyle(infoActivityLevel === o.value)}
+              >
+                {t(o.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>
+            {t("onboardingStep2Title")} <span style={{ opacity: 0.7 }}>({t("multiSelectHint")})</span>
+          </span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {GOAL_OPTIONS.map((o) => (
+              <button key={o.value} type="button" onClick={() => toggleInfoGoal(o.value)} style={chipStyle(infoGoals.includes(o.value))}>
+                {t(o.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>
+            {t("onboardingStep4Title")} <span style={{ opacity: 0.7 }}>({t("multiSelectHint")})</span>
+          </span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {WORKOUT_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => toggleInfoWorkoutType(o.value)}
+                style={chipStyle(infoWorkoutTypes.includes(o.value))}
+              >
+                {t(o.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>
+            {t("onboardingStep5Title")} <span style={{ opacity: 0.7 }}>({t("multiSelectHint")})</span>
+          </span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {DIET_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => toggleInfoDietaryPref(o.value)}
+                style={chipStyle(infoDietaryPrefs.includes(o.value))}
+              >
+                {t(o.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("averageDailyStepsLabel")}</span>
+          <input
+            type="number"
+            value={infoAverageDailySteps}
+            onChange={(e) => setInfoAverageDailySteps(e.target.value)}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", maxWidth: 160 }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("allergiesLabel")}</span>
+          <input
+            value={infoAllergies}
+            onChange={(e) => setInfoAllergies(e.target.value)}
+            placeholder={t("commaSeparatedHint")}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("avoidFoodsLabel")}</span>
+          <input
+            value={infoAvoidFoods}
+            onChange={(e) => setInfoAvoidFoods(e.target.value)}
+            placeholder={t("commaSeparatedHint")}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("preferredFoodsLabel")}</span>
+          <input
+            value={infoPreferredFoods}
+            onChange={(e) => setInfoPreferredFoods(e.target.value)}
+            placeholder={t("commaSeparatedHint")}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+        </label>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={saveInfo} disabled={infoBusy}>
+            {infoBusy ? t("working") : t("save")}
+          </button>
+          <Link href="/onboarding" style={{ color: "var(--protein)", fontSize: 13 }}>
+            {t("recalculateGoals")}
+          </Link>
+        </div>
+        {infoSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
+        {!fullProfile && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("yourInfoNone")}</p>}
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

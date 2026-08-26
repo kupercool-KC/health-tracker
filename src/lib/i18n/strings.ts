@@ -82,6 +82,7 @@ export const strings = {
     en: "No info saved yet — go through onboarding to set it.",
     he: "עדיין לא נשמר מידע — עברו את תהליך ההרשמה כדי להגדיר אותו.",
   },
+  commaSeparatedHint: { en: "Comma-separated (e.g. peanuts, shellfish)", he: "מופרד בפסיקים (למשל: בוטנים, פירות ים)" },
   allergiesLabel: { en: "Allergies", he: "אלרגיות" },
   avoidFoodsLabel: { en: "Foods to avoid", he: "מאכלים להימנע מהם" },
   preferredFoodsLabel: { en: "Preferred foods", he: "מאכלים מועדפים" },
