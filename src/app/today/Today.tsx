@@ -21,6 +21,7 @@ import type { FrequentMeal, FrequentWorkout } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
+import MicButton from "../MicButton";
 
 /** One of Today's readout accents — each has a matching `--{tone}-bg` tint. */
 type MetricTone = "calories" | "protein" | "burned" | "net" | "steps";
@@ -1027,6 +1028,10 @@ export default function Today() {
                 rows={2}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <MicButton
+                  onTranscript={(txt) => setText((p) => (p.trim() ? `${p.trim()} ${txt}` : txt))}
+                  disabled={busy}
+                />
                 <label title={t("photoUploadHint")} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                   <span className="btn btn-sm">📷 {t("chooseFile")}</span>
                   <input

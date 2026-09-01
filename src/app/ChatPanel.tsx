@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { localDateKey } from "@/lib/dashboard/queries";
 import type { ChatMessage, ChatSession } from "@/lib/types";
+import MicButton from "./MicButton";
 
 /** Same rationale as Today.tsx's apiErrorMessage — surface "detail" alongside "error" instead of dropping it. */
 function apiErrorMessage(data: { error?: string; detail?: string }, fallback: string): string {
@@ -670,6 +671,11 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
               fontSize: "inherit",
               lineHeight: 1.4,
             }}
+          />
+          <MicButton
+            compact
+            onTranscript={(txt) => setText((p) => (p.trim() ? `${p.trim()} ${txt}` : txt))}
+            disabled={busy}
           />
           <label title={t("photoUploadHint")} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
             📷
