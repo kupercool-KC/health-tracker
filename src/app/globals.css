@@ -1,92 +1,603 @@
+/* =============================================================================
+   Health Tracker — design system
+   "A measured instrument": warm paper, ink, tabular numerals. The four
+   semantic accents (calories / protein / burned / net) are load-bearing —
+   they key the History charts and goal-history annotations — so their hues
+   are kept stable and only the background tints were calmed down.
+   ========================================================================== */
+
 :root {
-  /* Fixed 3-color accent system */
-  --calories: #d85a30;
-  --calories-light: #f0997b;
-  --calories-bg: #fbebe5;
-  --protein: #185fa5;
-  --protein-light: #85b7eb;
-  --protein-bg: #e6eff8;
-  --burned: #3b6d11;
-  --burned-light: #97c459;
-  --burned-bg: #eaf3e0;
-  --net: #b8860b;
-  --net-bg: #faf1de;
+  /* --- semantic accents ------------------------------------------------- */
+  --calories: #c9502b;
+  --calories-light: #ec9a80;
+  --calories-bg: #f7ebe4;
+  --protein: #1f5f9e;
+  --protein-light: #8fb9df;
+  --protein-bg: #e9f0f7;
+  --burned: #3c6b1f;
+  --burned-light: #9cc06a;
+  --burned-bg: #edf3e5;
+  --net: #a9750a;
+  --net-bg: #f7efdd;
+  /* Steps — its own calm slate on Today's grid, so it doesn't read as a
+     second "burned" green. History's own charts are unaffected. */
+  --steps: #4c6b76;
+  --steps-bg: #e9f0f2;
 
-  /* Missed-protein-target red — distinct from the calories accent so
-     "protein below goal today" reads unambiguously in charts/legends. */
-  --danger: #a32d2d;
-  --danger-light: #e24b4a;
-  --danger-bg: #fcebeb;
+  /* Missed-protein-target red — kept distinct from the calories accent so
+     "protein below goal" reads unambiguously in charts and legends. */
+  --danger: #a12d2d;
+  --danger-light: #dd4b48;
+  --danger-bg: #f8e8e6;
 
-  --bg: #ffffff;
-  --bg-muted: #f7f7f8;
-  --panel: #ffffff;
-  --text: #1a1a1a;
-  --muted: #6b7280;
-  --border: #e5e5e7;
+  /* --- neutrals (warm) ------------------------------------------------- */
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f2f0ea;
+  --ink: #23201d;
+  --ink-2: #6c655d;
+  --ink-3: #9a938a;
+  --line: #e7e2d8;
+  --line-strong: #d8d2c5;
 
-  --radius: 12px;
+  /* --- back-compat aliases (older screens still reference these) ------- */
+  --panel: var(--surface);
+  --bg-muted: var(--surface-2);
+  --text: var(--ink);
+  --muted: var(--ink-2);
+  --border: var(--line);
+
+  /* --- shape & depth ------------------------------------------------- */
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(35, 32, 29, 0.04), 0 1px 3px rgba(35, 32, 29, 0.06);
+  --shadow-md: 0 4px 12px rgba(35, 32, 29, 0.08), 0 2px 4px rgba(35, 32, 29, 0.05);
+
+  /* --- type ---------------------------------------------------------- */
+  --font-sans: var(--font-inter), var(--font-hebrew), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-head: var(--font-display), var(--font-hebrew), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* --- layout ------------------------------------------------------ */
+  --content-max: 560px;
+  --header-h: 52px;
+  --tabbar-h: 60px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* NOT on html/body: overflow-x:hidden there turns body into a scroll
-   container, which silently breaks position:sticky on its children (the
-   sticky header in NavShell.tsx) — sticky positioning needs the viewport
-   itself as its scrolling ancestor, not a body-level overflow clip. The
-   same safety-net clipping is applied instead to #page-content below,
-   which wraps everything except the sticky header. */
+/* overflow-x safety net stays off html/body — clipping there turns body into
+   a scroll container and breaks position:sticky on the header. It lives on
+   #page-content instead (below). */
 html {
   max-width: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg-muted);
-  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 main {
-  max-width: 640px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 24px 16px 96px;
+  padding: 20px 16px calc(var(--tabbar-h) + var(--safe-bottom) + 28px);
 }
 
-/* See the comment on html/body above — the overflow-x safety net lives
-   here instead, on the wrapper around everything except NavShell's sticky
-   header. */
 #page-content {
   overflow-x: hidden;
   max-width: 100%;
 }
 
-/* Below this width, wide multi-column tables (e.g. Today's workouts table)
-   switch to a stacked card layout instead of a horizontally-scrolling
-   table — see the paired .desktop-table/.mobile-cards blocks in Today.tsx. */
-.mobile-cards {
-  display: none;
+/* --- typography ------------------------------------------------------- */
+h1,
+h2,
+h3 {
+  font-family: var(--font-head);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
-@media (max-width: 640px) {
-  .desktop-table {
-    display: none;
-  }
-  .mobile-cards {
-    display: grid;
+
+h1 {
+  font-size: 26px;
+  line-height: 1.15;
+  margin: 2px 0 18px;
+}
+
+h2 {
+  font-size: 18px;
+  line-height: 1.2;
+  margin: 0 0 10px;
+}
+
+h3 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 8px;
+}
+
+a {
+  color: var(--protein);
+  text-underline-offset: 2px;
+}
+
+/* Visible keyboard focus everywhere; interactive primitives below opt into
+   a softer ring of their own. */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
 
+/* --- card ----------------------------------------------------------- */
 .card {
-  background: var(--panel);
-  border: 0.5px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
-/* Chat panel — a real full-screen view, always, on every viewport width
-   (edge-to-edge, no margins/shadow/rounding, no floating box). */
+/* --- buttons ------------------------------------------------------- */
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 15px;
+  color: inherit;
+}
+
+button,
+.btn {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 9px 14px;
+  min-height: 44px;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.05s ease;
+}
+
+/* `.btn` on a non-button element (e.g. a file-input <span>) — match the
+   button box without inheriting its block behaviour. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+button:active {
+  transform: translateY(0.5px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(35, 32, 29, 0.12);
+}
+
+/* Primary action = ink fill. Deliberately not one of the metric accents,
+   so "the button" never competes with "the numbers". */
+.btn-primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #100e0c;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.btn-sm {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* --- form fields ------------------------------------------------- */
+input,
+select,
+textarea {
+  min-height: 44px;
+}
+
+textarea {
+  min-height: unset;
+}
+
+.field,
+input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--ink);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.field:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(35, 32, 29, 0.1);
+}
+
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+    linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-inline-end: 34px;
+}
+
+:root[dir="rtl"] select {
+  background-position: 13px 50%, 18px 50%;
+  padding-inline-end: 12px;
+  padding-inline-start: 34px;
+}
+
+/* --- metric readout (the signature element) ---------------------- */
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.readout__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.readout__value {
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.readout__value--hero {
+  font-size: clamp(38px, 12vw, 52px);
+}
+
+.readout__sub {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.readout__delta {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.readout__delta--good {
+  background: var(--burned-bg);
+  color: var(--burned);
+}
+
+.readout__delta--over {
+  background: var(--calories-bg);
+  color: var(--calories);
+}
+
+/* --- progress ------------------------------------------------- */
+.progress-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Legacy helpers still used by Today/History before their own redesign pass. */
+.metric-value {
+  font-family: var(--font-head);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* --- chips (tappable quick-picks) --------------------------- */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  min-height: 38px;
+  padding: 7px 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chip--active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+/* --- disclosure (native <details>) ------------------------- */
+.disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 13px 16px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::after {
+  content: "+";
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink-2);
+  line-height: 1;
+}
+
+.disclosure[open] > summary::after {
+  content: "\2013"; /* en dash */
+}
+
+.disclosure__body {
+  padding: 4px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+/* --- app header ------------------------------------------- */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--header-h);
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.app-header__mark {
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-header__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--calories);
+  box-shadow: 0 0 0 3px var(--calories-bg);
+}
+
+/* EN / עב segmented toggle */
+.lang-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.lang-toggle button {
+  min-height: 30px;
+  padding: 3px 11px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.lang-toggle button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- bottom tab bar ------------------------------------- */
+.tabbar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px calc(6px + var(--safe-bottom));
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-top: 1px solid var(--line);
+}
+
+.tabbar__item {
+  flex: 1;
+  max-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tabbar__item svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tabbar__item--active {
+  color: var(--ink);
+}
+
+.tabbar__item--active svg {
+  stroke-width: 2.25;
+}
+
+/* --- chat FAB ----------------------------------------- */
+.chat-fab {
+  position: fixed;
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 14px);
+  inset-inline-end: 16px;
+  z-index: 35;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--protein);
+  color: #fff;
+  border: none;
+  box-shadow: var(--shadow-md);
+}
+
+.chat-fab svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-fab:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-md), 0 0 0 4px var(--protein-bg);
+}
+
+/* --- chat panel: full-screen on every width ---------- */
 .chat-panel {
   position: fixed;
   inset: 0;
@@ -100,64 +611,16 @@ main {
   box-shadow: none;
 }
 
-.metric-value {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.1;
+/* --- responsive table → cards (Today's meals/workouts) --- */
+.mobile-cards {
+  display: none;
 }
 
-.metric-label {
-  font-size: 13px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.progress-track {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--bg-muted);
-  overflow: hidden;
-  margin-top: 8px;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 999px;
-}
-
-button,
-input,
-textarea,
-select {
-  font-family: inherit;
-  font-size: 14px;
-}
-
-/* Buttons/inputs/selects default to a comfortable touch target (~40px) —
-   without this they render around 28-30px tall from font-size + padding
-   alone, uncomfortably small to tap accurately on a phone. Not applied to
-   textarea, which sizes itself via its own `rows`, not a fixed height. */
-button,
-input,
-select {
-  min-height: 40px;
-}
-
-button {
-  cursor: pointer;
-  border-radius: 8px;
-  border: 0.5px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  padding: 8px 14px;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-a {
-  color: var(--protein);
+@media (max-width: 640px) {
+  .desktop-table {
+    display: none;
+  }
+  .mobile-cards {
+    display: grid;
+  }
 }

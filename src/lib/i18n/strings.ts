@@ -8,6 +8,7 @@ export const strings = {
   navToday: { en: "Today", he: "היום" },
   navHistory: { en: "History", he: "היסטוריה" },
   navProfile: { en: "Profile", he: "פרופיל" },
+  navChat: { en: "Chat", he: "צ׳אט" },
 
   today: { en: "Today", he: "היום" },
   calories: { en: "Calories", he: "קלוריות" },
@@ -20,9 +21,11 @@ export const strings = {
   remaining: { en: "remaining", he: "נותר" },
   surplus: { en: "surplus", he: "עודף" },
   deficit: { en: "deficit", he: "חוסר" },
+  vsGoal: { en: "vs goal", he: "מהיעד" },
 
   meals: { en: "Meals", he: "ארוחות" },
-  addMeal: { en: "+ Add meal", he: "+ הוסף ארוחה" },
+  addMeal: { en: "Add a meal", he: "הוספת ארוחה" },
+  updateSteps: { en: "Update steps", he: "עדכון צעדים" },
   addMealPlaceholder: { en: "e.g. two eggs and a slice of toast", he: "לדוגמה: שתי ביצים וטוסט" },
   chooseFile: { en: "Choose File", he: "בחר קובץ" },
   photoUploadHint: {

@@ -22,21 +22,32 @@ import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
 
-/** One of the app's 4 fixed accents — each has a matching `--{tone}-bg` tint. */
-type MetricTone = "calories" | "protein" | "burned" | "net";
+/** One of Today's readout accents — each has a matching `--{tone}-bg` tint. */
+type MetricTone = "calories" | "protein" | "burned" | "net" | "steps";
 
+/**
+ * The signature readout: an accent-keyed label, a big tabular number, a muted
+ * sub-line, and (when there's a goal) a thin progress bar. `hero` gives the
+ * lead metric a tinted background and a larger figure.
+ *
+ * Only the individual number/unit runs inside `sub` are bdi-isolated (at each
+ * call site) — wrapping the whole line in one <bdi dir="ltr"> would also
+ * reorder the Hebrew words mixed in with them (e.g. "goal" / "deficit").
+ */
 function MetricCard({
   label,
   value,
   goal,
   sub,
   tone,
+  hero = false,
 }: {
   label: string;
   value: number;
   goal?: number;
   sub: React.ReactNode;
   tone: MetricTone;
+  hero?: boolean;
 }) {
   const ratio = goal ? value / goal : undefined;
   const pct = ratio != null ? Math.min(100, Math.round(ratio * 100)) : undefined;
@@ -44,26 +55,27 @@ function MetricCard({
   const colorVar = `var(--${tone})`;
 
   return (
-    <div className="card" style={{ background: `var(--${tone}-bg)`, border: "none" }}>
-      <div className="metric-label" style={{ color: colorVar }}>
-        {label}
-      </div>
-      <div className="metric-value" style={{ color: colorVar }}>
-        {Math.round(value)}
-      </div>
-      {/* Only the individual number/unit runs are bdi-isolated (at each call
-          site) — wrapping the whole line in one <bdi dir="ltr"> would also
-          reorder the Hebrew words mixed in with them (e.g. "goal" / "deficit"),
-          since it treats the entire string as a single LTR run. */}
-      <div style={{ color: colorVar, fontSize: 13, opacity: 0.85 }}>{sub}</div>
-      {pct != null && (
-        <div className="progress-track" style={{ background: "rgba(255,255,255,0.55)" }}>
-          <div
-            className="progress-fill"
-            style={{ width: `${pct}%`, background: colorVar, opacity: overflow ? 1 : 0.85 }}
-          />
+    <div
+      className="card"
+      style={hero ? { background: `var(--${tone}-bg)`, borderColor: "transparent" } : undefined}
+    >
+      <div className="readout">
+        <div className="readout__label" style={{ color: colorVar }}>
+          {label}
         </div>
-      )}
+        <div className={`readout__value${hero ? " readout__value--hero" : ""}`} style={{ color: colorVar }}>
+          {Math.round(value)}
+        </div>
+        <div className="readout__sub">{sub}</div>
+        {pct != null && (
+          <div className="progress-track" style={hero ? { background: "rgba(255,255,255,0.6)" } : undefined}>
+            <div
+              className="progress-fill"
+              style={{ width: `${pct}%`, background: colorVar, opacity: overflow ? 1 : 0.9 }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -766,12 +778,24 @@ export default function Today() {
     return (
       <main>
         <h1>{t("today")}</h1>
-        <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
-        <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
-        {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
+        <p style={{ color: "var(--muted)", marginTop: -8 }}>{t("signInPrompt")}</p>
+        <button className="btn-primary" onClick={() => signIn()} style={{ marginTop: 8 }}>
+          {t("signInWithGoogle")}
+        </button>
+        {authError && (
+          <p style={{ color: "var(--danger)", fontSize: 13 }}>
+            {t("signInFailed")}: {authError}
+          </p>
+        )}
       </main>
     );
   }
+
+  const todayLabel = new Date().toLocaleDateString(lang === "he" ? "he-IL" : "en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 
   const totals = mealDay?.totals ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const burned = workouts.reduce((sum, w) => sum + (w.calories ?? 0), 0);
@@ -817,12 +841,25 @@ export default function Today() {
         @keyframes pull-refresh-spin { to { transform: rotate(360deg); } }
       `}</style>
 
-      <h1>{t("today")}</h1>
+      <div style={{ marginBottom: 18 }}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+          }}
+        >
+          <bdi>{todayLabel}</bdi>
+        </div>
+        <h1 style={{ margin: "2px 0 0" }}>{t("today")}</h1>
+      </div>
 
       {error && (
-        <details style={{ marginTop: 4 }}>
-          <summary style={{ color: "#ff6b6b", cursor: "pointer" }}>{t("somethingWentWrong")}</summary>
-          <p style={{ color: "#ff6b6b", fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{error}</p>
+        <details style={{ marginBottom: 12 }}>
+          <summary style={{ color: "var(--danger)", cursor: "pointer" }}>{t("somethingWentWrong")}</summary>
+          <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{error}</p>
         </details>
       )}
 
@@ -830,39 +867,37 @@ export default function Today() {
         <p style={{ color: "var(--muted)" }}>{t("loading")}</p>
       ) : (
         <>
-          <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <section>
             <MetricCard
+              hero
               label={t("calories")}
               value={totals.calories}
               goal={goals.calorieGoal}
               sub={
                 <>
                   <bdi dir="ltr">
-                    {Math.round(totals.calories)} / {goals.calorieGoal}
+                    {Math.round(totals.calories)} / {goals.calorieGoal} kcal
                   </bdi>{" "}
-                  {t("goal")} ·{" "}
+                  ·{" "}
                   <bdi dir="ltr">{Math.max(0, Math.round(goals.calorieGoal - totals.calories))}</bdi>{" "}
                   {t("remaining")}
                 </>
               }
               tone="calories"
             />
+            <div
+              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}
+            >
             <MetricCard
               label={t("protein")}
               value={totals.protein}
               goal={goals.proteinGoal}
               sub={
                 <>
-                  <bdi dir="ltr">
-                    {Math.round(totals.protein)}
-                    {t("unitG")} / {goals.proteinGoal}
-                    {t("unitG")}
-                  </bdi>{" "}
-                  · {totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")}{" "}
-                  <bdi dir="ltr">
-                    {Math.abs(Math.round(totals.protein - goals.proteinGoal))}
-                    {t("unitG")}
-                  </bdi>
+                  <bdi dir="ltr">{Math.round(totals.protein)}</bdi> {t("unitG")} /{" "}
+                  <bdi dir="ltr">{goals.proteinGoal}</bdi> {t("unitG")} ·{" "}
+                  {totals.protein >= goals.proteinGoal ? t("surplus") : t("deficit")}{" "}
+                  <bdi dir="ltr">{Math.abs(Math.round(totals.protein - goals.proteinGoal))}</bdi> {t("unitG")}
                 </>
               }
               tone="protein"
@@ -879,86 +914,107 @@ export default function Today() {
               goal={goals.calorieGoal}
               sub={
                 <>
-                  <bdi dir="ltr">
-                    {Math.round(totals.calories)} − ({Math.round(burned)} × {goals.netCalorieBurnFactor ?? 50}%)
-                  </bdi>{" "}
-                  · {net <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
-                  <bdi dir="ltr">{Math.abs(Math.round(net - goals.calorieGoal))}</bdi>
+                  {net <= goals.calorieGoal ? t("deficit") : t("surplus")}{" "}
+                  <bdi dir="ltr">{Math.abs(Math.round(net - goals.calorieGoal))}</bdi> {t("vsGoal")}
                 </>
               }
               tone="net"
             />
+            <MetricCard
+              label={t("steps")}
+              value={steps?.steps ?? 0}
+              goal={goals.stepGoal ?? 10000}
+              sub={
+                <>
+                  <bdi dir="ltr">
+                    {steps?.steps ?? 0} / {goals.stepGoal ?? 10000}
+                  </bdi>{" "}
+                  {t("goal")}
+                </>
+              }
+              tone="steps"
+            />
+            </div>
           </section>
 
-          <section style={{ marginTop: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <section style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
               <h2 style={{ margin: 0 }}>{t("meals")}</h2>
+              <span style={{ fontSize: 13, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                <bdi dir="ltr">{Math.round(totals.calories)}</bdi> {t("calories")} ·{" "}
+                <bdi dir="ltr">{Math.round(totals.protein)}</bdi> {t("unitG")} {t("protein")}
+              </span>
             </div>
 
-            {frequentMeals.length > 0 && (
-              <form onSubmit={submitPickedMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                <select
-                  value={pickedMeal}
-                  onChange={(e) => selectFrequentMeal(e.target.value)}
-                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                >
-                  <option value="">{t("pickFrequentMeal")}</option>
-                  {frequentMeals.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-                {pickedMeal && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <input
-                      type="text"
-                      value={pickerQuantity}
-                      onChange={(e) => setPickerQuantity(e.target.value)}
-                      onBlur={applyPickerQuantity}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          applyPickerQuantity();
-                        }
-                      }}
-                      placeholder={t("quantityPlaceholder")}
-                      disabled={pickerQuantityBusy}
-                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerGrams}
-                      onChange={(e) => onPickerGramsChange(e.target.value)}
-                      placeholder={t("gramsPlaceholder")}
-                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerCalories}
-                      onChange={(e) => onPickerCaloriesChange(e.target.value)}
-                      placeholder={t("manualCaloriesPlaceholder")}
-                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerProtein}
-                      onChange={(e) => onPickerProteinChange(e.target.value)}
-                      placeholder={t("manualProteinPlaceholder")}
-                      style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                  </div>
+            <details className="disclosure" style={{ marginTop: 12 }}>
+              <summary>{t("addMeal")}</summary>
+              <div className="disclosure__body">
+                {frequentMeals.length > 0 && (
+                  <form onSubmit={submitPickedMeal} style={{ display: "grid", gap: 10 }}>
+                    <div className="chip-row">
+                      {frequentMeals.map((m) => (
+                        <button
+                          key={m.name}
+                          type="button"
+                          className={`chip${pickedMeal === m.name ? " chip--active" : ""}`}
+                          onClick={() => selectFrequentMeal(pickedMeal === m.name ? "" : m.name)}
+                        >
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                    {pickedMeal && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <input
+                          type="text"
+                          value={pickerQuantity}
+                          onChange={(e) => setPickerQuantity(e.target.value)}
+                          onBlur={applyPickerQuantity}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              applyPickerQuantity();
+                            }
+                          }}
+                          placeholder={t("quantityPlaceholder")}
+                          disabled={pickerQuantityBusy}
+                          style={{ flex: "1 1 130px" }}
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={pickerGrams}
+                          onChange={(e) => onPickerGramsChange(e.target.value)}
+                          placeholder={t("gramsPlaceholder")}
+                          style={{ flex: "1 1 130px" }}
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={pickerCalories}
+                          onChange={(e) => onPickerCaloriesChange(e.target.value)}
+                          placeholder={t("manualCaloriesPlaceholder")}
+                          style={{ flex: "1 1 130px" }}
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={pickerProtein}
+                          onChange={(e) => onPickerProteinChange(e.target.value)}
+                          placeholder={t("manualProteinPlaceholder")}
+                          style={{ flex: "1 1 130px" }}
+                        />
+                      </div>
+                    )}
+                    {pickedMeal && (
+                      <button type="submit" className="btn-primary" disabled={pickerMealBusy}>
+                        {pickerMealBusy ? t("logging") : t("logIt")}
+                      </button>
+                    )}
+                  </form>
                 )}
-                <button type="submit" disabled={!pickedMeal || pickerMealBusy}>
-                  {pickerMealBusy ? t("logging") : t("logIt")}
-                </button>
-              </form>
-            )}
 
-            <form onSubmit={submitMeal} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
+            <form onSubmit={submitMeal} style={{ display: "grid", gap: 8 }}>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -969,20 +1025,10 @@ export default function Today() {
                 }}
                 placeholder={file ? t("photoCaptionPlaceholder") : t("addMealPlaceholder")}
                 rows={2}
-                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <label title={t("photoUploadHint")} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <span
-                    style={{
-                      border: "0.5px solid var(--border)",
-                      borderRadius: 8,
-                      padding: "8px 14px",
-                      background: "var(--panel)",
-                    }}
-                  >
-                    📷 {t("chooseFile")}
-                  </span>
+                  <span className="btn btn-sm">📷 {t("chooseFile")}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -1045,12 +1091,14 @@ export default function Today() {
                   style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                 />
               </div>
-              <button type="submit" disabled={busy || (!text && !file)}>
+              <button type="submit" className="btn-primary" disabled={busy || (!text && !file)}>
                 {busy ? t("logging") : t("logIt")}
               </button>
             </form>
+              </div>
+            </details>
 
-            <div className="card desktop-table" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+            <div className="card desktop-table" style={{ marginTop: 12, padding: "4px 12px", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
@@ -1343,10 +1391,11 @@ export default function Today() {
             </div>
           </section>
 
-          <section style={{ marginTop: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <section style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <h2 style={{ margin: 0 }}>{t("workouts")}</h2>
               <button
+                className="btn-sm btn-ghost"
                 disabled={workoutsRefreshBusy}
                 onClick={async () => {
                   if (!user) return;
@@ -1362,14 +1411,14 @@ export default function Today() {
               </button>
             </div>
             {lastSynced && (
-              <p style={{ color: "var(--muted)", fontSize: 13 }}>
+              <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
                 {t("lastSynced")}: {new Date(lastSynced).toLocaleString()}
               </p>
             )}
             {workouts.length === 0 ? (
-              <p style={{ color: "var(--muted)" }}>{t("noWorkoutsToday")}</p>
+              <p style={{ color: "var(--muted)", marginTop: 8 }}>{t("noWorkoutsToday")}</p>
             ) : (
-              <div className="card desktop-table" style={{ marginTop: 8, padding: "4px 12px", overflowX: "auto" }}>
+              <div className="card desktop-table" style={{ marginTop: 12, padding: "4px 12px", overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ color: "var(--muted)", textAlign: "start", fontSize: 13 }}>
@@ -1651,171 +1700,146 @@ export default function Today() {
               </div>
             )}
 
-            {frequentWorkouts.length > 0 && (
-              <form onSubmit={submitPickedWorkout} className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
-                <select
-                  value={pickedWorkout}
-                  onChange={(e) => selectFrequentWorkout(e.target.value)}
-                  style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                >
-                  <option value="">{t("pickFrequentWorkout")}</option>
-                  {frequentWorkouts.map((w) => (
-                    <option key={w.type} value={w.type}>
-                      {w.type}
-                    </option>
-                  ))}
-                </select>
-                {pickedWorkout && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerDistanceKm}
-                      onChange={(e) => setPickerDistanceKm(e.target.value)}
-                      placeholder={t("distanceKmPlaceholder")}
-                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    <input
-                      value={pickerPace}
-                      onChange={(e) => setPickerPace(e.target.value)}
-                      placeholder={t("pacePlaceholder")}
-                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={pickerWorkoutCalories}
-                      onChange={(e) => setPickerWorkoutCalories(e.target.value)}
-                      placeholder={t("manualCaloriesPlaceholder")}
-                      style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                    />
-                    {!parsePaceToSecPerKm(pickerPace) && (
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={pickerDurationMin}
-                        onChange={(e) => setPickerDurationMin(e.target.value)}
-                        placeholder={t("durationMinPlaceholder")}
-                        style={{ flex: 1, minWidth: 90, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-                      />
+            <details className="disclosure" style={{ marginTop: 12 }}>
+              <summary>{t("logWorkout")}</summary>
+              <div className="disclosure__body">
+                {frequentWorkouts.length > 0 && (
+                  <form onSubmit={submitPickedWorkout} style={{ display: "grid", gap: 10 }}>
+                    <div className="chip-row">
+                      {frequentWorkouts.map((w) => (
+                        <button
+                          key={w.type}
+                          type="button"
+                          className={`chip${pickedWorkout === w.type ? " chip--active" : ""}`}
+                          onClick={() => selectFrequentWorkout(pickedWorkout === w.type ? "" : w.type)}
+                        >
+                          {w.type}
+                        </button>
+                      ))}
+                    </div>
+                    {pickedWorkout && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={pickerDistanceKm}
+                          onChange={(e) => setPickerDistanceKm(e.target.value)}
+                          placeholder={t("distanceKmPlaceholder")}
+                          style={{ flex: 1, minWidth: 90 }}
+                        />
+                        <input
+                          value={pickerPace}
+                          onChange={(e) => setPickerPace(e.target.value)}
+                          placeholder={t("pacePlaceholder")}
+                          style={{ flex: 1, minWidth: 90 }}
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={pickerWorkoutCalories}
+                          onChange={(e) => setPickerWorkoutCalories(e.target.value)}
+                          placeholder={t("manualCaloriesPlaceholder")}
+                          style={{ flex: 1, minWidth: 90 }}
+                        />
+                        {!parsePaceToSecPerKm(pickerPace) && (
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={pickerDurationMin}
+                            onChange={(e) => setPickerDurationMin(e.target.value)}
+                            placeholder={t("durationMinPlaceholder")}
+                            style={{ flex: 1, minWidth: 90 }}
+                          />
+                        )}
+                      </div>
                     )}
-                  </div>
+                    {pickedWorkout && (
+                      <button type="submit" className="btn-primary" disabled={pickerWorkoutBusy}>
+                        {pickerWorkoutBusy ? t("logging") : t("logIt")}
+                      </button>
+                    )}
+                  </form>
                 )}
-                <button type="submit" disabled={!pickedWorkout || pickerWorkoutBusy}>
-                  {pickerWorkoutBusy ? t("logging") : t("logIt")}
-                </button>
-              </form>
-            )}
 
-            <h3 style={{ marginTop: 16, marginBottom: 0 }}>{t("logWorkout")}</h3>
-            <form onSubmit={submitWorkout} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
-              <textarea
-                value={workoutText}
-                onChange={(e) => setWorkoutText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (workoutText || workoutFile) && !workoutBusy) {
-                    submitWorkout(e);
-                  }
-                }}
-                placeholder={t("workoutPlaceholder")}
-                rows={2}
-                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-              />
-              <label
-                title={t("photoUploadHint")}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-              >
-                <span
-                  style={{
-                    border: "0.5px solid var(--border)",
-                    borderRadius: 8,
-                    padding: "8px 14px",
-                    background: "var(--panel)",
-                  }}
-                >
-                  📷 {t("chooseFile")}
-                </span>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>{workoutFile?.name}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setWorkoutFile(e.target.files?.[0] ?? null)}
-                  style={{ display: "none" }}
-                />
-              </label>
-              <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
-              <button type="submit" disabled={workoutBusy || (!workoutText && !workoutFile)}>
-                {workoutBusy ? t("logging") : t("logIt")}
-              </button>
-            </form>
+                <form onSubmit={submitWorkout} style={{ display: "grid", gap: 8 }}>
+                  <textarea
+                    value={workoutText}
+                    onChange={(e) => setWorkoutText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && (workoutText || workoutFile) && !workoutBusy) {
+                        submitWorkout(e);
+                      }
+                    }}
+                    placeholder={t("workoutPlaceholder")}
+                    rows={2}
+                  />
+                  <label
+                    title={t("photoUploadHint")}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                  >
+                    <span className="btn btn-sm">📷 {t("chooseFile")}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 13 }}>{workoutFile?.name}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setWorkoutFile(e.target.files?.[0] ?? null)}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
+                  <button type="submit" className="btn-primary" disabled={workoutBusy || (!workoutText && !workoutFile)}>
+                    {workoutBusy ? t("logging") : t("logIt")}
+                  </button>
+                </form>
+              </div>
+            </details>
           </section>
 
-          <section style={{ marginTop: 24 }}>
-            <h2 style={{ margin: 0 }}>{t("steps")}</h2>
-            <div className="card" style={{ background: "var(--burned-bg)", border: "none", marginTop: 8 }}>
-              <div className="metric-label" style={{ color: "var(--burned)" }}>
-                {t("steps")}
-              </div>
-              <div className="metric-value" style={{ color: "var(--burned)" }}>
-                {steps?.steps ?? 0}
-              </div>
-              <div style={{ color: "var(--burned)", fontSize: 13, opacity: 0.85 }}>
+          <section style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+              <h2 style={{ margin: 0 }}>{t("steps")}</h2>
+              <span style={{ fontSize: 13, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 <bdi dir="ltr">
                   {steps?.steps ?? 0} / {goals.stepGoal ?? 10000}
                 </bdi>{" "}
                 {t("goal")}
-              </div>
-              <div className="progress-track" style={{ background: "rgba(255,255,255,0.55)" }}>
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${Math.min(100, Math.round(((steps?.steps ?? 0) / (goals.stepGoal || 1)) * 100))}%`,
-                    background: "var(--burned)",
-                    opacity: 0.85,
-                  }}
-                />
-              </div>
+              </span>
             </div>
 
-            <form onSubmit={submitSteps} className="card" style={{ marginTop: 8, display: "grid", gap: 8 }}>
-              <textarea
-                value={stepsText}
-                onChange={(e) => setStepsText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (stepsText || stepsFile) && !stepsBusy) {
-                    submitSteps(e);
-                  }
-                }}
-                placeholder={t("stepsPlaceholder")}
-                rows={1}
-                style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-              />
-              <label
-                title={t("photoUploadHint")}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-              >
-                <span
-                  style={{
-                    border: "0.5px solid var(--border)",
-                    borderRadius: 8,
-                    padding: "8px 14px",
-                    background: "var(--panel)",
-                  }}
-                >
-                  📷 {t("chooseFile")}
-                </span>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>{stepsFile?.name}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setStepsFile(e.target.files?.[0] ?? null)}
-                  style={{ display: "none" }}
-                />
-              </label>
-              <button type="submit" disabled={stepsBusy || (!stepsText && !stepsFile)}>
-                {stepsBusy ? t("logging") : t("logSteps")}
-              </button>
-            </form>
+            <details className="disclosure" style={{ marginTop: 12 }}>
+              <summary>{t("updateSteps")}</summary>
+              <div className="disclosure__body">
+                <form onSubmit={submitSteps} style={{ display: "grid", gap: 8 }}>
+                  <textarea
+                    value={stepsText}
+                    onChange={(e) => setStepsText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && (stepsText || stepsFile) && !stepsBusy) {
+                        submitSteps(e);
+                      }
+                    }}
+                    placeholder={t("stepsPlaceholder")}
+                    rows={1}
+                  />
+                  <label
+                    title={t("photoUploadHint")}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                  >
+                    <span className="btn btn-sm">📷 {t("chooseFile")}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 13 }}>{stepsFile?.name}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setStepsFile(e.target.files?.[0] ?? null)}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  <button type="submit" className="btn-primary" disabled={stepsBusy || (!stepsText && !stepsFile)}>
+                    {stepsBusy ? t("logging") : t("logSteps")}
+                  </button>
+                </form>
+              </div>
+            </details>
           </section>
         </>
       )}

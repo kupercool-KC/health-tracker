@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * App shell: single top header row (app name, Today/History links, EN/עב
- * toggle, profile icon) and the floating chat button. The FAB just
- * opens/closes a placeholder panel for now — actual chat behavior (log-meal
- * / query-history modes) is a later phase.
+ * App shell: a compact sticky header (wordmark + EN/עב toggle) and a
+ * thumb-reachable bottom tab bar (Today / History / Profile). The chat FAB
+ * floats just above the tab bar and toggles the full-screen ChatPanel.
  */
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -15,9 +14,38 @@ import { useI18n } from "@/lib/i18n/useI18n";
 import { useAuth } from "@/lib/firebase/useAuth";
 import ChatPanel from "./ChatPanel";
 
+function TodayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+      <path d="M5.5 3.5v3.5h3.5" />
+      <path d="M12 7.5V12l3 1.8" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8.5" r="3.75" />
+      <path d="M5 20c1.2-3.6 4-5.4 7-5.4s5.8 1.8 7 5.4" />
+    </svg>
+  );
+}
+
 const TABS = [
-  { href: "/today", labelKey: "navToday" as const },
-  { href: "/history", labelKey: "navHistory" as const },
+  { href: "/today", labelKey: "navToday" as const, Icon: TodayIcon },
+  { href: "/history", labelKey: "navHistory" as const, Icon: HistoryIcon },
+  { href: "/profile", labelKey: "navProfile" as const, Icon: ProfileIcon },
 ];
 
 // Routes that don't require onboarding — /share is public/unauthenticated,
@@ -31,7 +59,8 @@ export default function NavShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [chatOpen, setChatOpen] = useState(false);
 
-  const initial = (user?.displayName ?? user?.email ?? "?").charAt(0).toUpperCase();
+  const onShare = pathname?.startsWith("/share") ?? false;
+  const showChrome = !onShare;
 
   useEffect(() => {
     if (!user) return;
@@ -48,94 +77,49 @@ export default function NavShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 16,
-          padding: "12px 16px",
-          borderBottom: "0.5px solid var(--border)",
-          background: "var(--panel)",
-          position: "sticky",
-          top: 0,
-          zIndex: 20,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <strong>{t("appName")}</strong>
-          <nav style={{ display: "flex", gap: 12 }}>
-            {TABS.map((tab) => (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                style={{
-                  color: pathname?.startsWith(tab.href) ? "var(--protein)" : "var(--muted)",
-                  fontWeight: pathname?.startsWith(tab.href) ? 700 : 400,
-                  textDecoration: "none",
-                }}
-              >
-                {t(tab.labelKey)}
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={() => setLang("en")}
-            style={{ fontWeight: lang === "en" ? 700 : 400, border: "none", background: "none" }}
-          >
-            EN
-          </button>
-          <button
-            onClick={() => setLang("he")}
-            style={{ fontWeight: lang === "he" ? 700 : 400, border: "none", background: "none" }}
-          >
-            עב
-          </button>
-          <Link
-            href="/profile"
-            aria-label={t("navProfile")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              background: pathname?.startsWith("/profile") ? "var(--protein)" : "var(--bg-muted)",
-              color: pathname?.startsWith("/profile") ? "white" : "var(--text)",
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            {initial}
+      {showChrome && (
+        <header className="app-header">
+          <Link href="/today" className="app-header__mark">
+            <span className="app-header__dot" aria-hidden="true" />
+            {t("appName")}
           </Link>
-        </div>
-      </header>
+
+          <div className="lang-toggle" role="group" aria-label="Language">
+            <button onClick={() => setLang("en")} aria-pressed={lang === "en"}>
+              EN
+            </button>
+            <button onClick={() => setLang("he")} aria-pressed={lang === "he"}>
+              עב
+            </button>
+          </div>
+        </header>
+      )}
 
       <div id="page-content">{children}</div>
 
-      {user && !pathname?.startsWith("/share") && (
+      {showChrome && user && (
         <>
-          <button
-            onClick={() => setChatOpen((v) => !v)}
-            aria-label="Open chat"
-            style={{
-              position: "fixed",
-              bottom: 16,
-              insetInlineEnd: 16,
-              width: 56,
-              height: 56,
-              borderRadius: "50%",
-              background: "var(--protein)",
-              color: "white",
-              border: "none",
-              fontSize: 24,
-            }}
-          >
-            💬
+          <nav className="tabbar" aria-label={t("appName")}>
+            {TABS.map((tab) => {
+              const active = pathname?.startsWith(tab.href) ?? false;
+              return (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`tabbar__item${active ? " tabbar__item--active" : ""}`}
+                >
+                  <tab.Icon />
+                  {t(tab.labelKey)}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <button onClick={() => setChatOpen((v) => !v)} aria-label={t("navChat")} className="chat-fab">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v11H8l-4 4z" />
+            </svg>
           </button>
 
           {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
