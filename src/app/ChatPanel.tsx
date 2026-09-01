@@ -48,7 +48,14 @@ function isolateNumbersForBidi(text: string, lang: "en" | "he"): string {
   return text.replace(NUMERIC_EXPRESSION_RE, (match) => `${BIDI_LTR_ISOLATE_START}${match}${BIDI_ISOLATE_END}`);
 }
 
-export default function ChatPanel({ onClose }: { onClose: () => void }) {
+export default function ChatPanel({
+  onClose,
+  state = "open",
+}: {
+  onClose: () => void;
+  /** Drives the slide transition — "closed" sits just off the bottom edge. */
+  state?: "open" | "closed";
+}) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
 
@@ -330,7 +337,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="card chat-panel">
+    <div className={`card chat-panel${state === "closed" ? " chat-panel--closed" : ""}`}>
       {/* Overlay drawer rather than a flex sibling that squeezes the message
           thread — on a narrow phone screen a fixed-width inline sidebar left
           barely any room for the chat itself. Tapping the backdrop or a

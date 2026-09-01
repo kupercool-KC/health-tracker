@@ -55,6 +55,16 @@ function MetricCard({
   const overflow = ratio != null && ratio > 1;
   const colorVar = `var(--${tone})`;
 
+  // The bar grows from empty on first mount, then transitions to any later
+  // value; skipped (starts filled) when the viewer prefers reduced motion.
+  const [barShown, setBarShown] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setBarShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   return (
     <div
       className="card"
@@ -72,7 +82,11 @@ function MetricCard({
           <div className="progress-track" style={hero ? { background: "rgba(255,255,255,0.6)" } : undefined}>
             <div
               className="progress-fill"
-              style={{ width: `${pct}%`, background: colorVar, opacity: overflow ? 1 : 0.9 }}
+              style={{
+                transform: `scaleX(${barShown ? pct / 100 : 0})`,
+                background: colorVar,
+                opacity: overflow ? 1 : 0.9,
+              }}
             />
           </div>
         )}
@@ -868,7 +882,7 @@ export default function Today() {
         <p style={{ color: "var(--muted)" }}>{t("loading")}</p>
       ) : (
         <>
-          <section>
+          <section className="rise-in">
             <MetricCard
               hero
               label={t("calories")}

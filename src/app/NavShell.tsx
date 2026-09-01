@@ -57,7 +57,21 @@ export default function NavShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [chatOpen, setChatOpen] = useState(false);
+
+  // Two flags so the panel can slide out before it unmounts: `chatRender`
+  // keeps it in the tree, `chatShown` drives the open/closed transform.
+  const [chatRender, setChatRender] = useState(false);
+  const [chatShown, setChatShown] = useState(false);
+
+  function openChat() {
+    setChatRender(true);
+    // mount in the closed position, let it paint, then transition to open
+    requestAnimationFrame(() => requestAnimationFrame(() => setChatShown(true)));
+  }
+  function closeChat() {
+    setChatShown(false);
+    window.setTimeout(() => setChatRender(false), 260);
+  }
 
   const onShare = pathname?.startsWith("/share") ?? false;
   const showChrome = !onShare;
@@ -84,7 +98,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
             {t("appName")}
           </Link>
 
-          <div className="lang-toggle" role="group" aria-label="Language">
+          <div className="lang-toggle" data-lang={lang} role="group" aria-label="Language">
             <button onClick={() => setLang("en")} aria-pressed={lang === "en"}>
               EN
             </button>
@@ -116,13 +130,17 @@ export default function NavShell({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          <button onClick={() => setChatOpen((v) => !v)} aria-label={t("navChat")} className="chat-fab">
+          <button
+            onClick={() => (chatRender ? closeChat() : openChat())}
+            aria-label={t("navChat")}
+            className="chat-fab"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 5h16v11H8l-4 4z" />
             </svg>
           </button>
 
-          {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
+          {chatRender && <ChatPanel state={chatShown ? "open" : "closed"} onClose={closeChat} />}
         </>
       )}
     </>

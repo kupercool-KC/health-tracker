@@ -150,6 +150,35 @@ a {
   }
 }
 
+/* One-time settle for a freshly-loaded screen — the direct children of a
+   .rise-in container fade up in a short stagger. Only ever runs on mount
+   (data refreshes keep the nodes mounted), and not at all under
+   reduced-motion. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise-in > * {
+    animation: rise-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .rise-in > *:nth-child(2) {
+    animation-delay: 0.035s;
+  }
+  .rise-in > *:nth-child(3) {
+    animation-delay: 0.07s;
+  }
+  .rise-in > *:nth-child(4) {
+    animation-delay: 0.1s;
+  }
+  .rise-in > *:nth-child(n + 5) {
+    animation-delay: 0.12s;
+  }
+}
+
 /* --- card ----------------------------------------------------------- */
 .card {
   background: var(--surface);
@@ -179,7 +208,7 @@ button,
   padding: 9px 14px;
   min-height: 44px;
   font-weight: 500;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.05s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease-out;
 }
 
 /* `.btn` on a non-button element (e.g. a file-input <span>) — match the
@@ -191,8 +220,9 @@ button,
   gap: 6px;
 }
 
-button:active {
-  transform: translateY(0.5px);
+button:active,
+.btn:active {
+  transform: scale(0.97);
 }
 
 button:disabled {
@@ -404,10 +434,19 @@ select {
   margin-top: 10px;
 }
 
+/* Scaled, not width-animated: the fill is full-width and squeezed with
+   transform: scaleX() so the bar animates on the compositor, no per-frame
+   layout. Origin follows text direction so it always grows from the start. */
 .progress-fill {
   height: 100%;
+  width: 100%;
   border-radius: var(--radius-pill);
-  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left center;
+  transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[dir="rtl"] .progress-fill {
+  transform-origin: right center;
 }
 
 /* Legacy helpers still used by Today/History before their own redesign pass. */
@@ -436,6 +475,7 @@ select {
 }
 
 .chip {
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.1s ease-out;
   min-height: 38px;
   padding: 7px 13px;
   border-radius: var(--radius-pill);
@@ -462,6 +502,22 @@ select {
   overflow: hidden;
 }
 
+/* The box height snaps (native <details>), but the revealed content fades and
+   rises into place so the open reads as motion, not a blink. Cheap, and
+   robust across browsers where animating <details> height is not. */
+@media (prefers-reduced-motion: no-preference) {
+  .disclosure[open] > .disclosure__body {
+    animation: disclosure-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes disclosure-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
 .disclosure > summary {
   list-style: none;
   cursor: pointer;
@@ -479,17 +535,22 @@ select {
   display: none;
 }
 
+/* Chevron marker — rotates between "closed" (points down) and "open"
+   (points up). transform only. */
 .disclosure > summary::after {
-  content: "+";
-  font-family: var(--font-head);
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ink-2);
-  line-height: 1;
+  content: "";
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 3px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
+  transform: rotate(45deg);
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .disclosure[open] > summary::after {
-  content: "\2013"; /* en dash */
+  transform: rotate(-135deg);
 }
 
 .disclosure__body {
@@ -535,8 +596,10 @@ select {
   box-shadow: 0 0 0 3px var(--calories-bg);
 }
 
-/* EN / עב segmented toggle */
+/* EN / עב segmented toggle — a single thumb slides between the two options
+   (::before), rather than each button toggling its own background. */
 .lang-toggle {
+  position: relative;
   display: inline-flex;
   padding: 2px;
   border-radius: var(--radius-pill);
@@ -544,7 +607,31 @@ select {
   border: 1px solid var(--line);
 }
 
+.lang-toggle::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  inset-inline-start: 2px;
+  width: calc(50% - 2px);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lang-toggle[data-lang="he"]::before {
+  transform: translateX(100%);
+}
+
+:root[dir="rtl"] .lang-toggle[data-lang="he"]::before {
+  transform: translateX(-100%);
+}
+
 .lang-toggle button {
+  position: relative;
+  z-index: 1;
   min-height: 30px;
   padding: 3px 11px;
   border: none;
@@ -553,12 +640,11 @@ select {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-2);
+  transition: color 0.15s ease;
 }
 
 .lang-toggle button[aria-pressed="true"] {
-  background: var(--surface);
   color: var(--ink);
-  box-shadow: var(--shadow-sm);
 }
 
 /* --- bottom tab bar ------------------------------------- */
@@ -656,6 +742,19 @@ select {
   border-radius: 0;
   border: none;
   box-shadow: none;
+  will-change: transform;
+  transform: translateY(0);
+  opacity: 1;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
+}
+
+/* Entered/leaving: sits just off the bottom edge. Exit easing is quicker and
+   accelerates away — the user already decided to close it. */
+.chat-panel--closed {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1), opacity 0.18s ease;
 }
 
 /* --- responsive table → cards (Today's meals/workouts) --- */
