@@ -34,6 +34,7 @@ import { getAuthFromRequest, getUidFromRequest } from "@/lib/auth";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { adminDb } from "@/lib/firebase/admin";
 import { guardFreeText } from "@/lib/security/guardInput";
+import { strings } from "@/lib/i18n/strings";
 import type { MealDay, MealEntry, ParsedNutrition } from "@/lib/types";
 
 const itemSchema = z.object({
@@ -118,17 +119,37 @@ export async function POST(req: Request) {
     }
   }
 
+  // Both calorie AND protein supplied by hand (the Today "Add a meal" manual
+  // fields) — the user has already done the parser's whole job, so skip the
+  // OpenAI call entirely: no failure surface if it or its USDA/web grounding
+  // is down, and no silent multi-item split that would drop the overrides.
+  // One entry, named after whatever text was typed (a generic label for a
+  // photo-only log).
+  let fullyManual = false;
   let parsed: ParsedNutrition;
-  try {
-    parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrls, lang }));
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Failed to parse nutrition", detail: String(err) },
-      { status: 502 },
-    );
+  if (!parsedBody.data.parsed && overrideCalories != null && overrideProtein != null) {
+    fullyManual = true;
+    parsed = {
+      items: [
+        {
+          description: text?.trim() || strings.meal[lang ?? "en"],
+          calories: overrideCalories,
+          protein: overrideProtein,
+        },
+      ],
+    };
+  } else {
+    try {
+      parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrls, lang }));
+    } catch (err) {
+      return NextResponse.json(
+        { error: "Failed to parse nutrition", detail: String(err) },
+        { status: 502 },
+      );
+    }
   }
 
-  if ((overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
+  if (!fullyManual && (overrideCalories != null || overrideProtein != null) && parsed.items.length === 1) {
     const [item] = parsed.items;
     parsed = {
       items: [

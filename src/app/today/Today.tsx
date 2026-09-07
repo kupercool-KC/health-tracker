@@ -154,19 +154,23 @@ export default function Today() {
   }, [error]);
 
   const [text, setText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  // Up to MAX_MEAL_PHOTOS at once — several angles of one dish, or a plate
+  // plus a drink's label, with the caption commenting on which is which.
+  // Mirrors the chat panel's multi-photo attach.
+  const MAX_MEAL_PHOTOS = 6;
+  const [files, setFiles] = useState<File[]>([]);
   // Same thumbnail-preview treatment as the chat panel's photo attach — a
   // filename-only confirmation is easy to miss; a visible thumbnail isn't.
-  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [filePreviewUrls, setFilePreviewUrls] = useState<string[]>([]);
   useEffect(() => {
-    if (!file) {
-      setFilePreviewUrl(null);
+    if (files.length === 0) {
+      setFilePreviewUrls([]);
       return;
     }
-    const url = URL.createObjectURL(file);
-    setFilePreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setFilePreviewUrls(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -324,14 +328,14 @@ export default function Today() {
   async function submitMeal(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     const submittedText = text;
-    const submittedFile = file;
+    const submittedFiles = files;
     const submittedCalories = manualCalories;
     const submittedProtein = manualProtein;
     // Clear immediately — the box shouldn't still show the question while
     // we're checking it or waiting on the response (see the chat panel's
     // same pattern in ChatPanel.tsx).
     setText("");
-    setFile(null);
+    setFiles([]);
     setManualCalories("");
     setManualProtein("");
     setBusy(true);
@@ -341,10 +345,10 @@ export default function Today() {
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
 
-      let imageUrl: string | undefined;
-      if (submittedFile) {
+      let imageUrls: string[] | undefined;
+      if (submittedFiles.length > 0) {
         const { uploadNutritionImage } = await import("@/lib/firebase/uploadImage");
-        imageUrl = await uploadNutritionImage(currentUser.uid, submittedFile);
+        imageUrls = await Promise.all(submittedFiles.map((f) => uploadNutritionImage(currentUser.uid, f)));
       }
 
       const res = await fetch("/api/nutrition", {
@@ -352,7 +356,7 @@ export default function Today() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           text: submittedText || undefined,
-          imageUrl,
+          imageUrls,
           date: localDateKey(),
           lang,
           overrideCalories: submittedCalories ? Number(submittedCalories) : undefined,
@@ -370,7 +374,7 @@ export default function Today() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setText(submittedText);
-      setFile(submittedFile);
+      setFiles(submittedFiles);
       setManualCalories(submittedCalories);
       setManualProtein(submittedProtein);
     } finally {
@@ -1034,11 +1038,11 @@ export default function Today() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (text || file) && !busy) {
+                  if (e.key === "Enter" && !e.shiftKey && (text || files.length) && !busy) {
                     submitMeal(e);
                   }
                 }}
-                placeholder={file ? t("photoCaptionPlaceholder") : t("addMealPlaceholder")}
+                placeholder={files.length ? t("photoCaptionPlaceholder") : t("addMealPlaceholder")}
                 rows={2}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1051,46 +1055,56 @@ export default function Today() {
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    multiple
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files ?? []);
+                      if (picked.length === 0) return;
+                      setFiles((prev) => [...prev, ...picked].slice(0, MAX_MEAL_PHOTOS));
+                      e.target.value = "";
+                    }}
                     style={{ display: "none" }}
                   />
                 </label>
-                {file && filePreviewUrl && (
-                  <div style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
-                    <img
-                      src={filePreviewUrl}
-                      alt=""
-                      style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setFile(null)}
-                      aria-label={t("removePhoto")}
-                      title={t("removePhoto")}
-                      style={{
-                        position: "absolute",
-                        top: -6,
-                        insetInlineEnd: -6,
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: "var(--danger)",
-                        color: "#fff",
-                        fontSize: 10,
-                        lineHeight: 1,
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 0,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
               </div>
+              {files.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ position: "relative", flexShrink: 0, width: 44, height: 44 }}>
+                      <img
+                        src={filePreviewUrls[i]}
+                        alt=""
+                        style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                        aria-label={t("removePhoto")}
+                        title={t("removePhoto")}
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          insetInlineEnd: -6,
+                          width: 16,
+                          height: 16,
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "var(--danger)",
+                          color: "#fff",
+                          fontSize: 10,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 0,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <input
@@ -1110,7 +1124,7 @@ export default function Today() {
                   style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
                 />
               </div>
-              <button type="submit" className="btn-primary" disabled={busy || (!text && !file)}>
+              <button type="submit" className="btn-primary" disabled={busy || (!text && files.length === 0)}>
                 {busy ? t("logging") : t("logIt")}
               </button>
             </form>

@@ -37,11 +37,14 @@ function apiErrorMessage(data: { error?: string; detail?: string }, fallback: st
  */
 const BIDI_LTR_ISOLATE_START = "⁦"; // LEFT-TO-RIGHT ISOLATE
 const BIDI_ISOLATE_END = "⁩"; // POP DIRECTIONAL ISOLATE
-// Negative lookbehind on a leading letter — Hebrew uses a bare hyphen
-// glued directly to a word as a prefix ("כ-100", "ל-100" — "approximately"/
-// "per"), not a minus sign; without the lookbehind that hyphen got pulled
-// into the isolated run, leaving it detached from the word it belongs to.
-const NUMERIC_EXPRESSION_RE = /(?<![\p{L}])[+-]?\d+(?:[.,]\d+)?(?:\s*[-+×x*/=%]\s*[+-]?\d+(?:[.,]\d+)?)*/gu;
+// The negative lookbehind guards only the OPTIONAL LEADING SIGN, not the
+// whole match: Hebrew glues a bare hyphen to a word as a prefix ("כ-100",
+// "ל-100" — "approximately"/"per"), not a minus sign, so a "-" right after a
+// letter must stay with that letter. But a digit run glued to a Hebrew
+// prefix letter with no hyphen ("ו40" — "and 40") still needs isolating, or
+// the digits render reversed ("04") in RTL — so `\d+` itself matches
+// regardless of what precedes it.
+const NUMERIC_EXPRESSION_RE = /(?:(?<![\p{L}])[+-])?\d+(?:[.,]\d+)?(?:\s*[-+×x*/=%]\s*[+-]?\d+(?:[.,]\d+)?)*/gu;
 
 function isolateNumbersForBidi(text: string, lang: "en" | "he"): string {
   if (lang !== "he") return text;

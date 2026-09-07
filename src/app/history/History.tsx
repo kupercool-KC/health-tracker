@@ -671,6 +671,76 @@ export default function History() {
     }
   }
 
+  // Workout edit/delete on a past day — same shape as the meal actions above,
+  // reusing /api/workouts' existing PATCH/DELETE (id-addressed, no date needed).
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [editWorkoutType, setEditWorkoutType] = useState("");
+  const [editWorkoutDurationMin, setEditWorkoutDurationMin] = useState("");
+  const [editWorkoutDistanceKm, setEditWorkoutDistanceKm] = useState("");
+  const [editWorkoutCalories, setEditWorkoutCalories] = useState("");
+  const [editWorkoutElevation, setEditWorkoutElevation] = useState("");
+
+  function startEditWorkout(w: Workout) {
+    setEditingWorkoutId(w.id);
+    setEditWorkoutType(w.type);
+    setEditWorkoutDurationMin(String(Math.round(w.duration / 60)));
+    setEditWorkoutDistanceKm(w.distance != null ? (w.distance / 1000).toFixed(2) : "");
+    setEditWorkoutCalories(w.calories != null ? String(Math.round(w.calories)) : "");
+    setEditWorkoutElevation(w.elevationGain != null ? String(Math.round(w.elevationGain)) : "");
+  }
+
+  async function saveWorkoutEdit(id: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    setMealActionBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/workouts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          id,
+          changes: {
+            type: editWorkoutType.trim() || undefined,
+            duration: Math.round((Number(editWorkoutDurationMin) || 0) * 60),
+            distance: editWorkoutDistanceKm ? Math.round(Number(editWorkoutDistanceKm) * 1000) : undefined,
+            calories: editWorkoutCalories ? Number(editWorkoutCalories) : undefined,
+            elevationGain: editWorkoutElevation ? Number(editWorkoutElevation) : undefined,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setEditingWorkoutId(null);
+      await loadData();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setMealActionBusy(false);
+    }
+  }
+
+  async function deleteWorkout(id: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !window.confirm(t("deleteWorkoutConfirm"))) return;
+    setMealActionBusy(true);
+    setError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/workouts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      await loadData();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setMealActionBusy(false);
+    }
+  }
+
   function statusColor(d: DayInfo): string {
     if (!d.hasData) return "var(--muted)";
     if (d.netCalories > goals.calorieGoal) return "var(--calories)";
@@ -1031,19 +1101,107 @@ export default function History() {
           {selected.workouts.length === 0 ? (
             <p style={{ color: "var(--muted)" }}>{t("noWorkoutsToday")}</p>
           ) : (
-            selected.workouts.map((w) => (
-              <div key={w.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
-                <strong>{w.type}</strong> —{" "}
-                <bdi dir="ltr">
-                  {Math.round(w.duration / 60)} min
-                  {w.distance != null && `, ${(w.distance / 1000).toFixed(1)} km`}
-                  {w.pace != null && `, ${formatPaceSecPerKm(w.pace)}`}
-                  {w.calories != null && `, ${Math.round(w.calories)} kcal`}
-                  {w.heartRate?.avg != null && `, ${t("avgHr")} ${Math.round(w.heartRate.avg)}`}
-                  {w.elevationGain != null && `, +${Math.round(w.elevationGain)}m`}
-                </bdi>
-              </div>
-            ))
+            selected.workouts.map((w) => {
+              const editing = editingWorkoutId === w.id;
+              return (
+                <div key={w.id} style={{ padding: "4px 0", borderTop: "0.5px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      {editing ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                          <input
+                            value={editWorkoutType}
+                            onChange={(ev) => setEditWorkoutType(ev.target.value)}
+                            style={{ width: 90, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                          <input
+                            type="number"
+                            value={editWorkoutDurationMin}
+                            onChange={(ev) => setEditWorkoutDurationMin(ev.target.value)}
+                            placeholder={t("colDuration")}
+                            style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                          <input
+                            type="number"
+                            value={editWorkoutDistanceKm}
+                            onChange={(ev) => setEditWorkoutDistanceKm(ev.target.value)}
+                            placeholder="km"
+                            style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                          <input
+                            type="number"
+                            value={editWorkoutCalories}
+                            onChange={(ev) => setEditWorkoutCalories(ev.target.value)}
+                            placeholder="kcal"
+                            style={{ width: 56, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                          <input
+                            type="number"
+                            value={editWorkoutElevation}
+                            onChange={(ev) => setEditWorkoutElevation(ev.target.value)}
+                            placeholder="m"
+                            style={{ width: 52, padding: 4, borderRadius: 6, border: "0.5px solid var(--border)" }}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <strong>{w.type}</strong> —{" "}
+                          <bdi dir="ltr">
+                            {Math.round(w.duration / 60)} min
+                            {w.distance != null && `, ${(w.distance / 1000).toFixed(1)} km`}
+                            {w.pace != null && `, ${formatPaceSecPerKm(w.pace)}`}
+                            {w.calories != null && `, ${Math.round(w.calories)} kcal`}
+                            {w.heartRate?.avg != null && `, ${t("avgHr")} ${Math.round(w.heartRate.avg)}`}
+                            {w.elevationGain != null && `, +${Math.round(w.elevationGain)}m`}
+                          </bdi>
+                        </>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexShrink: 0 }}>
+                      {editing ? (
+                        <>
+                          <button
+                            onClick={() => saveWorkoutEdit(w.id)}
+                            disabled={mealActionBusy}
+                            style={{ border: "none", background: "none", color: "var(--protein)", padding: 4 }}
+                            aria-label={t("save")}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => setEditingWorkoutId(null)}
+                            disabled={mealActionBusy}
+                            style={{ border: "none", background: "none", color: "var(--muted)", padding: 4 }}
+                            aria-label={t("close")}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEditWorkout(w)}
+                            disabled={mealActionBusy}
+                            style={{ border: "none", background: "none", padding: 4 }}
+                            aria-label={t("edit")}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => deleteWorkout(w.id)}
+                            disabled={mealActionBusy}
+                            style={{ border: "none", background: "none", color: "var(--calories)", padding: 4 }}
+                            aria-label={t("deleteWorkout")}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}
