@@ -43,6 +43,27 @@ const itemSchema = z.object({
 });
 const parsedSchema = z.object({ items: z.array(itemSchema).min(1) });
 
+// Safety net alongside EXPLICIT_VALUE_INSTRUCTION below: the model doesn't
+// always set explicitCalories/explicitProtein even when the text plainly
+// states a number (seen with Hebrew phrasing like "ארוחה של 300 קלוריות
+// ו20 גרם חלבון" — the model matched it to a generic "rice" estimate
+// instead). Only trusted for a single-item result — with multiple foods in
+// one message there's no way to know which number belongs to which item.
+const CALORIE_PATTERNS = [/(\d+(?:\.\d+)?)\s*(?:kcal|cal(?:ories?)?)\b/i, /(\d+(?:\.\d+)?)\s*קלוריו?ת/];
+const PROTEIN_PATTERNS = [
+  /(\d+(?:\.\d+)?)\s*g(?:rams?)?\s*(?:of\s*)?protein\b/i,
+  /protein[:\s]+(\d+(?:\.\d+)?)\s*g(?:rams?)?/i,
+  /(\d+(?:\.\d+)?)\s*גר(?:ם|'|׳)?\s*חלבון/,
+];
+
+function extractExplicitValue(text: string, patterns: RegExp[]): number | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
 export interface ParseInput {
   /** Free-text message from the chat box. Optional if an image is provided. */
   text?: string;
@@ -133,6 +154,26 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   if (!raw) throw new Error("Empty response from nutrition parser");
 
   const parsed = parsedSchema.parse(JSON.parse(raw));
+
+  // Deterministic catch for explicit numbers the model's own
+  // explicitCalories/explicitProtein flags missed — see CALORIE_PATTERNS.
+  if (parsed.items.length === 1 && input.text) {
+    const [item] = parsed.items;
+    if (!item.explicitCalories) {
+      const explicitCalories = extractExplicitValue(input.text, CALORIE_PATTERNS);
+      if (explicitCalories != null) {
+        item.calories = explicitCalories;
+        item.explicitCalories = true;
+      }
+    }
+    if (!item.explicitProtein) {
+      const explicitProtein = extractExplicitValue(input.text, PROTEIN_PATTERNS);
+      if (explicitProtein != null) {
+        item.protein = explicitProtein;
+        item.explicitProtein = true;
+      }
+    }
+  }
 
   // Ground simple, named foods against USDA's database (or, failing that, a
   // web search — see webSearchNutrition) instead of trusting the model's
