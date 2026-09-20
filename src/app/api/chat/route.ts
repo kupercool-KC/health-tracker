@@ -36,6 +36,7 @@ import {
   resolveLogFromPriorAnswer,
   resolveMealAction,
   resolvePendingMealFollowUp,
+  resolvePendingWorkoutFollowUp,
   summarizeProfileForChat,
 } from "@/lib/chat/chat";
 import { checkPromptSafety, securityReply } from "@/lib/chat/security";
@@ -126,6 +127,18 @@ async function handleChat(req: Request) {
       : null;
   const followUpHandled = !!pendingMealFollowUp && pendingMealFollowUp.kind !== "new";
 
+  // Same idea, for an open (unconfirmed) workout proposal — see
+  // resolvePendingWorkoutFollowUp's doc comment. Only checked when the meal
+  // follow-up above didn't already claim this message, so one message never
+  // gets interpreted against two different open proposals at once.
+  const openPendingWorkout =
+    !followUpHandled && !safety.flagged && lastMessage?.role === "assistant" ? lastMessage.pendingWorkout : undefined;
+  const pendingWorkoutFollowUp =
+    openPendingWorkout && message?.trim()
+      ? await resolvePendingWorkoutFollowUp(message.trim(), openPendingWorkout, lang, priorMessages, today)
+      : null;
+  const workoutFollowUpHandled = !!pendingWorkoutFollowUp && pendingWorkoutFollowUp.kind !== "new";
+
   // A bare image with no text and no prior conversation essentially always
   // means "log this food" — skip the classifier entirely rather than trust
   // it to guess right from just a placeholder string. But when there IS
@@ -152,7 +165,7 @@ async function handleChat(req: Request) {
   // message actually describes MORE than one kind of log at once (e.g. a
   // meal AND a workout together) — classifyIntent alone can only pick one
   // bucket, which silently dropped the other half.
-  const skipClassifier = followUpHandled || safety.flagged || greeting || bareImageNoHistory;
+  const skipClassifier = followUpHandled || workoutFollowUpHandled || safety.flagged || greeting || bareImageNoHistory;
   const [classifiedIntent, composite] = skipClassifier
     ? [null as ChatIntent | null, { logs: [] } as CompositeLogDetection]
     : await Promise.all([
@@ -161,13 +174,15 @@ async function handleChat(req: Request) {
       ]);
   const intent: ChatIntent = followUpHandled
     ? "log_meal"
-    : safety.flagged
-      ? "out_of_scope"
-      : greeting
+    : workoutFollowUpHandled
+      ? "log_workout"
+      : safety.flagged
         ? "out_of_scope"
-        : bareImageNoHistory
-          ? "log_meal"
-          : classifiedIntent!;
+        : greeting
+          ? "out_of_scope"
+          : bareImageNoHistory
+            ? "log_meal"
+            : classifiedIntent!;
   const isComposite = composite.logs.length >= 2 && !!message?.trim();
 
   let replyContent: string;
@@ -179,6 +194,9 @@ async function handleChat(req: Request) {
   if (followUpHandled) {
     replyContent = pendingMealFollowUp!.replyContent!;
     pendingMeal = pendingMealFollowUp!.pendingMeal;
+  } else if (workoutFollowUpHandled) {
+    replyContent = pendingWorkoutFollowUp!.replyContent!;
+    pendingWorkout = pendingWorkoutFollowUp!.pendingWorkout;
   } else if (safety.flagged) {
     replyContent = securityReply(lang);
   } else if (greeting) {

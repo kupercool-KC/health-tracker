@@ -12,6 +12,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
 import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
+import { parseNutrition } from "@/lib/nutrition/parser";
 import { strings } from "@/lib/i18n/strings";
 import type { ChatIntent, ChatMessage, MealDay, ParsedNutrition, PendingMealAction, UserProfile } from "@/lib/types";
 
@@ -310,7 +311,7 @@ export async function answerHistoryQuery(
     messages: [
       {
         role: "system",
-        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout/step history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. The data below covers the last ${HISTORY_WINDOW_DAYS} days${oldestDate ? ` (earliest entry: ${oldestDate})` : ""} — before claiming a date is "outside the available history" or that you "can't access" it, actually check whether it falls before that earliest date; a date from a few days or weeks ago is almost certainly covered. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.
+        content: `Today's date is ${today} (yyyy-mm-dd) — use it to resolve relative date references in the question ("yesterday", "last week", "this weekend", etc.) against the ISO dates in the data below; do not guess what day it is. You answer questions about the user's own logged nutrition/workout/step history using ONLY the JSON data provided — never invent numbers. Respond in ${lang === "he" ? "Hebrew" : "English"}, plain conversational language, concise. The data below covers the last ${HISTORY_WINDOW_DAYS} days${oldestDate ? ` (earliest entry: ${oldestDate})` : ""}. Never cite "${HISTORY_WINDOW_DAYS} days" or a window limit as a reason you can't answer — that number describes how much data was FETCHED, not a boundary you need to reason about or explain to the user. The only real check is: does the requested date fall on or after ${oldestDate ?? "the earliest entry"}? If yes (true for "last week", "a few days ago", or anything recent), it IS covered — just answer using the data below. Say data is unavailable ONLY when the requested date is actually earlier than ${oldestDate ?? "the earliest entry"}, or no entry exists for that specific date. Plain text only — no markdown (no **bold**, no #headers, no markdown list syntax); this is rendered in a plain chat bubble.
 
 Recent conversation turns are included below for context — the user's latest message is very often a follow-up referring back to something already discussed ("we talked about last week", "what about the days before that", a bare number correcting your last answer). Read it against what was actually just said instead of treating it as a fresh, context-free question, and stay consistent with any date range or day-list you already gave earlier in this same conversation unless the user's new message changes the scope.
 
@@ -494,13 +495,13 @@ export async function resolvePendingMealFollowUp(
       {
         role: "system",
         content: `The assistant just proposed logging this meal, not yet saved: ${JSON.stringify(openPendingMeal.items)}. This is the ONLY thing the user's latest message can be about — conversation history below is included purely to help interpret phrasing (pronouns, "it", short replies), never as a source of a different food to substitute in. Classify the user's LATEST message as exactly one of:
-- "correction": they're stating the calories/protein should be a specific different value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories").
+- "correction": they're saying something about the PROPOSAL ITSELF is wrong and should be replaced — the calories/protein value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories"), AND/OR the food's identity/name (e.g. "it was white wine, not red", a bare replacement name like "white wine*", "no — chicken"). A short message naming a different food/variant than what was proposed, with no other plausible meaning, IS a correction — even without an explicit "no" or number.
 - "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
 - "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'").
 - "reschedule": they want to save this SAME meal (same food, same numbers) for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead", "save it for the 5th" — NOT changing the food or its numbers, only which day it's recorded under.
-- "new": anything else — describing a different food to log, confirming as-is, or unrelated.
-Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"reschedule"|"new", "calories"?: number, "protein"?: number, "explanation"?: string, "combinedName"?: string }
-For "correction": include whichever of calories/protein the user specified (omit the other if only one was mentioned).
+- "new": anything else — describing a genuinely different, unrelated food to log, confirming as-is, or unrelated.
+Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"reschedule"|"new", "calories"?: number, "protein"?: number, "description"?: string, "explanation"?: string, "combinedName"?: string }
+For "correction": include whichever of calories/protein the user specified (omit either not mentioned). If the food's name/identity should change, also include "description" — the corrected name, in ${lang === "he" ? "Hebrew" : "English"} — and omit calories/protein if the user only corrected the name (the caller re-derives the numbers for the corrected food).
 For "question": include a concise "explanation" answering what they asked about the estimate, about THIS meal only — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.
 For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.
 For "reschedule": no extra fields needed — the target date is resolved separately.`,
@@ -511,7 +512,14 @@ For "reschedule": no extra fields needed — the target date is resolved separat
   });
 
   const raw = completion.choices[0]?.message?.content;
-  let parsed: { kind?: string; calories?: number; protein?: number; explanation?: string; combinedName?: string };
+  let parsed: {
+    kind?: string;
+    calories?: number;
+    protein?: number;
+    description?: string;
+    explanation?: string;
+    combinedName?: string;
+  };
   try {
     parsed = JSON.parse(raw ?? "{}");
   } catch {
@@ -532,7 +540,7 @@ For "reschedule": no extra fields needed — the target date is resolved separat
     };
   }
 
-  if (parsed.kind === "correction" && (parsed.calories != null || parsed.protein != null)) {
+  if (parsed.kind === "correction" && (parsed.calories != null || parsed.protein != null || parsed.description)) {
     if (openPendingMeal.items.length !== 1) {
       // Can't unambiguously map one stated total to a specific item in a multi-item proposal.
       return {
@@ -542,11 +550,28 @@ For "reschedule": no extra fields needed — the target date is resolved separat
       };
     }
     const [item] = openPendingMeal.items;
-    const updatedItem = {
+    let updatedItem = {
       ...item,
+      ...(parsed.description ? { description: parsed.description } : {}),
       ...(parsed.calories != null ? { calories: parsed.calories } : {}),
       ...(parsed.protein != null ? { protein: parsed.protein } : {}),
     };
+    // The food's identity changed but no fresh number came with it — the old
+    // item's calories/protein were computed for the WRONG food, so keeping
+    // them would silently carry over numbers that no longer describe
+    // anything real. Re-derive for the corrected description instead of
+    // reusing stale ones.
+    if (parsed.description && parsed.calories == null && parsed.protein == null) {
+      try {
+        const reparsed = await parseNutrition({ text: parsed.description, lang });
+        const [reparsedItem] = reparsed.items;
+        if (reparsedItem) {
+          updatedItem = { ...updatedItem, calories: reparsedItem.calories, protein: reparsedItem.protein, grams: reparsedItem.grams };
+        }
+      } catch {
+        // best-effort — falls back to the old numbers under the corrected name
+      }
+    }
     const updatedPendingMeal = { ...openPendingMeal, items: [updatedItem] };
     const summary = `${updatedItem.description}: ${Math.round(updatedItem.calories)} kcal, ${Math.round(updatedItem.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`;
     return {
@@ -568,6 +593,116 @@ For "reschedule": no extra fields needed — the target date is resolved separat
       kind: "combine",
       pendingMeal: updatedPendingMeal,
       replyContent: `${summary}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
+  }
+
+  if (parsed.kind === "question") {
+    return {
+      kind: "question",
+      replyContent: stripMarkdown(
+        parsed.explanation || (lang === "he" ? "אין לי הסבר נוסף לתת כרגע." : "I don't have a further explanation to give right now."),
+      ),
+    };
+  }
+
+  return { kind: "new" };
+}
+
+export interface PendingWorkoutFollowUpResult {
+  kind: "correction" | "question" | "reschedule" | "new";
+  replyContent?: string;
+  pendingWorkout?: ChatMessage["pendingWorkout"];
+}
+
+/**
+ * Workout equivalent of resolvePendingMealFollowUp — a proposed-but-not-yet-
+ * saved workout previously had no follow-up handling at all, so any reply
+ * to it ("no, it was 40 minutes", "add it to yesterday") fell straight
+ * through to parseWorkout with nothing concrete to extract from text alone
+ * and just failed with "I couldn't figure out what to log". Covers
+ * correcting a metric, correcting the workout type, and rescheduling the
+ * day — same three follow-up shapes meals get, minus "combine" (merging two
+ * proposed workouts into one isn't a real use case the way merging two
+ * foods into one meal is).
+ */
+export async function resolvePendingWorkoutFollowUp(
+  message: string,
+  openPendingWorkout: NonNullable<ChatMessage["pendingWorkout"]>,
+  lang: "en" | "he",
+  history: ChatMessage[],
+  today: string,
+): Promise<PendingWorkoutFollowUpResult> {
+  const { imageUrls: _imageUrls, date: _date, ...workoutFields } = openPendingWorkout;
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: CHAT_MODEL,
+    response_format: { type: "json_object" },
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `The assistant just proposed logging this workout, not yet saved: ${JSON.stringify(workoutFields)}. This is the ONLY thing the user's latest message can be about — conversation history below is included purely to help interpret phrasing, never as a source of a different workout to substitute in. Classify the user's LATEST message as exactly one of:
+- "correction": they're saying a metric should be a specific different value (duration, distance, calories, pace, heart rate, elevation) and/or the workout type/name is wrong (e.g. "it was 40 minutes not 30", "actually a walk, not a run").
+- "question": they're asking about the numbers/estimate without providing a new value.
+- "reschedule": they want to save this SAME workout for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead" — NOT changing any metric, only which day it's recorded under.
+- "new": anything else — describing a genuinely different, unrelated workout, confirming as-is, or unrelated.
+Respond ONLY as JSON: { "kind": "correction"|"question"|"reschedule"|"new", "type"?: string, "durationMin"?: number, "distanceKm"?: number, "calories"?: number, "explanation"?: string }
+For "correction": include only the field(s) the user actually corrected. "type" (workout name/kind) in ${lang === "he" ? "Hebrew" : "English"} if that's what changed.
+For "question": include a concise "explanation", in ${lang === "he" ? "Hebrew" : "English"} — if you genuinely don't know why a number was produced, say that plainly instead of inventing a justification.
+For "reschedule": no extra fields needed — the target date is resolved separately.`,
+      },
+      ...toContextMessages(history),
+      { role: "user", content: message },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content;
+  let parsed: {
+    kind?: string;
+    type?: string;
+    durationMin?: number;
+    distanceKm?: number;
+    calories?: number;
+    explanation?: string;
+  };
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return { kind: "new" };
+  }
+
+  const summarize = (w: NonNullable<ChatMessage["pendingWorkout"]>): string => {
+    const parts = [`${Math.round(w.durationSec / 60)} min`];
+    if (w.distanceMeters != null) parts.push(`${(w.distanceMeters / 1000).toFixed(1)} km`);
+    if (w.calories != null) parts.push(`${Math.round(w.calories)} kcal`);
+    return `${w.type}: ${parts.join(", ")}`;
+  };
+
+  if (parsed.kind === "reschedule") {
+    const targetDate = await resolveLogDate(message, today);
+    const updatedPendingWorkout = { ...openPendingWorkout, date: targetDate };
+    const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+    return {
+      kind: "reschedule",
+      pendingWorkout: updatedPendingWorkout,
+      replyContent: `${summarize(updatedPendingWorkout)}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
+  }
+
+  if (
+    parsed.kind === "correction" &&
+    (parsed.type || parsed.durationMin != null || parsed.distanceKm != null || parsed.calories != null)
+  ) {
+    const updatedPendingWorkout: NonNullable<ChatMessage["pendingWorkout"]> = {
+      ...openPendingWorkout,
+      ...(parsed.type ? { type: parsed.type } : {}),
+      ...(parsed.durationMin != null ? { duration: Math.round(parsed.durationMin * 60) } : {}),
+      ...(parsed.distanceKm != null ? { distance: Math.round(parsed.distanceKm * 1000) } : {}),
+      ...(parsed.calories != null ? { calories: parsed.calories } : {}),
+    };
+    return {
+      kind: "correction",
+      pendingWorkout: updatedPendingWorkout,
+      replyContent: `${summarize(updatedPendingWorkout)}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
     };
   }
 
@@ -624,8 +759,9 @@ export async function resolveLogFromPriorAnswer(
       {
         role: "system",
         content: `Below is the recent conversation. The user's latest message might be asking to log/save food(s) that were discussed there (e.g. "add it", "log it", "add this to my intake", "add it with calories and protein") — determine whether that's actually the case AND that the conversation contains specific, already-computed calorie/protein number(s) for one or more identifiable foods/ingredients (a full ingredient-by-ingredient breakdown counts — extract each line as its own item; not just general advice with no concrete numbers). Calories and protein for the same food may have been given in DIFFERENT messages (e.g. calories in one answer, protein in a later answer to "and protein?") — look across the whole conversation below, not just the very last message, and combine them onto the same item.
+CRITICAL: if the user's LATEST message itself states a specific calorie and/or protein number for the food (e.g. "add a protein shake, 126 calories and 26g protein"), that is NOT this pattern — respond { "applies": false, "items": [] } and let it be parsed as a fresh, standalone food description instead. This function is ONLY for a bare reference ("add it", "log that") with no number in the current message, reaching back to reuse a number computed earlier. A number restated or newly given in the current message always wins over anything from earlier in the conversation — never substitute an older number for what the user just said.
 Respond ONLY as JSON: { "applies": boolean, "items": [{ "description": string, "calories": number, "protein"?: number, "grams"?: number }] }
-If "applies" is true: extract EXACTLY the number(s) already stated for each item, from wherever in the conversation below they were stated — do not recalculate, round differently, sum, or combine different foods, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item only if truly never stated anywhere in the conversation below.
+If "applies" is true: extract EXACTLY the number(s) already stated for each item, from wherever in the conversation below they were stated — do not recalculate, round differently, sum, or combine different foods, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" MUST be the actual food/dish name as it was discussed (e.g. "Eggplant lasagna") — NEVER a generic placeholder like "today's intake" or "logged meal", even if the user's message itself didn't repeat the name. Write it in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item only if truly never stated anywhere in the conversation below.
 If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false, "items": [] }.`,
       },
       ...toContextMessages(history),

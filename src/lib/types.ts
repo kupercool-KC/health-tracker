@@ -27,6 +27,17 @@ export interface MealEntry {
   /** Model confidence 0..1, when the parser provides one. */
   confidence?: number;
   confirmedAt: string;
+  /**
+   * How the calories/protein numbers were actually determined — shown on
+   * expand so a logged entry isn't a black box. "manual" = typed directly
+   * into a calories/protein field, no AI involved; "explicit" = stated in
+   * free text ("...95 kcal") and used as-is; "usda"/"web" = grounded against
+   * FoodData Central or a web-search fallback; "model" = the AI's own
+   * estimate, nothing else matched.
+   */
+  nutritionSource?: "manual" | "explicit" | "usda" | "web" | "model";
+  /** One-line, already-localized explanation of nutritionSource — e.g. which USDA entry matched and at what portion. */
+  nutritionNote?: string;
 }
 
 /** users/{uid}/meals/{date} — one doc per day (date = yyyy-mm-dd). */
@@ -109,6 +120,9 @@ export interface ParsedNutritionItem {
   grams?: number;
   /** Individual ingredients the user mentioned, when this item is a composite dish rather than a single named food. */
   ingredients?: string[];
+  /** See MealEntry — carried through from parseNutrition so the confirm flow (chat + direct log) can persist it unchanged. */
+  nutritionSource?: "manual" | "explicit" | "usda" | "web" | "model";
+  nutritionNote?: string;
 }
 
 /**

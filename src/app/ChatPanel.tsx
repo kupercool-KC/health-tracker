@@ -14,6 +14,7 @@ import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { localDateKey } from "@/lib/dashboard/queries";
+import { combinePhotoCaptions } from "@/lib/text/combinePhotoCaptions";
 import type { ChatMessage, ChatSession } from "@/lib/types";
 import MicButton from "./MicButton";
 
@@ -103,6 +104,9 @@ export default function ChatPanel({
     setFilePreviewUrls(urls);
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [files]);
+  // One optional note per photo, index-aligned with `files` — folded into
+  // the sent message as "Photo N: …" lines (see combinePhotoCaptions).
+  const [fileCaptions, setFileCaptions] = useState<string[]>([]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -164,12 +168,14 @@ export default function ChatPanel({
     if (!user || (!text.trim() && files.length === 0) || busy) return;
     const messageText = text;
     const messageFiles = files;
+    const messageCaptions = fileCaptions;
     const messageCalories = manualCalories;
     const messageProtein = manualProtein;
     // Clear the input immediately so it's ready for the next message —
     // the thinking indicator below covers the wait, not the input box.
     setText("");
     setFiles([]);
+    setFileCaptions([]);
     setManualCalories("");
     setManualProtein("");
     setBusy(true);
@@ -189,12 +195,14 @@ export default function ChatPanel({
         imageUrls = await Promise.all(messageFiles.map((f) => uploadNutritionImage(currentUser.uid, f)));
       }
 
+      const combinedMessage = combinePhotoCaptions(messageText, messageCaptions);
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           sessionId: activeId ?? undefined,
-          message: messageText,
+          message: combinedMessage,
           imageUrls,
           lang,
           date: localDateKey(),
@@ -210,12 +218,37 @@ export default function ChatPanel({
       // Restore the input on failure so the user doesn't lose what they typed.
       setText(messageText);
       setFiles(messageFiles);
+      setFileCaptions(messageCaptions);
       setManualCalories(messageCalories);
       setManualProtein(messageProtein);
       setPendingUserMessage(null);
     } finally {
       setBusy(false);
       setAwaitingReply(false);
+    }
+  }
+
+  /**
+   * Clears the pending* field on the persisted chat message right after its
+   * proposal is actually saved — otherwise that message keeps looking "open"
+   * to /api/chat's own logic forever (confirming here only ever updated
+   * `confirmedKeys`, a client-only Set), and the user's next message gets
+   * misread as still reacting to a proposal that's already been saved. Best
+   * effort: the meal/workout/steps/action is already safely saved by the
+   * time this runs, so a failure here just leaves stale UI state, not lost data.
+   */
+  async function markPendingConfirmed(index: number, kind: "meal" | "workout" | "steps" | "mealAction") {
+    if (!activeId) return;
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      await fetch("/api/chat/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ sessionId: activeId, messageIndex: index, kind }),
+      });
+    } catch {
+      // best-effort — see doc comment above
     }
   }
 
@@ -234,6 +267,7 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:meal`));
+      markPendingConfirmed(index, "meal");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -256,6 +290,7 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:workout`));
+      markPendingConfirmed(index, "workout");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -277,6 +312,7 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:steps`));
+      markPendingConfirmed(index, "steps");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -299,6 +335,7 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:mealAction`));
+      markPendingConfirmed(index, "mealAction");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -403,7 +440,7 @@ export default function ChatPanel({
                 onBlur={() => renameSession(s.id)}
                 onKeyDown={(e) => e.key === "Enter" && renameSession(s.id)}
                 autoFocus
-                style={{ width: "100%", fontSize: 12, padding: 4 }}
+                style={{ width: "100%", padding: 4 }}
               />
             ) : (
               <button
@@ -606,7 +643,7 @@ export default function ChatPanel({
               value={manualCalories}
               onChange={(e) => setManualCalories(e.target.value)}
               placeholder={t("manualCaloriesPlaceholder")}
-              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", fontSize: 13 }}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
             />
             <input
               type="number"
@@ -614,46 +651,64 @@ export default function ChatPanel({
               value={manualProtein}
               onChange={(e) => setManualProtein(e.target.value)}
               placeholder={t("manualProteinPlaceholder")}
-              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", fontSize: 13 }}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
             />
           </div>
         )}
 
         {files.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8, overflowX: "auto" }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, overflowX: "auto" }}>
             {files.map((f, i) => (
-              <div key={i} style={{ position: "relative", flexShrink: 0, width: 40, height: 40 }}>
-                <img
-                  src={filePreviewUrls[i]}
-                  alt=""
-                  style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, width: 56 }}>
+                <div style={{ position: "relative", width: 56, height: 56 }}>
+                  <img
+                    src={filePreviewUrls[i]}
+                    alt=""
+                    style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFiles((prev) => prev.filter((_, j) => j !== i));
+                      setFileCaptions((prev) => prev.filter((_, j) => j !== i));
+                    }}
+                    aria-label={t("removePhoto")}
+                    title={t("removePhoto")}
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      insetInlineEnd: -6,
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      border: "none",
+                      background: "var(--danger)",
+                      color: "#fff",
+                      fontSize: 10,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={fileCaptions[i] ?? ""}
+                  onChange={(e) =>
+                    setFileCaptions((prev) => {
+                      const next = [...prev];
+                      next[i] = e.target.value;
+                      return next;
+                    })
+                  }
+                  placeholder={t("photoNotePlaceholder")}
+                  style={{ width: 56, padding: "4px 6px" }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                  aria-label={t("removePhoto")}
-                  title={t("removePhoto")}
-                  style={{
-                    position: "absolute",
-                    top: -6,
-                    insetInlineEnd: -6,
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    border: "none",
-                    background: "var(--danger)",
-                    color: "#fff",
-                    fontSize: 10,
-                    lineHeight: 1,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: 0,
-                  }}
-                >
-                  ×
-                </button>
               </div>
             ))}
           </div>
@@ -664,9 +719,6 @@ export default function ChatPanel({
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) send(e);
-            }}
             placeholder={files.length > 0 ? t("photoCaptionPlaceholder") : t("chatPlaceholder")}
             rows={1}
             style={{
@@ -678,7 +730,6 @@ export default function ChatPanel({
               resize: "none",
               maxHeight: 120,
               fontFamily: "inherit",
-              fontSize: "inherit",
               lineHeight: 1.4,
             }}
           />
@@ -697,6 +748,7 @@ export default function ChatPanel({
                 const picked = Array.from(e.target.files ?? []);
                 if (picked.length === 0) return;
                 setFiles((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS));
+                setFileCaptions((prev) => [...prev, ...picked.map(() => "")].slice(0, MAX_PHOTOS));
                 e.target.value = "";
               }}
               style={{ display: "none" }}

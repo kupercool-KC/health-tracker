@@ -21,6 +21,7 @@ import type { FrequentMeal, FrequentWorkout } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
+import { combinePhotoCaptions } from "@/lib/text/combinePhotoCaptions";
 import MicButton from "../MicButton";
 
 /** One of Today's readout accents — each has a matching `--{tone}-bg` tint. */
@@ -171,6 +172,10 @@ export default function Today() {
     setFilePreviewUrls(urls);
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [files]);
+  // One optional note per photo ("this one's mine, skip the drink") — kept
+  // index-aligned with `files`; folded into the submitted text as "Photo N: …"
+  // lines so the model can tell which comment belongs to which image.
+  const [fileCaptions, setFileCaptions] = useState<string[]>([]);
   const [manualCalories, setManualCalories] = useState("");
   const [manualProtein, setManualProtein] = useState("");
   const [busy, setBusy] = useState(false);
@@ -207,6 +212,8 @@ export default function Today() {
   /** Unit-based amount ("1 date", "2 slices") for when the user knows how much they ate but not the gram weight — converted to grams via /api/nutrition/lookup's quantity estimate. */
   const [pickerQuantity, setPickerQuantity] = useState("");
   const [pickerQuantityBusy, setPickerQuantityBusy] = useState(false);
+  /** Free-form addition to the picked meal ("with olive oil and rice") — when filled, the whole thing goes through the AI parser instead of logging bare (and possibly zeroed) numbers. The alternative to typing calories/protein by hand. */
+  const [pickerFreeText, setPickerFreeText] = useState("");
 
   const [frequentWorkouts, setFrequentWorkouts] = useState<FrequentWorkout[]>([]);
   const [pickedWorkout, setPickedWorkout] = useState("");
@@ -329,6 +336,7 @@ export default function Today() {
     e.preventDefault();
     const submittedText = text;
     const submittedFiles = files;
+    const submittedCaptions = fileCaptions;
     const submittedCalories = manualCalories;
     const submittedProtein = manualProtein;
     // Clear immediately — the box shouldn't still show the question while
@@ -336,6 +344,7 @@ export default function Today() {
     // same pattern in ChatPanel.tsx).
     setText("");
     setFiles([]);
+    setFileCaptions([]);
     setManualCalories("");
     setManualProtein("");
     setBusy(true);
@@ -351,11 +360,13 @@ export default function Today() {
         imageUrls = await Promise.all(submittedFiles.map((f) => uploadNutritionImage(currentUser.uid, f)));
       }
 
+      const combinedText = combinePhotoCaptions(submittedText, submittedCaptions);
+
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
-          text: submittedText || undefined,
+          text: combinedText || undefined,
           imageUrls,
           date: localDateKey(),
           lang,
@@ -375,6 +386,7 @@ export default function Today() {
       setError(String(err instanceof Error ? err.message : err));
       setText(submittedText);
       setFiles(submittedFiles);
+      setFileCaptions(submittedCaptions);
       setManualCalories(submittedCalories);
       setManualProtein(submittedProtein);
     } finally {
@@ -386,6 +398,7 @@ export default function Today() {
     setPickedMeal(name);
     setPickerPer100g(null);
     setPickerQuantity("");
+    setPickerFreeText("");
     const m = frequentMeals.find((f) => f.name === name);
     const hasHistory = !!m && (m.avgCalories > 0 || m.avgProtein > 0);
     setPickerGrams(m?.avgGrams != null ? String(m.avgGrams) : "");
@@ -487,30 +500,52 @@ export default function Today() {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("Not signed in");
       const idToken = await currentUser.getIdToken();
+      const freeText = pickerFreeText.trim();
+      // A description beyond the bare chip name ("with olive oil and rice")
+      // goes through the same AI-parse path as free-typed meals — the
+      // alternative to typing calories/protein by hand, and the way to
+      // avoid the picker logging a zeroed-out entry when there's no history
+      // or USDA match for this food. Still lets any manually-typed number
+      // below override the parser's own estimate (same as the free-text form).
+      const body = freeText
+        ? {
+            text: `${pickedMeal}: ${freeText}`,
+            date: localDateKey(),
+            lang,
+            overrideCalories: pickerCalories ? Number(pickerCalories) : undefined,
+            overrideProtein: pickerProtein ? Number(pickerProtein) : undefined,
+          }
+        : {
+            parsed: {
+              items: [
+                {
+                  description: pickedMeal,
+                  calories: Number(pickerCalories) || 0,
+                  protein: Number(pickerProtein) || 0,
+                  grams: pickerGrams ? Number(pickerGrams) : undefined,
+                },
+              ],
+            },
+            date: localDateKey(),
+          };
       const res = await fetch("/api/nutrition", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          parsed: {
-            items: [
-              {
-                description: pickedMeal,
-                calories: Number(pickerCalories) || 0,
-                protein: Number(pickerProtein) || 0,
-                grams: pickerGrams ? Number(pickerGrams) : undefined,
-              },
-            ],
-          },
-          date: localDateKey(),
-        }),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(data, res.statusText));
+      if (data.flagged) {
+        setError(data.message);
+        return;
+      }
       setPickedMeal("");
       setPickerGrams("");
       setPickerCalories("");
       setPickerProtein("");
       setPickerPer100g(null);
       setPickerQuantity("");
+      setPickerFreeText("");
       await refresh(currentUser.uid);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -1026,6 +1061,17 @@ export default function Today() {
                       </div>
                     )}
                     {pickedMeal && (
+                      <>
+                        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("pickerFreeTextHint")}</p>
+                        <input
+                          type="text"
+                          value={pickerFreeText}
+                          onChange={(e) => setPickerFreeText(e.target.value)}
+                          placeholder={t("pickerFreeTextPlaceholder")}
+                        />
+                      </>
+                    )}
+                    {pickedMeal && (
                       <button type="submit" className="btn-primary" disabled={pickerMealBusy}>
                         {pickerMealBusy ? t("logging") : t("logIt")}
                       </button>
@@ -1037,11 +1083,6 @@ export default function Today() {
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (text || files.length) && !busy) {
-                    submitMeal(e);
-                  }
-                }}
                 placeholder={files.length ? t("photoCaptionPlaceholder") : t("addMealPlaceholder")}
                 rows={2}
               />
@@ -1060,6 +1101,7 @@ export default function Today() {
                       const picked = Array.from(e.target.files ?? []);
                       if (picked.length === 0) return;
                       setFiles((prev) => [...prev, ...picked].slice(0, MAX_MEAL_PHOTOS));
+                      setFileCaptions((prev) => [...prev, ...picked.map(() => "")].slice(0, MAX_MEAL_PHOTOS));
                       e.target.value = "";
                     }}
                     style={{ display: "none" }}
@@ -1067,40 +1109,58 @@ export default function Today() {
                 </label>
               </div>
               {files.length > 0 && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {files.map((f, i) => (
-                    <div key={i} style={{ position: "relative", flexShrink: 0, width: 44, height: 44 }}>
-                      <img
-                        src={filePreviewUrls[i]}
-                        alt=""
-                        style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                    <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, width: 64 }}>
+                      <div style={{ position: "relative", flexShrink: 0, width: 64, height: 64 }}>
+                        <img
+                          src={filePreviewUrls[i]}
+                          alt=""
+                          style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "0.5px solid var(--border)", display: "block" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFiles((prev) => prev.filter((_, j) => j !== i));
+                            setFileCaptions((prev) => prev.filter((_, j) => j !== i));
+                          }}
+                          aria-label={t("removePhoto")}
+                          title={t("removePhoto")}
+                          style={{
+                            position: "absolute",
+                            top: -6,
+                            insetInlineEnd: -6,
+                            width: 16,
+                            height: 16,
+                            borderRadius: "50%",
+                            border: "none",
+                            background: "var(--danger)",
+                            color: "#fff",
+                            fontSize: 10,
+                            lineHeight: 1,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 0,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={fileCaptions[i] ?? ""}
+                        onChange={(e) =>
+                          setFileCaptions((prev) => {
+                            const next = [...prev];
+                            next[i] = e.target.value;
+                            return next;
+                          })
+                        }
+                        placeholder={t("photoNotePlaceholder")}
+                        style={{ width: 64, padding: "4px 6px" }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                        aria-label={t("removePhoto")}
-                        title={t("removePhoto")}
-                        style={{
-                          position: "absolute",
-                          top: -6,
-                          insetInlineEnd: -6,
-                          width: 16,
-                          height: 16,
-                          borderRadius: "50%",
-                          border: "none",
-                          background: "var(--danger)",
-                          color: "#fff",
-                          fontSize: 10,
-                          lineHeight: 1,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                        }}
-                      >
-                        ×
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -1257,6 +1317,11 @@ export default function Today() {
                               {t("ingredients")}: {entry.ingredients.join(", ")}
                             </div>
                           )}
+                          {entry.nutritionNote && (
+                            <div style={{ marginTop: 4 }}>
+                              {t("nutritionSourceLabel")}: {entry.nutritionNote}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -1404,6 +1469,11 @@ export default function Today() {
                         {entry.ingredients && entry.ingredients.length > 0 && (
                           <div style={{ marginTop: 4 }}>
                             {t("ingredients")}: {entry.ingredients.join(", ")}
+                          </div>
+                        )}
+                        {entry.nutritionNote && (
+                          <div style={{ marginTop: 4 }}>
+                            {t("nutritionSourceLabel")}: {entry.nutritionNote}
                           </div>
                         )}
                       </div>
@@ -1798,11 +1868,6 @@ export default function Today() {
                   <textarea
                     value={workoutText}
                     onChange={(e) => setWorkoutText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && (workoutText || workoutFile) && !workoutBusy) {
-                        submitWorkout(e);
-                      }
-                    }}
                     placeholder={t("workoutPlaceholder")}
                     rows={2}
                   />
@@ -1846,11 +1911,6 @@ export default function Today() {
                   <textarea
                     value={stepsText}
                     onChange={(e) => setStepsText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && (stepsText || stepsFile) && !stepsBusy) {
-                        submitSteps(e);
-                      }
-                    }}
                     placeholder={t("stepsPlaceholder")}
                     rows={1}
                   />

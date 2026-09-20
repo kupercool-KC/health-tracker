@@ -53,6 +53,12 @@ const itemSchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => (typeof v === "string" ? [v] : v)),
+  // Carried through unchanged when set (the chat confirm flow resends
+  // parseNutrition's own output) — defaulted below to "manual" when a
+  // client builds `parsed` itself (the frequent-meal picker) instead of
+  // getting it from the parser.
+  nutritionSource: z.enum(["manual", "explicit", "usda", "web", "model"]).optional(),
+  nutritionNote: z.string().optional(),
 });
 
 const parsedNutritionSchema = z.object({ items: z.array(itemSchema).min(1) });
@@ -135,12 +141,26 @@ export async function POST(req: Request) {
           description: text?.trim() || strings.meal[lang ?? "en"],
           calories: overrideCalories,
           protein: overrideProtein,
+          nutritionSource: "manual",
+          nutritionNote: strings.nutritionSourceManual[lang ?? "en"],
         },
       ],
     };
+  } else if (parsedBody.data.parsed) {
+    // A client-built `parsed` with no provenance on an item means it was
+    // assembled directly by the client (the frequent-meal picker), not
+    // returned by parseNutrition — the chat confirm flow's resend already
+    // carries nutritionSource/nutritionNote from the original parse.
+    parsed = {
+      items: parsedBody.data.parsed.items.map((item) =>
+        item.nutritionSource
+          ? item
+          : { ...item, nutritionSource: "manual" as const, nutritionNote: strings.nutritionSourceManual[lang ?? "en"] },
+      ),
+    };
   } else {
     try {
-      parsed = parsedBody.data.parsed ?? (await parseNutrition({ text, imageUrls, lang }));
+      parsed = await parseNutrition({ text, imageUrls, lang });
     } catch (err) {
       return NextResponse.json(
         { error: "Failed to parse nutrition", detail: String(err) },
@@ -157,6 +177,8 @@ export async function POST(req: Request) {
           ...item,
           ...(overrideCalories != null ? { calories: overrideCalories } : {}),
           ...(overrideProtein != null ? { protein: overrideProtein } : {}),
+          nutritionSource: "manual",
+          nutritionNote: strings.nutritionSourceAdjusted[lang ?? "en"],
         },
       ],
     };
@@ -179,6 +201,8 @@ export async function POST(req: Request) {
     source: imageUrls?.length ? "photo" : "text",
     confidence: item.confidence,
     confirmedAt: now,
+    nutritionSource: item.nutritionSource,
+    nutritionNote: item.nutritionNote,
   }));
 
   const ref = adminDb.collection("users").doc(uid).collection("meals").doc(dateStr);

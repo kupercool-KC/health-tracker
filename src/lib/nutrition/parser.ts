@@ -143,21 +143,40 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   // this way, and a photo with no visible calorie count on the label is
   // exactly the case where the model's freehand guess is least reliable.
   // Skipped for any field the user explicitly stated (that always wins).
+  //
+  // Kept in a parallel array rather than added onto `item` itself — `item`
+  // is zod-parsed output typed by itemSchema, which doesn't carry these
+  // fields — so provenance stays index-aligned with parsed.items until the
+  // final map below.
+  const provenance: { source: "explicit" | "usda" | "web" | "model"; note: string }[] = [];
   for (const item of parsed.items) {
-    if (!item.estimatedGrams || (item.explicitCalories && item.explicitProtein)) continue;
+    const fullyExplicit = !!(item.explicitCalories && item.explicitProtein);
+    if (!item.estimatedGrams || fullyExplicit) {
+      provenance.push({
+        source: fullyExplicit ? "explicit" : "model",
+        note: nutritionNote(fullyExplicit ? "explicit" : "model", null, input.lang),
+      });
+      continue;
+    }
     const term = item.usdaSearchTerm || item.description;
-    const usda = (await lookupUsdaNutrients(term)) ?? (await webSearchNutrition(term));
-    if (!usda) continue;
+    const usda = await lookupUsdaNutrients(term);
+    const web = usda ? null : await webSearchNutrition(term);
+    const match = usda ?? web;
+    if (!match) {
+      provenance.push({ source: "model", note: nutritionNote("model", null, input.lang) });
+      continue;
+    }
     if (!item.explicitCalories) {
-      item.calories = Math.round((usda.caloriesPer100g * item.estimatedGrams) / 100);
+      item.calories = Math.round((match.caloriesPer100g * item.estimatedGrams) / 100);
     }
     if (!item.explicitProtein) {
-      item.protein = Math.round(((usda.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
+      item.protein = Math.round(((match.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
     }
+    provenance.push({ source: usda ? "usda" : "web", note: nutritionNote(usda ? "usda" : "web", match, input.lang) });
   }
 
   return {
-    items: parsed.items.map((item) => ({
+    items: parsed.items.map((item, i) => ({
       description: item.description,
       calories: item.calories,
       protein: item.protein,
@@ -167,6 +186,23 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
       confidence: item.confidence,
       grams: item.estimatedGrams,
       ingredients: item.ingredients,
+      nutritionSource: provenance[i]?.source,
+      nutritionNote: provenance[i]?.note,
     })),
   };
+}
+
+/** One-line, already-localized explanation of how an item's numbers were determined — see MealEntry.nutritionNote. */
+function nutritionNote(
+  source: "explicit" | "usda" | "web" | "model",
+  match: { matchedName: string } | null,
+  lang: "en" | "he" = "en",
+): string {
+  if (source === "explicit") {
+    return lang === "he" ? "צוין במלל שלך ונעשה בו שימוש כפי שהוא." : "Stated in your message and used as-is.";
+  }
+  if (match) {
+    return lang === "he" ? `הותאם למאגר תזונה: ${match.matchedName}.` : `Matched to a nutrition database: ${match.matchedName}.`;
+  }
+  return lang === "he" ? "הערכת AI — לא נמצא מקור מאומת." : "AI estimate — no verified source matched.";
 }

@@ -1093,6 +1093,11 @@ export default function History() {
                     {t("ingredients")}: {e.ingredients.join(", ")}
                   </div>
                 )}
+                {e.nutritionNote && (
+                  <div style={{ color: "var(--muted)", fontSize: 12 }}>
+                    {t("nutritionSourceLabel")}: {e.nutritionNote}
+                  </div>
+                )}
               </div>
             ))
           )}

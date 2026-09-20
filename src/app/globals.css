@@ -194,8 +194,25 @@ input,
 textarea,
 select {
   font-family: inherit;
-  font-size: 15px;
   color: inherit;
+}
+
+button {
+  font-size: 15px;
+}
+
+/* iOS Safari auto-zooms the whole page on focus for any text input whose
+   font-size is under 16px, then leaves the viewport zoomed in after blur —
+   the "page keeps shrinking/enlarging when I tap a field" bug. 16px is the
+   documented threshold; keeping every real text-entry control at or above
+   it (not just the shared .field class, since some inputs below opt out of
+   .field's border/radius but still take text) avoids triggering it at all,
+   which is the correct fix — disabling user zoom via the viewport meta
+   would "fix" this by breaking pinch-zoom accessibility instead. */
+input,
+textarea,
+select {
+  font-size: 16px;
 }
 
 button,
