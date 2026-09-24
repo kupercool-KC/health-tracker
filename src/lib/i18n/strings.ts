@@ -237,6 +237,12 @@ export const strings = {
   durationMinPlaceholder: { en: "Minutes", he: "דקות" },
   pacePlaceholder: { en: "Pace (M:SS/km, optional)", he: "קצב (דק:שנ/ק\"מ, אופציונלי)" },
   distanceKmPlaceholder: { en: "Distance km (optional)", he: "מרחק בק\"מ (אופציונלי)" },
+  distanceLabel: { en: "Distance (km)", he: "מרחק (ק\"מ)" },
+  durationLabel: { en: "Duration (min)", he: "משך (דקות)" },
+  gramsLabelShort: { en: "Grams", he: "גרם" },
+  caloriesLabel: { en: "Calories", he: "קלוריות" },
+  proteinLabel: { en: "Protein (g)", he: "חלבון (גרם)" },
+  clearFields: { en: "Clear", he: "נקה" },
 
   workoutWalking: { en: "Walking", he: "הליכה" },
   workoutPadel: { en: "Padel", he: "פאדל" },

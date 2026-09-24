@@ -781,7 +781,12 @@ export default function History() {
         <p style={{ color: "var(--muted)" }}>{t("loading")}</p>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 6, marginTop: 16 }}>
+          {/* direction: ltr — chart below this strip is plain SVG and never
+              mirrors under RTL; without this, the flexbox here auto-mirrors
+              in Hebrew (today ends up on the left) while the SVG chart still
+              reads oldest→newest left→right, so the two disagree and a tap
+              lands on the visually-opposite day from what it looks like. */}
+          <div style={{ display: "flex", gap: 6, marginTop: 16, direction: "ltr" }}>
             {last7.map((d) => {
               const isToday = d.date === today;
               const dayNum = Number(d.date.slice(8, 10));
@@ -836,6 +841,7 @@ export default function History() {
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
                 type="date"
+                lang={lang}
                 value={customFrom}
                 max={customTo}
                 onChange={(e) => {
@@ -847,6 +853,7 @@ export default function History() {
               <span style={{ color: "var(--muted)" }}>–</span>
               <input
                 type="date"
+                lang={lang}
                 value={customTo}
                 min={customFrom}
                 max={today}

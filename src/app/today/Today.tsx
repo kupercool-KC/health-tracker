@@ -23,6 +23,7 @@ import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
 import { combinePhotoCaptions } from "@/lib/text/combinePhotoCaptions";
 import MicButton from "../MicButton";
+import WheelPicker from "./WheelPicker";
 
 /** One of Today's readout accents — each has a matching `--{tone}-bg` tint. */
 type MetricTone = "calories" | "protein" | "burned" | "net" | "steps";
@@ -126,6 +127,34 @@ function parsePaceToSecPerKm(text: string): number | null {
   const match = text.trim().match(/^(\d+):([0-5]?\d)$/);
   if (!match) return null;
   return Number(match[1]) * 60 + Number(match[2]);
+}
+
+/** A WheelPicker with a small caption above it — used throughout the meal/workout entry forms. */
+function LabeledWheel({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  decimals,
+  unit,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  decimals?: number;
+  unit?: string;
+}) {
+  return (
+    <div style={{ flex: "1 1 90px", minWidth: 90 }}>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>{label}</div>
+      <WheelPicker value={value} onChange={onChange} min={min} max={max} step={step} decimals={decimals} unit={unit} />
+    </div>
+  );
 }
 
 export default function Today() {
@@ -1034,30 +1063,43 @@ export default function Today() {
                           disabled={pickerQuantityBusy}
                           style={{ flex: "1 1 130px" }}
                         />
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                        <LabeledWheel
+                          label={t("gramsLabelShort")}
                           value={pickerGrams}
-                          onChange={(e) => onPickerGramsChange(e.target.value)}
-                          placeholder={t("gramsPlaceholder")}
-                          style={{ flex: "1 1 130px" }}
+                          onChange={(v) => onPickerGramsChange(String(v))}
+                          min={0}
+                          max={1000}
+                          step={5}
                         />
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                        <LabeledWheel
+                          label={t("caloriesLabel")}
                           value={pickerCalories}
-                          onChange={(e) => onPickerCaloriesChange(e.target.value)}
-                          placeholder={t("manualCaloriesPlaceholder")}
-                          style={{ flex: "1 1 130px" }}
+                          onChange={(v) => onPickerCaloriesChange(String(v))}
+                          min={0}
+                          max={3000}
+                          step={5}
                         />
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                        <LabeledWheel
+                          label={t("proteinLabel")}
                           value={pickerProtein}
-                          onChange={(e) => onPickerProteinChange(e.target.value)}
-                          placeholder={t("manualProteinPlaceholder")}
-                          style={{ flex: "1 1 130px" }}
+                          onChange={(v) => onPickerProteinChange(String(v))}
+                          min={0}
+                          max={300}
+                          step={1}
                         />
+                        {(pickerGrams || pickerCalories || pickerProtein) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPickerGrams("");
+                              setPickerCalories("");
+                              setPickerProtein("");
+                            }}
+                            style={{ padding: "6px 10px", fontSize: 12, alignSelf: "flex-end" }}
+                          >
+                            {t("clearFields")}
+                          </button>
+                        )}
                       </div>
                     )}
                     {pickedMeal && (
@@ -1166,23 +1208,35 @@ export default function Today() {
                 </div>
               )}
               <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("photoUploadHint")}</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <input
-                  type="number"
-                  inputMode="numeric"
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
+                <LabeledWheel
+                  label={t("caloriesLabel")}
                   value={manualCalories}
-                  onChange={(e) => setManualCalories(e.target.value)}
-                  placeholder={t("manualCaloriesPlaceholder")}
-                  style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                  onChange={(v) => setManualCalories(String(v))}
+                  min={0}
+                  max={3000}
+                  step={5}
                 />
-                <input
-                  type="number"
-                  inputMode="numeric"
+                <LabeledWheel
+                  label={t("proteinLabel")}
                   value={manualProtein}
-                  onChange={(e) => setManualProtein(e.target.value)}
-                  placeholder={t("manualProteinPlaceholder")}
-                  style={{ flex: "1 1 130px", padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                  onChange={(v) => setManualProtein(String(v))}
+                  min={0}
+                  max={300}
+                  step={1}
                 />
+                {(manualCalories || manualProtein) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualCalories("");
+                      setManualProtein("");
+                    }}
+                    style={{ padding: "6px 10px", fontSize: 12 }}
+                  >
+                    {t("clearFields")}
+                  </button>
+                )}
               </div>
               <button type="submit" className="btn-primary" disabled={busy || (!text && files.length === 0)}>
                 {busy ? t("logging") : t("logIt")}
@@ -1821,38 +1875,56 @@ export default function Today() {
                       ))}
                     </div>
                     {pickedWorkout && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
+                        <LabeledWheel
+                          label={t("distanceLabel")}
                           value={pickerDistanceKm}
-                          onChange={(e) => setPickerDistanceKm(e.target.value)}
-                          placeholder={t("distanceKmPlaceholder")}
-                          style={{ flex: 1, minWidth: 90 }}
+                          onChange={(v) => setPickerDistanceKm(String(v))}
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          decimals={1}
                         />
-                        <input
-                          value={pickerPace}
-                          onChange={(e) => setPickerPace(e.target.value)}
-                          placeholder={t("pacePlaceholder")}
-                          style={{ flex: 1, minWidth: 90 }}
-                        />
-                        <input
-                          type="number"
-                          inputMode="numeric"
+                        <div style={{ flex: 1, minWidth: 90 }}>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>{t("pacePlaceholder")}</div>
+                          <input
+                            value={pickerPace}
+                            onChange={(e) => setPickerPace(e.target.value)}
+                            placeholder={t("pacePlaceholder")}
+                            style={{ width: "100%" }}
+                          />
+                        </div>
+                        <LabeledWheel
+                          label={t("caloriesLabel")}
                           value={pickerWorkoutCalories}
-                          onChange={(e) => setPickerWorkoutCalories(e.target.value)}
-                          placeholder={t("manualCaloriesPlaceholder")}
-                          style={{ flex: 1, minWidth: 90 }}
+                          onChange={(v) => setPickerWorkoutCalories(String(v))}
+                          min={0}
+                          max={2000}
+                          step={5}
                         />
                         {!parsePaceToSecPerKm(pickerPace) && (
-                          <input
-                            type="number"
-                            inputMode="numeric"
+                          <LabeledWheel
+                            label={t("durationLabel")}
                             value={pickerDurationMin}
-                            onChange={(e) => setPickerDurationMin(e.target.value)}
-                            placeholder={t("durationMinPlaceholder")}
-                            style={{ flex: 1, minWidth: 90 }}
+                            onChange={(v) => setPickerDurationMin(String(v))}
+                            min={0}
+                            max={300}
+                            step={1}
                           />
+                        )}
+                        {(pickerDistanceKm || pickerWorkoutCalories || pickerDurationMin || pickerPace) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPickerDistanceKm("");
+                              setPickerWorkoutCalories("");
+                              setPickerDurationMin("");
+                              setPickerPace("");
+                            }}
+                            style={{ padding: "6px 10px", fontSize: 12, alignSelf: "flex-end" }}
+                          >
+                            {t("clearFields")}
+                          </button>
                         )}
                       </div>
                     )}

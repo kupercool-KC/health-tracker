@@ -90,6 +90,7 @@ export async function getStepsSince(uid: string, sinceDate: string, untilDate?: 
 export interface FrequentMeal {
   name: string;
   count: number;
+  /** Despite the name, this is the MOST RECENTLY logged value for this meal, not a mean — see getFrequentMeals. */
   avgCalories: number;
   avgProtein: number;
   avgGrams?: number;
@@ -111,13 +112,20 @@ const FREQUENT_MEAL_HALF_LIFE_DAYS = 7;
  * though its raw count within the 30-day window is still high — a food not
  * eaten in over a week shouldn't keep dominating the picker just because it
  * was a habit earlier in the window.
+ *
+ * The calorie/protein/grams shown are the MOST RECENTLY logged values for
+ * that meal, not a mean across history — a long-run average diluted a
+ * manual correction (e.g. fixing a wrong portion size) almost invisibly, so
+ * picking the same meal again kept prefilling the old, uncorrected number.
+ * `days` comes back in ascending date order, so simply overwriting on each
+ * occurrence as we iterate leaves the latest entry's values in place.
  */
 export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8): Promise<FrequentMeal[]> {
   const days = await getMealDaysSince(uid, localDateKeyDaysAgo(sinceDaysAgo));
   const now = Date.now();
   const groups = new Map<
     string,
-    { name: string; count: number; weight: number; calories: number; protein: number; grams: number; gramsCount: number }
+    { name: string; count: number; weight: number; calories: number; protein: number; grams?: number }
   >();
   for (const day of days) {
     const daysAgo = Math.max(0, (now - new Date(`${day.date}T00:00:00`).getTime()) / 86_400_000);
@@ -125,17 +133,13 @@ export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8
     for (const entry of day.entries) {
       const key = entry.name.trim().toLowerCase();
       if (!key) continue;
-      const g =
-        groups.get(key) ?? { name: entry.name.trim(), count: 0, weight: 0, calories: 0, protein: 0, grams: 0, gramsCount: 0 };
+      const g = groups.get(key) ?? { name: entry.name.trim(), count: 0, weight: 0, calories: 0, protein: 0 };
       g.name = entry.name.trim();
       g.count += 1;
       g.weight += decay;
-      g.calories += entry.calories;
-      g.protein += entry.protein;
-      if (entry.grams != null) {
-        g.grams += entry.grams;
-        g.gramsCount += 1;
-      }
+      g.calories = entry.calories;
+      g.protein = entry.protein;
+      g.grams = entry.grams;
       groups.set(key, g);
     }
   }
@@ -145,9 +149,9 @@ export async function getFrequentMeals(uid: string, sinceDaysAgo = 30, limit = 8
     .map((g) => ({
       name: g.name,
       count: g.count,
-      avgCalories: Math.round(g.calories / g.count),
-      avgProtein: Math.round((g.protein / g.count) * 10) / 10,
-      avgGrams: g.gramsCount > 0 ? Math.round(g.grams / g.gramsCount) : undefined,
+      avgCalories: Math.round(g.calories),
+      avgProtein: Math.round(g.protein * 10) / 10,
+      avgGrams: g.grams != null ? Math.round(g.grams) : undefined,
     }));
 }
 
