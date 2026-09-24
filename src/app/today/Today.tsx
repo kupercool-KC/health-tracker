@@ -1027,7 +1027,7 @@ export default function Today() {
                           onChange={(v) => onPickerCaloriesChange(String(v))}
                           min={0}
                           max={3000}
-                          step={5}
+                          step={1}
                         />
                         <LabeledWheel
                           label={t("proteinLabel")}
@@ -1165,7 +1165,7 @@ export default function Today() {
                   onChange={(v) => setManualCalories(String(v))}
                   min={0}
                   max={3000}
-                  step={5}
+                  step={1}
                 />
                 <LabeledWheel
                   label={t("proteinLabel")}
