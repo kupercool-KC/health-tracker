@@ -228,7 +228,6 @@ export const strings = {
   pickFrequentMeal: { en: "— Pick a recent meal —", he: "— בחר מאכל שנרשם בעבר —" },
   pickFrequentWorkout: { en: "— Pick a past workout —", he: "— בחר אימון שנרשם בעבר —" },
   gramsPlaceholder: { en: "Grams (optional)", he: "גרם (אופציונלי)" },
-  quantityPlaceholder: { en: "e.g. 1 date", he: 'לדוגמה: תמר אחד' },
   pickerFreeTextHint: {
     en: "Add detail (portion, ingredients) and we'll work out the numbers — or type calories/protein above instead.",
     he: "אפשר להוסיף פרטים (כמות, מרכיבים) ואנחנו נחשב את הערכים — או להזין קלוריות/חלבון למעלה במקום.",

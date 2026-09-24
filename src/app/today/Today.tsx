@@ -238,9 +238,6 @@ export default function Today() {
   const [pickerMealBusy, setPickerMealBusy] = useState(false);
   /** Per-100g USDA values for the picked meal name, used to auto-fill whichever of grams/calories/protein the user didn't type. */
   const [pickerPer100g, setPickerPer100g] = useState<{ caloriesPer100g: number; proteinPer100g: number } | null>(null);
-  /** Unit-based amount ("1 date", "2 slices") for when the user knows how much they ate but not the gram weight — converted to grams via /api/nutrition/lookup's quantity estimate. */
-  const [pickerQuantity, setPickerQuantity] = useState("");
-  const [pickerQuantityBusy, setPickerQuantityBusy] = useState(false);
   /** Free-form addition to the picked meal ("with olive oil and rice") — when filled, the whole thing goes through the AI parser instead of logging bare (and possibly zeroed) numbers. The alternative to typing calories/protein by hand. */
   const [pickerFreeText, setPickerFreeText] = useState("");
 
@@ -426,7 +423,6 @@ export default function Today() {
   async function selectFrequentMeal(name: string) {
     setPickedMeal(name);
     setPickerPer100g(null);
-    setPickerQuantity("");
     setPickerFreeText("");
     const m = frequentMeals.find((f) => f.name === name);
     const hasHistory = !!m && (m.avgCalories > 0 || m.avgProtein > 0);
@@ -463,36 +459,6 @@ export default function Today() {
     }
   }
 
-  /**
-   * Lets the user say how much they ate in everyday units ("1 date", "2
-   * slices") instead of grams — /api/nutrition/lookup estimates the gram
-   * weight for that quantity of this food (via the model's general
-   * knowledge of typical unit weights), then feeds it through the same
-   * grams→calories/protein conversion as typing grams directly.
-   */
-  async function applyPickerQuantity() {
-    if (!pickedMeal || !pickerQuantity.trim()) return;
-    setPickerQuantityBusy(true);
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-      const idToken = await currentUser.getIdToken();
-      const res = await fetch("/api/nutrition/lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ query: pickedMeal, quantity: pickerQuantity.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      const estimatedGrams = data.estimatedGrams as number | null | undefined;
-      if (estimatedGrams != null) {
-        onPickerGramsChange(String(Math.round(estimatedGrams)));
-      }
-    } catch {
-      // best-effort — manual gram entry still works
-    } finally {
-      setPickerQuantityBusy(false);
-    }
-  }
 
   function onPickerGramsChange(value: string) {
     setPickerGrams(value);
@@ -573,7 +539,6 @@ export default function Today() {
       setPickerCalories("");
       setPickerProtein("");
       setPickerPer100g(null);
-      setPickerQuantity("");
       setPickerFreeText("");
       await refresh(currentUser.uid);
     } catch (err) {
@@ -1047,22 +1012,7 @@ export default function Today() {
                       ))}
                     </div>
                     {pickedMeal && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <input
-                          type="text"
-                          value={pickerQuantity}
-                          onChange={(e) => setPickerQuantity(e.target.value)}
-                          onBlur={applyPickerQuantity}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              applyPickerQuantity();
-                            }
-                          }}
-                          placeholder={t("quantityPlaceholder")}
-                          disabled={pickerQuantityBusy}
-                          style={{ flex: "1 1 130px" }}
-                        />
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
                         <LabeledWheel
                           label={t("gramsLabelShort")}
                           value={pickerGrams}
