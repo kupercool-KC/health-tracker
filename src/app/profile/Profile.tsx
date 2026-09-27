@@ -26,7 +26,16 @@ import {
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { StringKey } from "@/lib/i18n/strings";
-import type { ActivityLevel, DietaryPref, Goal, UserProfile, WorkoutType } from "@/lib/types";
+import type { ActivityLevel, CustomGoalDef, DietaryPref, Goal, UserProfile, WorkoutType } from "@/lib/types";
+
+/** Offered as one-tap starting points when the user has no custom goals yet — still fully editable/removable afterward. `nameKey`/`unitKey` resolve through t() at add-time so the stored name matches whatever language the user is in. */
+const SUGGESTED_GOALS: Array<{ nameKey: StringKey; type: "boolean" | "numeric"; unitKey?: StringKey; target?: number }> = [
+  { nameKey: "suggestedGoalWater", type: "numeric", unitKey: "suggestedGoalCupsUnit", target: 8 },
+  { nameKey: "suggestedGoalRead", type: "numeric", unitKey: "suggestedGoalPagesUnit", target: 10 },
+  { nameKey: "suggestedGoalSleep", type: "boolean" },
+  { nameKey: "suggestedGoalMeditate", type: "boolean" },
+  { nameKey: "suggestedGoalStretch", type: "boolean" },
+];
 
 const GENDER_OPTIONS: Array<{ value: NonNullable<UserProfile["gender"]>; labelKey: StringKey }> = [
   { value: "male", labelKey: "genderMale" },
@@ -122,6 +131,13 @@ export default function Profile() {
   const [ghProteinGoal, setGhProteinGoal] = useState("");
   const [ghBusy, setGhBusy] = useState(false);
 
+  const [customGoals, setCustomGoals] = useState<CustomGoalDef[]>([]);
+  const [newGoalName, setNewGoalName] = useState("");
+  const [newGoalType, setNewGoalType] = useState<"boolean" | "numeric">("boolean");
+  const [newGoalUnit, setNewGoalUnit] = useState("");
+  const [newGoalTarget, setNewGoalTarget] = useState("");
+  const [customGoalsBusy, setCustomGoalsBusy] = useState(false);
+
   const [retroDays, setRetroDays] = useState("3");
   const [retroBusy, setRetroBusy] = useState(false);
   const [retroResults, setRetroResults] = useState<
@@ -154,8 +170,44 @@ export default function Profile() {
       if (p.allergies) setInfoAllergies(p.allergies.join(", "));
       if (p.avoidFoods) setInfoAvoidFoods(p.avoidFoods.join(", "));
       if (p.preferredFoods) setInfoPreferredFoods(p.preferredFoods.join(", "));
+      if (p.customGoals) setCustomGoals(p.customGoals);
     });
   }, [user]);
+
+  async function saveCustomGoals(next: CustomGoalDef[]) {
+    if (!user) return;
+    setCustomGoalsBusy(true);
+    setError(null);
+    try {
+      const ref = doc(db, "users", user.uid, "meta", "profile");
+      await setDoc(ref, { customGoals: next, updatedAt: new Date().toISOString() }, { merge: true });
+      setCustomGoals(next);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setCustomGoalsBusy(false);
+    }
+  }
+
+  function addCustomGoal(def: Omit<CustomGoalDef, "id">) {
+    saveCustomGoals([...customGoals, { ...def, id: crypto.randomUUID() }]);
+  }
+
+  function removeCustomGoal(id: string) {
+    saveCustomGoals(customGoals.filter((g) => g.id !== id));
+  }
+
+  function submitNewGoal() {
+    if (!newGoalName.trim()) return;
+    addCustomGoal({
+      name: newGoalName.trim(),
+      type: newGoalType,
+      ...(newGoalType === "numeric" ? { unit: newGoalUnit.trim() || undefined, target: Number(newGoalTarget) || undefined } : {}),
+    });
+    setNewGoalName("");
+    setNewGoalUnit("");
+    setNewGoalTarget("");
+  }
 
   async function addGoalHistoryEntry() {
     if (!user || !ghDate) return;
@@ -584,6 +636,106 @@ export default function Profile() {
           </Link>
         </div>
         {goalsSaved && <p style={{ color: "var(--burned)" }}>{t("saved")}</p>}
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("customGoalsTitle")}</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("customGoalsHint")}</p>
+
+        {customGoals.length > 0 && (
+          <div style={{ display: "grid", gap: 4 }}>
+            {customGoals.map((g) => (
+              <div
+                key={g.id}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, borderTop: "0.5px solid var(--border)", padding: "6px 0" }}
+              >
+                <span>
+                  {g.name}
+                  {g.type === "numeric" && (
+                    <span style={{ color: "var(--muted)" }}>
+                      {" "}
+                      ({g.target ?? "?"} {g.unit ?? ""})
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={() => removeCustomGoal(g.id)}
+                  disabled={customGoalsBusy}
+                  aria-label={t("delete")}
+                  title={t("delete")}
+                  style={{ border: "none", background: "none", padding: 2, fontSize: 13, color: "var(--calories)" }}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {customGoals.length === 0 && (
+          <div style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("suggestedGoalsLabel")}</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {SUGGESTED_GOALS.map((g) => (
+                <button
+                  key={g.nameKey}
+                  type="button"
+                  onClick={() =>
+                    addCustomGoal({
+                      name: t(g.nameKey),
+                      type: g.type,
+                      ...(g.unitKey ? { unit: t(g.unitKey) } : {}),
+                      ...(g.target != null ? { target: g.target } : {}),
+                    })
+                  }
+                  disabled={customGoalsBusy}
+                  style={chipStyle(false)}
+                >
+                  {t(g.nameKey)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "grid", gap: 8, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={newGoalName}
+              onChange={(e) => setNewGoalName(e.target.value)}
+              placeholder={t("goalNamePlaceholder")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+            <select
+              value={newGoalType}
+              onChange={(e) => setNewGoalType(e.target.value as "boolean" | "numeric")}
+              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            >
+              <option value="boolean">{t("goalTypeBoolean")}</option>
+              <option value="numeric">{t("goalTypeNumeric")}</option>
+            </select>
+          </div>
+          {newGoalType === "numeric" && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="number"
+                value={newGoalTarget}
+                onChange={(e) => setNewGoalTarget(e.target.value)}
+                placeholder={t("goalTargetPlaceholder")}
+                style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+              <input
+                value={newGoalUnit}
+                onChange={(e) => setNewGoalUnit(e.target.value)}
+                placeholder={t("goalUnitPlaceholder")}
+                style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              />
+            </div>
+          )}
+          <button onClick={submitNewGoal} disabled={customGoalsBusy || !newGoalName.trim()}>
+            {customGoalsBusy ? t("working") : t("addCustomGoal")}
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

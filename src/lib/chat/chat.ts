@@ -98,13 +98,26 @@ const INTENTS: ChatIntent[] = [
   "log_meal",
   "log_workout",
   "log_steps",
+  "log_body_metrics",
   "query_history",
   "general_health",
   "manage_meal",
   "out_of_scope",
 ];
 
-export async function classifyIntent(message: string, history: ChatMessage[] = []): Promise<ChatIntent> {
+export async function classifyIntent(
+  message: string,
+  history: ChatMessage[] = [],
+  imageUrls?: string[],
+): Promise<ChatIntent> {
+  // A bare photo (no caption) needs the model to actually SEE it to tell a
+  // plate of food apart from a smart-scale screenshot — text-only
+  // classification has nothing to go on besides a "[photo]" placeholder.
+  const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: "text", text: message }];
+  for (const url of imageUrls ?? []) {
+    userContent.push({ type: "image_url", image_url: { url } });
+  }
+
   const completion = await getOpenAIClient().chat.completions.create({
     model: CHAT_MODEL,
     response_format: { type: "json_object" },
@@ -116,14 +129,15 @@ export async function classifyIntent(message: string, history: ChatMessage[] = [
 - "log_meal": user is describing food they ate, to be logged (for today OR any other day — "add 2 eggs for yesterday" is still log_meal, not manage_meal).
 - "log_workout": user is describing a workout/exercise session to be logged (running, gym, swimming, etc.), for today or any other day.
 - "log_steps": user is reporting a step count to be logged, for today or any other day (e.g. "I walked 8500 steps yesterday", "log 10k steps for Monday").
+- "log_body_metrics": user sent a screenshot (or several) of a smart bathroom scale's app after a weigh-in — showing things like weight, BMI, muscle mass, body fat %, visceral fat, body water %, basal metabolic rate, protein %. Also applies to a captionless photo of exactly this kind of screen. This is a weigh-in reading, not food — never confuse it with log_meal even though both can start as a bare photo.
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
 - "general_health": a nutrition/fitness/health question NOT about their own logged history. Read this broadly — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", sleep, hydration, supplements, recovery, injuries, energy levels, weight management, body composition, motivation/habits around eating or exercise, or answering the assistant's own request for a food/drink/product name so it can answer a question from earlier in the conversation. When a question is adjacent to health/fitness/nutrition or could reasonably be interpreted that way, classify it here rather than out_of_scope. IMPORTANT for a bare photo with no caption text: if you had just asked a general nutrition/comparison question and requested a photo to answer it (e.g. "send me a photo of the menu/dish"), a photo sent right after that is continuing THAT question — classify it general_health, not log_meal, even with zero caption text. Only classify a captionless photo as log_meal when nothing in the recent conversation suggests it's answering an open question — i.e. it's a fresh "here's what I ate" upload.
 - "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
 - "out_of_scope": ONLY for messages with genuinely no plausible nutrition/fitness/health angle, even accounting for the conversation so far (coding help, trivia, unrelated small talk, world news, etc). Give the benefit of the doubt: a short, oddly-phrased, or terse message that plausibly continues the current topic (e.g. it names a food/product/brand right after the assistant asked "which drink?"), or a question that's tangential but still health-adjacent, is NOT out_of_scope. When genuinely torn between general_health and out_of_scope, pick general_health — a wrong refusal is a worse outcome than answering something borderline.
-Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
+Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "log_body_metrics" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
       },
       ...toContextMessages(history),
-      { role: "user", content: message },
+      { role: "user", content: userContent },
     ],
   });
 

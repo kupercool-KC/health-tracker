@@ -11,7 +11,7 @@
  */
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { DailySteps, MealDay, Workout } from "@/lib/types";
+import type { BodyMetricsEntry, DailySteps, MealDay, Workout } from "@/lib/types";
 
 const EMPTY_TOTALS = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
@@ -85,6 +85,14 @@ export async function getStepsSince(uid: string, sinceDate: string, untilDate?: 
     : query(col, where(documentId(), ">=", sinceDate));
   const snap = await getDocs(q);
   return snap.docs.map((d) => d.data() as DailySteps);
+}
+
+/** Same doc-id-range trick as getMealDaysSince — users/{uid}/bodyMetrics/{date}, one doc per weigh-in day. Sorted ascending by date (Firestore's implicit order for an inequality filter on the queried field). */
+export async function getBodyMetricsSince(uid: string, sinceDate: string): Promise<BodyMetricsEntry[]> {
+  const col = collection(db, "users", uid, "bodyMetrics");
+  const q = query(col, where(documentId(), ">=", sinceDate));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as BodyMetricsEntry);
 }
 
 export interface FrequentMeal {

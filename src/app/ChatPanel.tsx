@@ -237,7 +237,7 @@ export default function ChatPanel({
    * effort: the meal/workout/steps/action is already safely saved by the
    * time this runs, so a failure here just leaves stale UI state, not lost data.
    */
-  async function markPendingConfirmed(index: number, kind: "meal" | "workout" | "steps" | "mealAction") {
+  async function markPendingConfirmed(index: number, kind: "meal" | "workout" | "steps" | "mealAction" | "bodyMetrics") {
     if (!activeId) return;
     try {
       const idToken = await auth.currentUser?.getIdToken();
@@ -313,6 +313,29 @@ export default function ChatPanel({
       if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
       setConfirmedKeys((prev) => new Set(prev).add(`${index}:steps`));
       markPendingConfirmed(index, "steps");
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmBodyMetrics(pendingBodyMetrics: NonNullable<ChatMessage["pendingBodyMetrics"]>, index: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const { imageUrls, date, ...parsed } = pendingBodyMetrics;
+      const res = await fetch("/api/body-metrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ parsed, imageUrls, date }),
+      });
+      if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => ({})), res.statusText));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:bodyMetrics`));
+      markPendingConfirmed(index, "bodyMetrics");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -578,6 +601,15 @@ export default function ChatPanel({
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
                 ) : (
                   <button onClick={() => confirmSteps(m.pendingSteps!, i)} disabled={busy} style={{ marginTop: 4 }}>
+                    {t("confirm")}
+                  </button>
+                )
+              )}
+              {m.pendingBodyMetrics && (
+                confirmedKeys.has(`${i}:bodyMetrics`) ? (
+                  <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
+                ) : (
+                  <button onClick={() => confirmBodyMetrics(m.pendingBodyMetrics!, i)} disabled={busy} style={{ marginTop: 4 }}>
                     {t("confirm")}
                   </button>
                 )

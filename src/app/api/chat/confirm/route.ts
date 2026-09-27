@@ -24,12 +24,13 @@ const FIELD_BY_KIND = {
   workout: "pendingWorkout",
   steps: "pendingSteps",
   mealAction: "pendingMealAction",
+  bodyMetrics: "pendingBodyMetrics",
 } as const satisfies Record<string, keyof ChatMessage>;
 
 const bodySchema = z.object({
   sessionId: z.string().min(1),
   messageIndex: z.number().int().min(0),
-  kind: z.enum(["meal", "workout", "steps", "mealAction"]),
+  kind: z.enum(["meal", "workout", "steps", "mealAction", "bodyMetrics"]),
 });
 
 export async function POST(req: Request) {

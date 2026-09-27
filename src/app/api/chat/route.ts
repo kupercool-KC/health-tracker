@@ -17,6 +17,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
+import { parseBodyMetrics } from "@/lib/bodyMetrics/parser";
 import { strings } from "@/lib/i18n/strings";
 import type { CompositeLogDetection } from "@/lib/chat/chat";
 import {
@@ -139,17 +140,6 @@ async function handleChat(req: Request) {
       : null;
   const workoutFollowUpHandled = !!pendingWorkoutFollowUp && pendingWorkoutFollowUp.kind !== "new";
 
-  // A bare image with no text and no prior conversation essentially always
-  // means "log this food" — skip the classifier entirely rather than trust
-  // it to guess right from just a placeholder string. But when there IS
-  // prior conversation, a captionless photo might be answering an open
-  // general_health question ("send me a photo of the menu/dish") instead
-  // of starting a fresh log — let the (now history-aware) classifier decide
-  // rather than blindly assuming log_meal, which previously sent a restaurant
-  // menu screenshot straight into meal-logging's vision parser and produced
-  // confidently wrong, unrelated dish names with no way to say "I don't know".
-  const bareImageNoHistory = !!imageUrls?.length && !message?.trim() && priorMessages.length === 0;
-
   // A bare greeting ("hi", "שלום") isn't a nutrition/fitness question, but
   // answering it with the same hard out_of_scope refusal used for genuinely
   // unrelated requests reads as needlessly blunt for what's often the very
@@ -165,11 +155,11 @@ async function handleChat(req: Request) {
   // message actually describes MORE than one kind of log at once (e.g. a
   // meal AND a workout together) — classifyIntent alone can only pick one
   // bucket, which silently dropped the other half.
-  const skipClassifier = followUpHandled || workoutFollowUpHandled || safety.flagged || greeting || bareImageNoHistory;
+  const skipClassifier = followUpHandled || workoutFollowUpHandled || safety.flagged || greeting;
   const [classifiedIntent, composite] = skipClassifier
     ? [null as ChatIntent | null, { logs: [] } as CompositeLogDetection]
     : await Promise.all([
-        classifyIntent(userContent, priorMessages),
+        classifyIntent(userContent, priorMessages, imageUrls),
         imageUrls?.length ? Promise.resolve({ logs: [] }) : detectCompositeLog(userContent, priorMessages),
       ]);
   const intent: ChatIntent = followUpHandled
@@ -180,9 +170,7 @@ async function handleChat(req: Request) {
         ? "out_of_scope"
         : greeting
           ? "out_of_scope"
-          : bareImageNoHistory
-            ? "log_meal"
-            : classifiedIntent!;
+          : classifiedIntent!;
   const isComposite = composite.logs.length >= 2 && !!message?.trim();
 
   let replyContent: string;
@@ -190,6 +178,7 @@ async function handleChat(req: Request) {
   let pendingMealAction: ChatMessage["pendingMealAction"];
   let pendingWorkout: ChatMessage["pendingWorkout"];
   let pendingSteps: ChatMessage["pendingSteps"];
+  let pendingBodyMetrics: ChatMessage["pendingBodyMetrics"];
 
   if (followUpHandled) {
     replyContent = pendingMealFollowUp!.replyContent!;
@@ -383,6 +372,31 @@ async function handleChat(req: Request) {
       console.error("[chat] parseSteps failed:", err);
       replyContent = parseFailureReply(lang);
     }
+  } else if (intent === "log_body_metrics") {
+    try {
+      const parsed = await parseBodyMetrics({ text: message, imageUrls, history: priorMessages });
+      if (Object.keys(parsed).length === 0) {
+        replyContent = parseFailureReply(lang);
+      } else {
+        const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
+        pendingBodyMetrics = { ...parsed, ...(imageUrls?.length ? { imageUrls } : {}), date: targetDate };
+
+        const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+        const lines: string[] = [];
+        if (parsed.weightKg != null) lines.push(`${strings.weightLabel[lang]}: ${parsed.weightKg}`);
+        if (parsed.bmi != null) lines.push(`BMI: ${parsed.bmi}`);
+        if (parsed.muscleMassKg != null) lines.push(`${strings.muscleMassLabel[lang]}: ${parsed.muscleMassKg} ${strings.unitKg[lang]}`);
+        if (parsed.bodyFatPercent != null) lines.push(`${strings.bodyFatLabel[lang]}: ${parsed.bodyFatPercent}%`);
+        if (parsed.visceralFat != null) lines.push(`${strings.visceralFatLabel[lang]}: ${parsed.visceralFat}`);
+        if (parsed.bodyWaterPercent != null) lines.push(`${strings.bodyWaterLabel[lang]}: ${parsed.bodyWaterPercent}%`);
+        if (parsed.basalMetabolicRate != null) lines.push(`${strings.bmrLabel[lang]}: ${parsed.basalMetabolicRate} kcal`);
+        if (parsed.proteinPercent != null) lines.push(`${strings.proteinPercentLabel[lang]}: ${parsed.proteinPercent}%`);
+        replyContent = `${lines.join("\n")}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+      }
+    } catch (err) {
+      console.error("[chat] parseBodyMetrics failed:", err);
+      replyContent = parseFailureReply(lang);
+    }
   } else if (intent === "query_history") {
     replyContent = await answerHistoryQuery(uid, userContent, lang, today, priorMessages);
   } else if (intent === "general_health") {
@@ -425,6 +439,7 @@ async function handleChat(req: Request) {
     ...(pendingMealAction ? { pendingMealAction } : {}),
     ...(pendingWorkout ? { pendingWorkout } : {}),
     ...(pendingSteps ? { pendingSteps } : {}),
+    ...(pendingBodyMetrics ? { pendingBodyMetrics } : {}),
   };
   messages.push(assistantMsg);
 

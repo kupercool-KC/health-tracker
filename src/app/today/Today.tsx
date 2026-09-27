@@ -20,7 +20,8 @@ import {
 import type { FrequentMeal, FrequentWorkout } from "@/lib/dashboard/queries";
 import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
-import type { DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
+import type { DailyGoalEntry, DailySteps, MealDay, UserProfile, Workout } from "@/lib/types";
+import { getDailyGoals, setDailyGoalEntry } from "@/lib/dailyGoals/queries";
 import { combinePhotoCaptions } from "@/lib/text/combinePhotoCaptions";
 import MicButton from "../MicButton";
 import WheelPicker from "./WheelPicker";
@@ -165,13 +166,15 @@ export default function Today() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [steps, setSteps] = useState<DailySteps | null>(null);
   const [goals, setGoals] = useState<
-    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal">
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals">
   >({
     calorieGoal: 1950,
     proteinGoal: 145,
     netCalorieBurnFactor: 50,
     stepGoal: 10000,
+    customGoals: [],
   });
+  const [dailyGoalEntries, setDailyGoalEntries] = useState<Record<string, DailyGoalEntry>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -259,13 +262,14 @@ export default function Today() {
     setError(null);
     try {
       const date = localDateKey();
-      const [day, w, s, g, fm, fw] = await Promise.all([
+      const [day, w, s, g, fm, fw, dg] = await Promise.all([
         getMealDay(uid, date),
         getWorkoutsForDate(uid, date),
         getStepsForDate(uid, date),
         getUserGoals(uid),
         getFrequentMeals(uid),
         getFrequentWorkouts(uid),
+        getDailyGoals(uid, date),
       ]);
       setMealDay(day);
       setWorkouts(w);
@@ -273,6 +277,7 @@ export default function Today() {
       setGoals(g);
       setFrequentMeals(fm);
       setFrequentWorkouts(fw);
+      setDailyGoalEntries(Object.fromEntries(dg.entries.map((e) => [e.goalId, e])));
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     }
@@ -759,6 +764,19 @@ export default function Today() {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setWorkoutBusy(false);
+    }
+  }
+
+  async function updateDailyGoalEntry(goalId: string, patch: Partial<Omit<DailyGoalEntry, "goalId">>) {
+    if (!user) return;
+    const date = localDateKey();
+    const current = dailyGoalEntries[goalId] ?? { goalId, done: false };
+    const entry: DailyGoalEntry = { ...current, ...patch };
+    setDailyGoalEntries((prev) => ({ ...prev, [goalId]: entry }));
+    try {
+      await setDailyGoalEntry(user.uid, date, entry);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
     }
   }
 
@@ -1956,6 +1974,62 @@ export default function Today() {
               </div>
             </details>
           </section>
+
+          {goals.customGoals && goals.customGoals.length > 0 && (
+            <section style={{ marginTop: 28 }}>
+              <h2 style={{ margin: 0 }}>{t("dailyGoalsTitle")}</h2>
+              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                {goals.customGoals.map((goal) => {
+                  const entry = dailyGoalEntries[goal.id];
+                  const done = goal.type === "numeric" ? (entry?.value ?? 0) >= (goal.target ?? 0) : entry?.done ?? false;
+                  return (
+                    <div
+                      key={goal.id}
+                      className="card"
+                      style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}
+                    >
+                      {goal.type === "boolean" ? (
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 160px" }}>
+                          <input
+                            type="checkbox"
+                            checked={entry?.done ?? false}
+                            onChange={(e) => updateDailyGoalEntry(goal.id, { done: e.target.checked })}
+                          />
+                          {goal.name}
+                        </label>
+                      ) : (
+                        <div style={{ flex: "1 1 160px" }}>
+                          <span>{goal.name}</span>{" "}
+                          {done && <span style={{ color: "var(--burned)" }}>✓</span>}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              value={entry?.value ?? ""}
+                              onChange={(e) => {
+                                const value = Number(e.target.value) || 0;
+                                updateDailyGoalEntry(goal.id, { value, done: value >= (goal.target ?? 0) });
+                              }}
+                              style={{ width: 70, padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                            />
+                            <bdi dir="ltr" style={{ color: "var(--muted)", fontSize: 13 }}>
+                              / {goal.target ?? "?"} {goal.unit}
+                            </bdi>
+                          </div>
+                        </div>
+                      )}
+                      <input
+                        value={entry?.note ?? ""}
+                        onChange={(e) => updateDailyGoalEntry(goal.id, { note: e.target.value })}
+                        placeholder={t("goalNotePlaceholder")}
+                        style={{ flex: "1 1 160px", padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </>
       )}
     </main>

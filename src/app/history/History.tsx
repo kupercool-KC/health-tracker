@@ -13,6 +13,7 @@ import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import {
+  getBodyMetricsSince,
   getMealDaysSince,
   getStepsSince,
   getWorkoutsSince,
@@ -23,7 +24,7 @@ import { getUserGoals } from "@/lib/profile/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import { getGoalHistory, goalChangeDatesInRange, goalValueOnDate, type GoalHistoryEntry } from "@/lib/goals/goalHistory";
 import type { StringKey } from "@/lib/i18n/strings";
-import type { MealDay, UserProfile, Workout } from "@/lib/types";
+import type { BodyMetricsEntry, MealDay, UserProfile, Workout } from "@/lib/types";
 
 interface DayInfo {
   date: string;
@@ -507,6 +508,139 @@ function SimpleBarChart({
   );
 }
 
+/**
+ * A single body-metric's readings over time — a line chart rather than
+ * MetricBarChart/SimpleBarChart's bars, since weigh-ins are sparse (weekly,
+ * by design) rather than one value per day; points are evenly spaced by
+ * index instead of literally date-proportional, which reads fine at a
+ * roughly-weekly cadence and keeps this simple.
+ */
+function WeighInLineChart({
+  points,
+  label,
+  identityColorVar,
+  unit,
+}: {
+  points: { date: string; value: number }[];
+  label: string;
+  identityColorVar: string;
+  unit: string;
+}) {
+  const { lang } = useI18n();
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const height = 90;
+  const values = points.map((p) => p.value);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  // A flat/near-flat series would otherwise divide by ~0 — pad the range so the line isn't pinned to an edge.
+  const pad = Math.max((rawMax - rawMin) * 0.15, rawMax * 0.02, 1);
+  const min = rawMin - pad;
+  const max = rawMax + pad;
+  const stepX = points.length > 1 ? 100 / (points.length - 1) : 0;
+  const yOf = (v: number) => height - ((v - min) / (max - min)) * height;
+  const linePoints = points.map((p, i) => `${i * stepX},${yOf(p.value)}`).join(" ");
+
+  return (
+    <div className="card" style={{ marginTop: 12, position: "relative" }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+        <span style={{ color: identityColorVar }}>■</span> {label}
+      </div>
+      <div style={{ display: "flex" }}>
+        <div style={{ position: "relative", width: 34, height, flexShrink: 0 }}>
+          <bdi dir="ltr" style={{ position: "absolute", top: 0, insetInlineEnd: 4, fontSize: 10, color: "var(--muted)" }}>
+            {Math.round(max * 10) / 10}
+          </bdi>
+          <bdi
+            dir="ltr"
+            style={{ position: "absolute", bottom: 0, insetInlineEnd: 4, fontSize: 10, color: "var(--muted)" }}
+          >
+            {Math.round(min * 10) / 10}
+          </bdi>
+        </div>
+        <svg
+          viewBox={`0 0 100 ${height}`}
+          preserveAspectRatio="none"
+          style={{ width: "100%", height }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <polyline points={linePoints} fill="none" stroke={identityColorVar} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          {points.map((p, i) => (
+            <circle
+              key={p.date}
+              cx={i * stepX}
+              cy={yOf(p.value)}
+              r={hoverIdx === i ? 3 : 2}
+              fill={identityColorVar}
+              onMouseEnter={() => setHoverIdx(i)}
+              onClick={() => setHoverIdx(i)}
+              style={{ cursor: "pointer" }}
+            />
+          ))}
+        </svg>
+      </div>
+      {hoverIdx != null && points[hoverIdx] && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            insetInlineEnd: 8,
+            background: "var(--bg-muted)",
+            border: "0.5px solid var(--border)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            fontSize: 12,
+          }}
+        >
+          <bdi dir="ltr">{dayLabel(points[hoverIdx].date)}</bdi> {weekdayLabel(points[hoverIdx].date, lang)} ·{" "}
+          <bdi dir="ltr">
+            {points[hoverIdx].value}
+            {unit}
+          </bdi>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BODY_METRIC_FIELDS = [
+  { key: "weightKg", labelKey: "weightLabel", color: "var(--calories)", unit: "" },
+  { key: "bmi", labelKey: null, label: "BMI", color: "var(--protein)", unit: "" },
+  { key: "muscleMassKg", labelKey: "muscleMassLabel", color: "var(--burned)", unit: "" },
+  { key: "bodyFatPercent", labelKey: "bodyFatLabel", color: "var(--net)", unit: "%" },
+  { key: "visceralFat", labelKey: "visceralFatLabel", color: "var(--calories)", unit: "" },
+  { key: "bodyWaterPercent", labelKey: "bodyWaterLabel", color: "var(--protein)", unit: "%" },
+  { key: "basalMetabolicRate", labelKey: "bmrLabel", color: "var(--burned)", unit: " kcal" },
+  { key: "proteinPercent", labelKey: "proteinPercentLabel", color: "var(--net)", unit: "%" },
+] as const;
+
+/** All logged weigh-ins over time, one small line chart per metric that actually has data — see WeighInLineChart. */
+function BodyMetricsSection({ entries }: { entries: BodyMetricsEntry[] }) {
+  const { t } = useI18n();
+  if (entries.length === 0) return null;
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>{t("weighInTitle")}</h2>
+      {BODY_METRIC_FIELDS.map((field) => {
+        const points = sorted
+          .filter((e) => e[field.key] != null)
+          .map((e) => ({ date: e.date, value: e[field.key] as number }));
+        if (points.length === 0) return null;
+        return (
+          <WeighInLineChart
+            key={field.key}
+            points={points}
+            label={field.labelKey ? t(field.labelKey) : field.label!}
+            identityColorVar={field.color}
+            unit={field.unit}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function History() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
@@ -530,6 +664,17 @@ export default function History() {
   const [customTo, setCustomTo] = useState(localDateKey());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [goalHistoryEntries, setGoalHistoryEntries] = useState<GoalHistoryEntry[]>([]);
+  // Independent of the 7/30/custom period picker above — weigh-ins are
+  // weekly by design, so "progress over time" means a wide, fixed window,
+  // not whatever narrow range the daily-metrics charts happen to be showing.
+  const [bodyMetrics, setBodyMetrics] = useState<BodyMetricsEntry[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    getBodyMetricsSince(user.uid, localDateKeyDaysAgo(365))
+      .then(setBodyMetrics)
+      .catch(() => {});
+  }, [user]);
 
   const range = useMemo(() => {
     if (period === "weekly") return { from: localDateKeyDaysAgo(6), to: localDateKey() };
@@ -975,6 +1120,7 @@ export default function History() {
             unit=" kcal"
             yStep={200}
           />
+          <BodyMetricsSection entries={bodyMetrics} />
         </>
       )}
 

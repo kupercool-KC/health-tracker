@@ -139,6 +139,32 @@ export type ActivityLevel = "sedentary" | "light" | "moderate" | "intense" | "ve
 export type WorkoutType = "strength" | "running" | "walking" | "cycling" | "swimming" | "yoga" | "padel" | "hiit" | "other";
 export type DietaryPref = "everything" | "vegetarian" | "vegan" | "glutenFree" | "lactoseFree" | "other";
 
+/** A user-defined daily goal template (e.g. "Drink water", "Read"), stored on the profile — tracked per-day in users/{uid}/dailyGoals/{date}. */
+export interface CustomGoalDef {
+  id: string;
+  name: string;
+  type: "boolean" | "numeric";
+  /** "numeric" only — e.g. "cups", "pages". */
+  unit?: string;
+  /** "numeric" only — the day's entry counts as done once its value reaches this. */
+  target?: number;
+}
+
+/** One custom goal's check-in for a single day. */
+export interface DailyGoalEntry {
+  goalId: string;
+  done: boolean;
+  /** "numeric" goals only — how much was actually done that day. */
+  value?: number;
+  note?: string;
+}
+
+/** users/{uid}/dailyGoals/{date} — one doc per day (date = yyyy-mm-dd). */
+export interface DailyGoals {
+  date: string;
+  entries: DailyGoalEntry[];
+}
+
 /** users/{uid}/meta/profile */
 export interface UserProfile {
   name?: string;
@@ -163,6 +189,8 @@ export interface UserProfile {
   averageDailySteps?: number;
   /** Daily steps goal, shown on Today and charted in History. */
   stepGoal?: number;
+  /** User-defined daily goals (water, reading, etc.), shown below Steps on Today — see CustomGoalDef. */
+  customGoals?: CustomGoalDef[];
   /** grams; calculated during onboarding, editable manually afterward */
   carbGoal?: number;
   fatGoal?: number;
@@ -197,10 +225,29 @@ export type ChatIntent =
   | "log_meal"
   | "log_workout"
   | "log_steps"
+  | "log_body_metrics"
   | "query_history"
   | "general_health"
   | "manage_meal"
   | "out_of_scope";
+
+/** A single weekly weigh-in's smart-scale readout — see src/lib/bodyMetrics/parser.ts. */
+export interface ParsedBodyMetrics {
+  weightKg?: number;
+  bmi?: number;
+  muscleMassKg?: number;
+  bodyFatPercent?: number;
+  visceralFat?: number;
+  bodyWaterPercent?: number;
+  basalMetabolicRate?: number;
+  proteinPercent?: number;
+}
+
+/** users/{uid}/bodyMetrics/{date} — one doc per day a weigh-in was logged (date = yyyy-mm-dd). */
+export interface BodyMetricsEntry extends ParsedBodyMetrics {
+  date: string;
+  confirmedAt: string;
+}
 
 /** Proposed edit/delete of an already-logged meal, awaiting user confirmation. */
 export interface PendingMealAction {
@@ -226,6 +273,8 @@ export interface ChatMessage {
   pendingWorkout?: ParsedWorkout & { imageUrls?: string[]; date: string };
   /** Present on an assistant message that's proposing a steps count to log — not yet saved. */
   pendingSteps?: { steps: number; date: string };
+  /** Present on an assistant message that's proposing a weigh-in's readings to log — not yet saved. */
+  pendingBodyMetrics?: ParsedBodyMetrics & { imageUrls?: string[]; date: string };
 }
 
 /** users/{uid}/chatSessions/{sessionId} */
