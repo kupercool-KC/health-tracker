@@ -7,6 +7,7 @@ export const strings = {
 
   navToday: { en: "Today", he: "היום" },
   navHistory: { en: "History", he: "היסטוריה" },
+  navWeight: { en: "Weight", he: "משקל" },
   navProfile: { en: "Profile", he: "פרופיל" },
   navChat: { en: "Chat", he: "צ׳אט" },
 
@@ -125,9 +126,9 @@ export const strings = {
     he: "הוסף יעדים יומיים משלך (מים, קריאה, שינה...) — הם יופיעו במסך היום, מתחת לצעדים.",
   },
   suggestedGoalsLabel: { en: "Suggestions", he: "הצעות" },
+  addYourOwnGoalLabel: { en: "Or write your own goal:", he: "או כתבו יעד משלכם:" },
   goalNamePlaceholder: { en: "Goal name", he: "שם היעד" },
-  goalTypeBoolean: { en: "Yes/no", he: "כן/לא" },
-  goalTypeNumeric: { en: "Number", he: "מספר" },
+  goalHasNumericTargetLabel: { en: "Track as a number (not just yes/no)", he: "לעקוב לפי מספר (ולא רק כן/לא)" },
   goalTargetPlaceholder: { en: "Target", he: "יעד" },
   goalUnitPlaceholder: { en: "Unit (e.g. cups)", he: "יחידה (למשל כוסות)" },
   addCustomGoal: { en: "Add goal", he: "הוסף יעד" },
@@ -199,6 +200,14 @@ export const strings = {
   weighInHint: {
     en: "Upload one or more screenshots from your smart scale app — I'll read the numbers.",
     he: "העלה צילום מסך אחד או יותר מאפליקציית המשקל — אקרא את הנתונים.",
+  },
+  weighInNoEntries: {
+    en: "No weigh-ins logged yet. Tap the chat button below and send a screenshot from your smart scale app.",
+    he: "עדיין לא נרשמו שקילות. לחצו על כפתור הצ׳אט למטה ושלחו צילום מסך מאפליקציית המשקל.",
+  },
+  weighInOpenChatHint: {
+    en: "Tap the chat button below to log a new weigh-in with a photo.",
+    he: "לחצו על כפתור הצ׳אט למטה כדי לרשום שקילה חדשה באמצעות תמונה.",
   },
   tdeeLabel: { en: "TDEE", he: "הוצאה אנרגטית יומית" },
   expectedRateLabel: { en: "Expected rate of change", he: "קצב שינוי משוער" },

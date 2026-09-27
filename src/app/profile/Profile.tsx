@@ -699,22 +699,21 @@ export default function Profile() {
         )}
 
         <div style={{ display: "grid", gap: 8, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}>
-          <div style={{ display: "flex", gap: 8 }}>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("addYourOwnGoalLabel")}</span>
+          <input
+            value={newGoalName}
+            onChange={(e) => setNewGoalName(e.target.value)}
+            placeholder={t("goalNamePlaceholder")}
+            style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+          />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
             <input
-              value={newGoalName}
-              onChange={(e) => setNewGoalName(e.target.value)}
-              placeholder={t("goalNamePlaceholder")}
-              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+              type="checkbox"
+              checked={newGoalType === "numeric"}
+              onChange={(e) => setNewGoalType(e.target.checked ? "numeric" : "boolean")}
             />
-            <select
-              value={newGoalType}
-              onChange={(e) => setNewGoalType(e.target.value as "boolean" | "numeric")}
-              style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-            >
-              <option value="boolean">{t("goalTypeBoolean")}</option>
-              <option value="numeric">{t("goalTypeNumeric")}</option>
-            </select>
-          </div>
+            {t("goalHasNumericTargetLabel")}
+          </label>
           {newGoalType === "numeric" && (
             <div style={{ display: "flex", gap: 8 }}>
               <input

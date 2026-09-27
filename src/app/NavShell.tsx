@@ -42,9 +42,19 @@ function ProfileIcon() {
   );
 }
 
+function WeightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8.5 5.5h7l2.3 13.4a1.5 1.5 0 0 1-1.48 1.75H7.68a1.5 1.5 0 0 1-1.48-1.75L8.5 5.5Z" />
+      <circle cx="12" cy="5" r="1.6" />
+    </svg>
+  );
+}
+
 const TABS = [
   { href: "/today", labelKey: "navToday" as const, Icon: TodayIcon },
   { href: "/history", labelKey: "navHistory" as const, Icon: HistoryIcon },
+  { href: "/weight", labelKey: "navWeight" as const, Icon: WeightIcon },
   { href: "/profile", labelKey: "navProfile" as const, Icon: ProfileIcon },
 ];
 
