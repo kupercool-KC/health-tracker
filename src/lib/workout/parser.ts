@@ -91,5 +91,24 @@ export async function parseWorkout(input: ParseWorkoutInput): Promise<ParsedWork
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Empty response from workout parser");
 
-  return parsedSchema.parse(JSON.parse(raw));
+  return parsedSchema.parse(normalizeZeroFields(JSON.parse(raw)));
+}
+
+/**
+ * The model is told to "omit fields that don't apply" but sometimes emits 0
+ * for an unmentioned metric instead — a zero heart rate/distance/pace/
+ * calorie value isn't meaningful data, it's the model's way of saying
+ * "unknown", so treat it the same as an omitted field rather than letting it
+ * fail schema validation (heartRateAvg/heartRateMax require > 0) or get
+ * saved as a real reading. elevationGainMeters is excluded since 0 there is
+ * a legitimate value (a flat route).
+ */
+function normalizeZeroFields(data: unknown): unknown {
+  if (typeof data !== "object" || data === null) return data;
+  const ZERO_MEANS_UNKNOWN = ["distanceMeters", "paceSecPerKm", "calories", "heartRateAvg", "heartRateMax"] as const;
+  const next = { ...(data as Record<string, unknown>) };
+  for (const key of ZERO_MEANS_UNKNOWN) {
+    if (next[key] === 0) delete next[key];
+  }
+  return next;
 }
