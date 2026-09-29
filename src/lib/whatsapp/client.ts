@@ -34,6 +34,32 @@ export async function sendWhatsAppText(to: string, body: string): Promise<void> 
 }
 
 /**
+ * Marks the incoming message read and shows the "typing…" indicator in the
+ * user's WhatsApp thread — the only feedback WhatsApp offers while we're
+ * off doing the OpenAI classify/parse round-trip, standing in for the web
+ * chat's bouncing-dots "thinking" bubble. Auto-expires after ~25s or as soon
+ * as we actually send a reply, whichever comes first — so this only needs
+ * calling once, right when a message comes in, not kept alive with retries.
+ * Best-effort: a failure here shouldn't block answering the message.
+ */
+export async function showTypingIndicator(messageId: string): Promise<void> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) return;
+  const res = await fetch(graphUrl(`${phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", status: "read", message_id: messageId, typing_indicator: { type: "text" } }),
+  }).catch((err) => {
+    console.error("[whatsapp] typing indicator request failed:", err);
+    return null;
+  });
+  if (res && !res.ok) {
+    console.error("[whatsapp] typing indicator failed:", res.status, await res.text().catch(() => ""));
+  }
+}
+
+/**
  * WhatsApp media isn't a plain public URL — it's a two-step fetch (look up a
  * short-lived download URL by media id, then fetch that URL, both
  * authenticated with the same token) that returns the raw bytes.

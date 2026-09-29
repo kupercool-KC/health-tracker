@@ -24,7 +24,7 @@ import crypto from "node:crypto";
 import { adminDb } from "@/lib/firebase/admin";
 import { runChatTurn } from "@/lib/chat/runChatTurn";
 import { getUidForPhone } from "@/lib/whatsapp/link";
-import { sendWhatsAppText, downloadWhatsAppMedia } from "@/lib/whatsapp/client";
+import { sendWhatsAppText, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import {
   saveBodyMetricsFromPending,
@@ -108,6 +108,7 @@ export async function POST(req: Request) {
 }
 
 interface IncomingMessage {
+  id: string;
   from: string;
   type: string;
   text?: { body?: string };
@@ -122,6 +123,11 @@ function extractMessage(payload: unknown): IncomingMessage | null {
 }
 
 async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
+  // Awaited (not fire-and-forget) since a serverless function can be frozen
+  // the moment it returns — an unawaited request here isn't guaranteed to
+  // actually complete. The reply itself, once ready, also clears the indicator.
+  await showTypingIndicator(message.id);
+
   const from = message.from;
   const uid = await getUidForPhone(from);
   if (!uid) {
