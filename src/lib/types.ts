@@ -215,10 +215,34 @@ export interface Memory {
   updatedAt: string;
 }
 
-/** One proactive WhatsApp reminder type's config — "time" is HH:mm, Israel local time (the cron checks in 30-min buckets, see /api/cron/whatsapp-reminders). */
+/** One proactive WhatsApp reminder type's config — "time" is HH:mm, Israel local time (the cron checks in 15-min buckets, see /api/cron/whatsapp-reminders). */
 export interface ReminderConfig {
   enabled: boolean;
   time: string;
+}
+
+export type BuiltInReminderType =
+  | "breakfastCheckIn"
+  | "middayCheckIn"
+  | "eveningSummary"
+  | "morningRecap"
+  | "weeklyWeighIn"
+  | "customGoalsCheckIn";
+
+/**
+ * A free-form reminder the user asked for by name — via chat or WhatsApp
+ * ("remind me every day at 8pm to drink water") — rather than one of the six
+ * built-in types. `text` is sent verbatim as the WhatsApp message.
+ */
+export interface CustomReminder {
+  id: string;
+  text: string;
+  time: string;
+  recurrence: "daily" | "weekly";
+  /** "weekly" only — 0=Sunday..6=Saturday, matching Date.getDay(). */
+  weekday?: number;
+  lastSent?: string;
+  createdAt: string;
 }
 
 /**
@@ -243,9 +267,9 @@ export interface WhatsAppReminderSettings {
   weeklyWeighIn: ReminderConfig;
   /** Any custom daily goals (see CustomGoalDef) not yet marked done today. */
   customGoalsCheckIn: ReminderConfig;
-  lastSent: Partial<
-    Record<"breakfastCheckIn" | "middayCheckIn" | "eveningSummary" | "morningRecap" | "weeklyWeighIn" | "customGoalsCheckIn", string>
-  >;
+  /** User-defined reminders created via chat/WhatsApp — see CustomReminder. */
+  customReminders?: CustomReminder[];
+  lastSent: Partial<Record<BuiltInReminderType, string>>;
   updatedAt: string;
 }
 
@@ -257,6 +281,7 @@ export type ChatIntent =
   | "query_history"
   | "general_health"
   | "manage_meal"
+  | "manage_reminder"
   | "out_of_scope";
 
 /** A single weekly weigh-in's smart-scale readout — see src/lib/bodyMetrics/parser.ts. */

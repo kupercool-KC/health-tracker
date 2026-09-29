@@ -40,6 +40,7 @@ import {
 } from "@/lib/chat/chat";
 import { checkPromptSafety, securityReply } from "@/lib/chat/security";
 import { sendSecurityAlert } from "@/lib/security/alertEmail";
+import { resolveReminderAction } from "@/lib/reminders/manage";
 import type { ChatIntent, ChatMessage, ChatSession, ParsedNutrition, UserProfile } from "@/lib/types";
 
 export interface ChatTurnInput {
@@ -391,6 +392,9 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
     const result = await resolveMealAction(uid, today, userContent, lang);
     replyContent = result.replyContent;
     pendingMealAction = result.pendingMealAction;
+  } else if (intent === "manage_reminder") {
+    const result = await resolveReminderAction(uid, userContent, lang, priorMessages);
+    replyContent = result.replyContent;
   } else {
     replyContent = outOfScopeReply(lang);
   }
