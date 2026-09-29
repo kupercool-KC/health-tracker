@@ -191,6 +191,8 @@ export interface UserProfile {
   stepGoal?: number;
   /** User-defined daily goals (water, reading, etc.), shown below Steps on Today — see CustomGoalDef. */
   customGoals?: CustomGoalDef[];
+  /** Digits-only phone number (no "+") linked to this account for the WhatsApp bot — see whatsappLinks/{phone} for the reverse lookup. */
+  whatsappPhone?: string;
   /** grams; calculated during onboarding, editable manually afterward */
   carbGoal?: number;
   fatGoal?: number;

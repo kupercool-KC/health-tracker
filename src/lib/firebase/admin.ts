@@ -13,6 +13,7 @@ import {
 } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 function initAdmin(): App {
   if (getApps().length) return getApps()[0];
@@ -22,6 +23,7 @@ function initAdmin(): App {
     return initializeApp({
       credential: cert(JSON.parse(raw)),
       projectId: process.env.FIREBASE_PROJECT_ID,
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
     });
   }
 
@@ -29,12 +31,14 @@ function initAdmin(): App {
   return initializeApp({
     credential: applicationDefault(),
     projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   });
 }
 
 const app = initAdmin();
 export const adminAuth = getAuth(app);
 export const adminDb = getFirestore(app);
+export const adminStorage = getStorage(app);
 // Firestore rejects `undefined` field values by default (e.g. an optional
 // field an API route didn't strip before writing) — several write paths
 // already work around this ad hoc (see /api/workouts' JSON.stringify

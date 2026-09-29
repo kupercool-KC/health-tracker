@@ -41,6 +41,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Reverse lookup from a WhatsApp phone number to its linked uid — same
+    // posture as healthTokens above. Only the Admin SDK touches this (see
+    // src/lib/whatsapp/link.ts and POST/DELETE /api/whatsapp/link).
+    match /whatsappLinks/{phone} {
+      allow read, write: if false;
+    }
+
     // App-wide config (nutrition parser system prompt / model / sampling
     // params), editable from /admin. Gated to a single hardcoded uid — keep
     // this literal in sync with ADMIN_UID in src/lib/admin.ts.

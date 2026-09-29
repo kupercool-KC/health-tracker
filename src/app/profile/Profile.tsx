@@ -138,6 +138,10 @@ export default function Profile() {
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [customGoalsBusy, setCustomGoalsBusy] = useState(false);
 
+  const [whatsappPhoneInput, setWhatsappPhoneInput] = useState("");
+  const [whatsappBusy, setWhatsappBusy] = useState(false);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
+
   const [retroDays, setRetroDays] = useState("3");
   const [retroBusy, setRetroBusy] = useState(false);
   const [retroResults, setRetroResults] = useState<
@@ -207,6 +211,50 @@ export default function Profile() {
     setNewGoalName("");
     setNewGoalUnit("");
     setNewGoalTarget("");
+  }
+
+  async function linkWhatsapp() {
+    if (!user || !whatsappPhoneInput.trim()) return;
+    setWhatsappBusy(true);
+    setWhatsappError(null);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not signed in");
+      const res = await fetch("/api/whatsapp/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ phone: whatsappPhoneInput.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      setFullProfile((prev) => ({ ...(prev ?? ({} as UserProfile)), whatsappPhone: data.phone }));
+      setWhatsappPhoneInput("");
+    } catch (err) {
+      setWhatsappError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setWhatsappBusy(false);
+    }
+  }
+
+  async function unlinkWhatsapp() {
+    if (!user || !fullProfile?.whatsappPhone) return;
+    setWhatsappBusy(true);
+    setWhatsappError(null);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not signed in");
+      const res = await fetch("/api/whatsapp/link", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ phone: fullProfile.whatsappPhone }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setFullProfile((prev) => (prev ? { ...prev, whatsappPhone: undefined } : prev));
+    } catch (err) {
+      setWhatsappError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setWhatsappBusy(false);
+    }
   }
 
   async function addGoalHistoryEntry() {
@@ -545,6 +593,35 @@ export default function Profile() {
         </div>
         {infoSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
         {!fullProfile && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("yourInfoNone")}</p>}
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("whatsappLinkTitle")}</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("whatsappLinkHint")}</p>
+
+        {fullProfile?.whatsappPhone ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13 }}>
+              {t("whatsappLinkedAs")} <bdi dir="ltr">+{fullProfile.whatsappPhone}</bdi>
+            </span>
+            <button onClick={unlinkWhatsapp} disabled={whatsappBusy}>
+              {whatsappBusy ? t("working") : t("whatsappUnlinkButton")}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={whatsappPhoneInput}
+              onChange={(e) => setWhatsappPhoneInput(e.target.value)}
+              placeholder={t("whatsappPhonePlaceholder")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
+            />
+            <button onClick={linkWhatsapp} disabled={whatsappBusy || !whatsappPhoneInput.trim()}>
+              {whatsappBusy ? t("working") : t("whatsappLinkButton")}
+            </button>
+          </div>
+        )}
+        {whatsappError && <p style={{ color: "#ff6b6b", fontSize: 12, margin: 0 }}>{whatsappError}</p>}
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

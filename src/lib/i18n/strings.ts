@@ -107,6 +107,16 @@ export const strings = {
   saved: { en: "Saved.", he: "נשמר." },
   recalculateGoals: { en: "Recalculate goals from formula", he: "חשב מטרות מחדש מנוסחה" },
 
+  whatsappLinkTitle: { en: "WhatsApp bot", he: "בוט WhatsApp" },
+  whatsappLinkHint: {
+    en: "Link your WhatsApp number to log meals, workouts, and weigh-ins by messaging the bot directly, the same way you'd use the chat here.",
+    he: "קשרו את מספר ה-WhatsApp שלכם כדי לרשום ארוחות, אימונים ושקילות פשוט על ידי שליחת הודעה לבוט, בדיוק כמו בצ'אט כאן.",
+  },
+  whatsappPhonePlaceholder: { en: "Phone number (e.g. +972501234567)", he: "מספר טלפון (למשל 972501234567+)" },
+  whatsappLinkButton: { en: "Link", he: "קשר" },
+  whatsappUnlinkButton: { en: "Unlink", he: "בטל קישור" },
+  whatsappLinkedAs: { en: "Linked as", he: "מקושר כ" },
+
   goalHistoryTitle: { en: "Goal history", he: "היסטוריית מטרות" },
   goalHistoryExplainer: {
     en: "Effective-from date for each goal. History's charts use whichever goal was active on each past day instead of applying today's goal retroactively. Add an entry here to backfill a change made before this existed, or to correct one.",
