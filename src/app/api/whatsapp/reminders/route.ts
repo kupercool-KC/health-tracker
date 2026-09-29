@@ -74,6 +74,11 @@ export async function POST(req: Request) {
     ...parsedBody.data,
     phone: profile.whatsappPhone,
     lang: profile.language ?? "he",
+    // Preserved rather than overwritten — this route only edits the six
+    // built-in toggles; custom reminders (created via chat/WhatsApp, see
+    // src/lib/reminders/manage.ts) and their own send history live in the
+    // same doc and shouldn't be dropped by a Profile save.
+    customReminders: existing?.customReminders ?? [],
     lastSent: existing?.lastSent ?? {},
     updatedAt: new Date().toISOString(),
   };

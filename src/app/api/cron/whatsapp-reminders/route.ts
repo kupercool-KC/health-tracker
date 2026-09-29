@@ -1,16 +1,18 @@
 /**
  * GET /api/cron/whatsapp-reminders
- * Auth: `Authorization: Bearer ${CRON_SECRET}` — Vercel adds this header
- * automatically on cron-triggered requests once CRON_SECRET is set (see
- * vercel.json's schedule for this path).
+ * Auth: `Authorization: Bearer ${CRON_SECRET}`.
  *
- * Runs every 30 minutes. For every user with a whatsappReminders/{uid} doc
- * (written by /api/whatsapp/reminders, one per linked WhatsApp user), checks
- * each of their six reminder types: if it's enabled, its configured time
- * (Israel local, HH:mm) falls in the current 30-minute bucket, it hasn't
- * already fired today (lastSent[type]), and its own data condition holds
- * (e.g. no meals logged yet), sends the WhatsApp message and records
- * lastSent[type] = today so it doesn't repeat within the same day.
+ * Triggered every 15 minutes by a GitHub Actions scheduled workflow (see
+ * .github/workflows/whatsapp-reminders.yml) rather than Vercel's own Cron —
+ * Vercel's Hobby plan only allows once-daily cron jobs, which can't cover
+ * several different times of day. For every user with a
+ * whatsappReminders/{uid} doc (written by /api/whatsapp/reminders, one per
+ * linked WhatsApp user), checks each of their six built-in reminder types —
+ * if it's enabled, its configured time (Israel local, HH:mm) falls in the
+ * current 15-minute bucket, it hasn't already fired today (lastSent[type]),
+ * and its own data condition holds (e.g. no meals logged yet) — sends the
+ * WhatsApp message and records lastSent[type] = today. Also checks their
+ * user-defined customReminders the same way (see src/lib/reminders/manage.ts).
  */
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
@@ -38,7 +40,7 @@ function israelNow(): { date: string; hm: string; weekday: number } {
   return { date, hm, weekday };
 }
 
-/** True if `configuredTime` (HH:mm) falls in the same 30-minute bucket as `nowHm` (HH:mm) — the cron only runs every 30 min, so an exact-minute match would silently never fire. */
+/** True if `configuredTime` (HH:mm) falls in the same 15-minute bucket as `nowHm` (HH:mm) — the cron only runs every 15 min, so an exact-minute match would silently never fire. */
 function inCurrentBucket(nowHm: string, configuredTime: string): boolean {
   const toMinutes = (hm: string) => {
     const [h, m] = hm.split(":").map(Number);
@@ -46,7 +48,7 @@ function inCurrentBucket(nowHm: string, configuredTime: string): boolean {
   };
   const now = toMinutes(nowHm);
   const target = toMinutes(configuredTime);
-  return Math.floor(now / 30) === Math.floor(target / 30);
+  return Math.floor(now / 15) === Math.floor(target / 15);
 }
 
 function yesterday(date: string): string {
@@ -214,6 +216,22 @@ export async function GET(req: Request) {
         }
       } catch (err) {
         console.error(`[cron/whatsapp-reminders] ${type} failed for ${doc.id}:`, err);
+      }
+    }
+
+    for (const reminder of settings.customReminders ?? []) {
+      try {
+        if (reminder.lastSent === now.date) continue;
+        if (!inCurrentBucket(now.hm, reminder.time)) continue;
+        if (reminder.recurrence === "weekly" && reminder.weekday !== now.weekday) continue;
+        await sendWhatsAppText(settings.phone, reminder.text);
+        sent++;
+        const updated = (settings.customReminders ?? []).map((r) =>
+          r.id === reminder.id ? { ...r, lastSent: now.date } : r,
+        );
+        await doc.ref.set({ customReminders: updated }, { merge: true });
+      } catch (err) {
+        console.error(`[cron/whatsapp-reminders] custom reminder ${reminder.id} failed for ${doc.id}:`, err);
       }
     }
   }

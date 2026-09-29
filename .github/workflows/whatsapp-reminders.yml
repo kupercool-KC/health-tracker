@@ -1,0 +1,23 @@
+name: WhatsApp reminders
+
+# Drives /api/cron/whatsapp-reminders on a schedule Vercel's own Cron Jobs
+# can't offer on the Hobby plan (Hobby is limited to once-daily crons). This
+# workflow does the scheduling only — all the actual logic lives in the app.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reminders endpoint
+        run: |
+          status=$(curl -s -o /dev/stderr -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://health-tracker-sepia.vercel.app/api/cron/whatsapp-reminders")
+          echo "HTTP status: $status"
+          if [ "$status" -ge 300 ]; then
+            exit 1
+          fi

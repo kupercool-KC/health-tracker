@@ -102,6 +102,7 @@ const INTENTS: ChatIntent[] = [
   "query_history",
   "general_health",
   "manage_meal",
+  "manage_reminder",
   "out_of_scope",
 ];
 
@@ -133,8 +134,9 @@ export async function classifyIntent(
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
 - "general_health": a nutrition/fitness/health question NOT about their own logged history. Read this broadly — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", sleep, hydration, supplements, recovery, injuries, energy levels, weight management, body composition, motivation/habits around eating or exercise, or answering the assistant's own request for a food/drink/product name so it can answer a question from earlier in the conversation. When a question is adjacent to health/fitness/nutrition or could reasonably be interpreted that way, classify it here rather than out_of_scope. IMPORTANT for a bare photo with no caption text: if you had just asked a general nutrition/comparison question and requested a photo to answer it (e.g. "send me a photo of the menu/dish"), a photo sent right after that is continuing THAT question — classify it general_health, not log_meal, even with zero caption text. Only classify a captionless photo as log_meal when nothing in the recent conversation suggests it's answering an open question — i.e. it's a fresh "here's what I ate" upload.
 - "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
+- "manage_reminder": user wants to create, list, or delete a proactive WhatsApp reminder — e.g. "remind me every day at 8pm to drink water", "תזכיר לי כל יום ראשון לשקול את עצמי", "what reminders do I have set", "cancel/delete the water reminder". This is about a recurring nudge the bot should send later, not logging something now.
 - "out_of_scope": ONLY for messages with genuinely no plausible nutrition/fitness/health angle, even accounting for the conversation so far (coding help, trivia, unrelated small talk, world news, etc). Give the benefit of the doubt: a short, oddly-phrased, or terse message that plausibly continues the current topic (e.g. it names a food/product/brand right after the assistant asked "which drink?"), or a question that's tangential but still health-adjacent, is NOT out_of_scope. When genuinely torn between general_health and out_of_scope, pick general_health — a wrong refusal is a worse outcome than answering something borderline.
-Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "log_body_metrics" | "query_history" | "general_health" | "manage_meal" | "out_of_scope" }`,
+Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "log_body_metrics" | "query_history" | "general_health" | "manage_meal" | "manage_reminder" | "out_of_scope" }`,
       },
       ...toContextMessages(history),
       { role: "user", content: userContent },
