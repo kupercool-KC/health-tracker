@@ -215,12 +215,38 @@ export interface Memory {
   updatedAt: string;
 }
 
-/** users/{uid}/meta/alerts */
-export interface Alerts {
-  breakfastReminder: { enabled: boolean; time: string };
-  lowCaloriesNoon: { enabled: boolean; thresholdPercent: number; checkTime: string };
-  eveningSummary: { enabled: boolean; time: string };
-  healthSync: { enabled: boolean; intervalHours: number };
+/** One proactive WhatsApp reminder type's config — "time" is HH:mm, Israel local time (the cron checks in 30-min buckets, see /api/cron/whatsapp-reminders). */
+export interface ReminderConfig {
+  enabled: boolean;
+  time: string;
+}
+
+/**
+ * whatsappReminders/{uid} — top-level, server-only (see firestore.rules), one
+ * doc per user who has linked WhatsApp. Denormalizes phone/lang from the
+ * profile so the cron can scan this single flat collection without joining
+ * against users/{uid}/meta/profile for every row. `lastSent[type]` is a
+ * yyyy-mm-dd used to dedupe — each reminder fires at most once per day.
+ */
+export interface WhatsAppReminderSettings {
+  phone: string;
+  lang: "en" | "he";
+  /** No meals logged yet today by this time — a nudge to log breakfast. */
+  breakfastCheckIn: ReminderConfig;
+  /** Today's logged calories are still under thresholdPercent of the goal by this time. */
+  middayCheckIn: ReminderConfig & { thresholdPercent: number };
+  /** Today's totals vs goals, sent at the end of the day. */
+  eveningSummary: ReminderConfig;
+  /** Yesterday's totals vs goals, sent in the morning. */
+  morningRecap: ReminderConfig;
+  /** Sundays only — nudges a weigh-in if none logged yet today. */
+  weeklyWeighIn: ReminderConfig;
+  /** Any custom daily goals (see CustomGoalDef) not yet marked done today. */
+  customGoalsCheckIn: ReminderConfig;
+  lastSent: Partial<
+    Record<"breakfastCheckIn" | "middayCheckIn" | "eveningSummary" | "morningRecap" | "weeklyWeighIn" | "customGoalsCheckIn", string>
+  >;
+  updatedAt: string;
 }
 
 export type ChatIntent =

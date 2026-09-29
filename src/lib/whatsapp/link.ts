@@ -39,4 +39,7 @@ export async function unlinkPhone(uid: string, phone: string): Promise<void> {
     .collection("meta")
     .doc("profile")
     .set({ whatsappPhone: FieldValue.delete() }, { merge: true });
+  // Nothing to send reminders to anymore — drop the settings doc rather than
+  // leaving it around with a phone number that no longer belongs to this uid.
+  await adminDb.collection("whatsappReminders").doc(uid).delete();
 }

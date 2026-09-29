@@ -115,6 +115,20 @@ export const strings = {
   whatsappPhonePlaceholder: { en: "Phone number (e.g. +972501234567)", he: "מספר טלפון (למשל 972501234567+)" },
   whatsappLinkButton: { en: "Link", he: "קשר" },
   whatsappUnlinkButton: { en: "Unlink", he: "בטל קישור" },
+
+  whatsappRemindersTitle: { en: "WhatsApp reminders", he: "תזכורות WhatsApp" },
+  whatsappRemindersHint: {
+    en: "Proactive check-ins the bot sends you on WhatsApp — nothing here is sent until you link a number above.",
+    he: "הודעות יזומות שהבוט שולח לכם ב-WhatsApp — כלום לא נשלח עד שתקשרו מספר למעלה.",
+  },
+  whatsappRemindersNeedsLink: { en: "Link a WhatsApp number above to enable reminders.", he: "קשרו מספר WhatsApp למעלה כדי להפעיל תזכורות." },
+  reminderBreakfastCheckIn: { en: "Nudge if no meals logged yet", he: "תזכורת אם עדיין לא נרשמה ארוחה" },
+  reminderMiddayCheckIn: { en: "Nudge if calories are far behind pace", he: "תזכורת אם הקלוריות מפגרות משמעותית" },
+  reminderEveningSummary: { en: "Evening summary of today", he: "סיכום ערב של היום" },
+  reminderMorningRecap: { en: "Morning recap of yesterday", he: "סיכום בוקר של אתמול" },
+  reminderWeeklyWeighIn: { en: "Weekly weigh-in reminder (Sundays)", he: "תזכורת שקילה שבועית (ימי ראשון)" },
+  reminderCustomGoalsCheckIn: { en: "Nudge for unmarked daily goals", he: "תזכורת ליעדים יומיים שלא סומנו" },
+  saveReminders: { en: "Save reminders", he: "שמור תזכורות" },
   whatsappLinkedAs: { en: "Linked as", he: "מקושר כ" },
 
   goalHistoryTitle: { en: "Goal history", he: "היסטוריית מטרות" },
