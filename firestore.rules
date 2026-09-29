@@ -48,6 +48,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Proactive WhatsApp reminder settings, scanned in bulk by the cron job
+    // (/api/cron/whatsapp-reminders) — same posture as whatsappLinks, only
+    // ever touched by the Admin SDK (POST /api/whatsapp/reminders writes it
+    // on the signed-in user's behalf, never directly from the client).
+    match /whatsappReminders/{uid} {
+      allow read, write: if false;
+    }
+
     // App-wide config (nutrition parser system prompt / model / sampling
     // params), editable from /admin. Gated to a single hardcoded uid — keep
     // this literal in sync with ADMIN_UID in src/lib/admin.ts.

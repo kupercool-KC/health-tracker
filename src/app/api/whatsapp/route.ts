@@ -108,8 +108,10 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   if (!uid) {
     await sendWhatsAppText(
       from,
-      "המספר הזה עוד לא מקושר לחשבון ב-Health Tracker.\nפתח את האפליקציה → פרופיל → קישור WhatsApp כדי לקשר.\n\n" +
-        "This number isn't linked to a Health Tracker account yet. Open the app → Profile → Link WhatsApp.",
+      "היי! 👋 המספר הזה עוד לא מקושר לחשבון ב-Health Tracker.\n" +
+        "היכנס ל-https://health-tracker-sepia.vercel.app ← פרופיל ← קישור WhatsApp, והזן את המספר הזה כדי לקשר.\n\n" +
+        "Hi! 👋 This number isn't linked to a Health Tracker account yet.\n" +
+        "Open https://health-tracker-sepia.vercel.app → Profile → Link WhatsApp, and enter this number to link it.",
     );
     return;
   }

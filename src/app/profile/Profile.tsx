@@ -26,7 +26,34 @@ import {
 import { getMealDaysSince, getWorkoutsSince, localDateKey, localDateKeyDaysAgo } from "@/lib/dashboard/queries";
 import { computeNetCalories } from "@/lib/goals/netCalories";
 import type { StringKey } from "@/lib/i18n/strings";
-import type { ActivityLevel, CustomGoalDef, DietaryPref, Goal, UserProfile, WorkoutType } from "@/lib/types";
+import type { ActivityLevel, CustomGoalDef, DietaryPref, Goal, ReminderConfig, UserProfile, WorkoutType } from "@/lib/types";
+
+type ReminderSettingsState = {
+  breakfastCheckIn: ReminderConfig;
+  middayCheckIn: ReminderConfig & { thresholdPercent: number };
+  eveningSummary: ReminderConfig;
+  morningRecap: ReminderConfig;
+  weeklyWeighIn: ReminderConfig;
+  customGoalsCheckIn: ReminderConfig;
+};
+
+const REMINDER_DEFAULTS: ReminderSettingsState = {
+  breakfastCheckIn: { enabled: false, time: "10:00" },
+  middayCheckIn: { enabled: false, time: "15:00", thresholdPercent: 40 },
+  eveningSummary: { enabled: false, time: "21:00" },
+  morningRecap: { enabled: false, time: "08:00" },
+  weeklyWeighIn: { enabled: false, time: "09:00" },
+  customGoalsCheckIn: { enabled: false, time: "20:30" },
+};
+
+const REMINDER_ROWS: Array<{ key: keyof ReminderSettingsState; labelKey: StringKey }> = [
+  { key: "breakfastCheckIn", labelKey: "reminderBreakfastCheckIn" },
+  { key: "middayCheckIn", labelKey: "reminderMiddayCheckIn" },
+  { key: "eveningSummary", labelKey: "reminderEveningSummary" },
+  { key: "morningRecap", labelKey: "reminderMorningRecap" },
+  { key: "weeklyWeighIn", labelKey: "reminderWeeklyWeighIn" },
+  { key: "customGoalsCheckIn", labelKey: "reminderCustomGoalsCheckIn" },
+];
 
 /** Offered as one-tap starting points when the user has no custom goals yet — still fully editable/removable afterward. `nameKey`/`unitKey` resolve through t() at add-time so the stored name matches whatever language the user is in. */
 const SUGGESTED_GOALS: Array<{ nameKey: StringKey; type: "boolean" | "numeric"; unitKey?: StringKey; target?: number }> = [
@@ -142,6 +169,10 @@ export default function Profile() {
   const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
 
+  const [reminders, setReminders] = useState<ReminderSettingsState>(REMINDER_DEFAULTS);
+  const [remindersBusy, setRemindersBusy] = useState(false);
+  const [remindersSaved, setRemindersSaved] = useState(false);
+
   const [retroDays, setRetroDays] = useState("3");
   const [retroBusy, setRetroBusy] = useState(false);
   const [retroResults, setRetroResults] = useState<
@@ -175,6 +206,14 @@ export default function Profile() {
       if (p.avoidFoods) setInfoAvoidFoods(p.avoidFoods.join(", "));
       if (p.preferredFoods) setInfoPreferredFoods(p.preferredFoods.join(", "));
       if (p.customGoals) setCustomGoals(p.customGoals);
+      if (p.whatsappPhone) {
+        auth.currentUser
+          ?.getIdToken()
+          .then((idToken) => fetch("/api/whatsapp/reminders", { headers: { Authorization: `Bearer ${idToken}` } }))
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => data && setReminders(data))
+          .catch(() => {});
+      }
     });
   }, [user]);
 
@@ -254,6 +293,32 @@ export default function Profile() {
       setWhatsappError(String(err instanceof Error ? err.message : err));
     } finally {
       setWhatsappBusy(false);
+    }
+  }
+
+  function updateReminder(key: keyof ReminderSettingsState, patch: Partial<ReminderSettingsState[typeof key]>) {
+    setReminders((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }
+
+  async function saveReminders() {
+    if (!user) return;
+    setRemindersBusy(true);
+    setRemindersSaved(false);
+    setError(null);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not signed in");
+      const res = await fetch("/api/whatsapp/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify(reminders),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      setRemindersSaved(true);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setRemindersBusy(false);
     }
   }
 
@@ -622,6 +687,59 @@ export default function Profile() {
           </div>
         )}
         {whatsappError && <p style={{ color: "#ff6b6b", fontSize: 12, margin: 0 }}>{whatsappError}</p>}
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("whatsappRemindersTitle")}</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("whatsappRemindersHint")}</p>
+
+        {!fullProfile?.whatsappPhone ? (
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("whatsappRemindersNeedsLink")}</p>
+        ) : (
+          <>
+            <div style={{ display: "grid", gap: 8 }}>
+              {REMINDER_ROWS.map((row) => {
+                const config = reminders[row.key];
+                return (
+                  <div
+                    key={row.key}
+                    style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, borderTop: "0.5px solid var(--border)", paddingTop: 8 }}
+                  >
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 220px", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={config.enabled}
+                        onChange={(e) => updateReminder(row.key, { enabled: e.target.checked })}
+                      />
+                      {t(row.labelKey)}
+                    </label>
+                    <input
+                      type="time"
+                      value={config.time}
+                      onChange={(e) => updateReminder(row.key, { time: e.target.value })}
+                      style={{ padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                    />
+                    {row.key === "middayCheckIn" && (
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={reminders.middayCheckIn.thresholdPercent}
+                        onChange={(e) => updateReminder("middayCheckIn", { thresholdPercent: Number(e.target.value) || 0 })}
+                        style={{ width: 64, padding: 6, borderRadius: 8, border: "0.5px solid var(--border)" }}
+                        title="%"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={saveReminders} disabled={remindersBusy}>
+              {remindersBusy ? t("working") : t("saveReminders")}
+            </button>
+            {remindersSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
+          </>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
