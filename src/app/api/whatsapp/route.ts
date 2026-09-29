@@ -55,7 +55,25 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const AFFIRMATIVE_RE = /^(כן|אשר|תשמור|שמור|אישור|אוקיי|בדיוק|yes|yeah|yep|confirm|save|ok|okay)\b/i;
+// `\b` is ASCII-only in JS regex — it does NOT mark a boundary after a Hebrew
+// letter (Hebrew isn't in \w), so `/^כן\b/` silently never matched a
+// standalone "כן" and the reply fell through to being reprocessed as a new
+// message instead of confirming. `(?=\s|$)` works for both alphabets.
+const AFFIRMATIVE_RE = /^(כן|אשר|תשמור|שמור|אישור|אוקיי|בדיוק|yes|yeah|yep|confirm|save|ok|okay)(?=\s|$)/i;
+const THUMBS_UP_RE = /\u{1F44D}/u; // 👍, with or without a skin-tone modifier
+
+/** True for a 👍 emoji reaction on any message, or a text reply that's a thumbs-up or one of AFFIRMATIVE_RE's words — the two ways WhatsApp users can confirm an open proposal (there's no Confirm button like the web chat has). */
+function isAffirmativeReply(message: IncomingMessage): boolean {
+  if (message.type === "reaction") return !!message.reaction?.emoji && THUMBS_UP_RE.test(message.reaction.emoji);
+  const text = message.text?.body?.trim();
+  if (!text) return false;
+  return THUMBS_UP_RE.test(text) || AFFIRMATIVE_RE.test(text);
+}
+
+const CONFIRM_HINT = {
+  he: '\n\n👍 (תגובת אמוג׳י) או "כן" כדי לשמור.',
+  en: '\n\n👍 (react) or reply "yes" to save.',
+} as const;
 
 /** yyyy-mm-dd in the app's home timezone — the server's own UTC "today" can be the wrong day near midnight Israel time, and unlike the web app (which always sends the client's local date) a WhatsApp message carries no timezone info at all. */
 function todayInIsrael(): string {
@@ -94,6 +112,7 @@ interface IncomingMessage {
   type: string;
   text?: { body?: string };
   image?: { id?: string };
+  reaction?: { message_id?: string; emoji?: string };
 }
 
 function extractMessage(payload: unknown): IncomingMessage | null {
@@ -133,16 +152,23 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const whatsappMetaRef = adminDb.collection("users").doc(uid).collection("meta").doc("whatsapp");
   const sessionId = ((await whatsappMetaRef.get()).data() as { sessionId?: string } | undefined)?.sessionId;
 
-  if (sessionId && text && AFFIRMATIVE_RE.test(text)) {
+  if (sessionId && isAffirmativeReply(message)) {
     const confirmed = await tryConfirmPending(uid, sessionId, lang, from);
     if (confirmed) return;
   }
 
-  if (!text && !imageUrls?.length) return; // unsupported message type (sticker, video, …) — nothing to act on
+  if (!text && !imageUrls?.length) return; // unsupported message type (sticker, video, reaction to something else, …) — nothing to act on
 
   const result = await runChatTurn({ uid, sessionId, message: text, imageUrls, lang, date: todayInIsrael() });
   await whatsappMetaRef.set({ sessionId: result.sessionId }, { merge: true });
-  await sendWhatsAppText(from, result.reply.content);
+
+  const hasPending = !!(
+    result.reply.pendingMeal ||
+    result.reply.pendingWorkout ||
+    result.reply.pendingSteps ||
+    result.reply.pendingBodyMetrics
+  );
+  await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content);
 }
 
 /** Returns true if the last assistant message in this session had a pendingX that got saved (and a "✅ Saved" reply was sent) — false means there was nothing open to confirm, so the caller should fall through to treating the message as new input. */
