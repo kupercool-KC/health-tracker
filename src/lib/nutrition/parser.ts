@@ -142,7 +142,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
           EXPLICIT_VALUE_INSTRUCTION +
           multiImageInstruction +
           (historyMessages.length > 0
-            ? "\n\nRecent conversation turns are included before the final message for context — if that final message doesn't itself describe food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed and extract that instead of failing."
+            ? "\n\nRecent conversation turns are included before the final message for context ONLY — use them SOLELY to figure out which food is meant when the final message doesn't itself describe food (e.g. it's just \"add it\"/\"log that\"). CRITICAL: never re-list a food from an earlier turn as a separate item just because it's mentioned in this history — those earlier foods were a DIFFERENT, already-handled request (already logged or already rejected), not part of what's being logged now. Extract items ONLY for the food(s) actually described in the final message below; if that final message names one food, return exactly one item, even if several other foods appear earlier in the history."
             : ""),
       },
       ...historyMessages,
