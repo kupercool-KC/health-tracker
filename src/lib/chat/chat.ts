@@ -553,14 +553,14 @@ export async function resolvePendingMealFollowUp(
 - "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
 - "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'") — this is an explicit request to rename/merge under a NEW label, not just "add one more thing".
 - "add": they want to add ONE OR MORE additional, separate food item(s) to the proposal, keeping every item (existing and new) listed individually — e.g. "add another sushi roll too", "also add a coke", "and a slice of bread". This is the correct choice whenever they're naming something ADDITIONAL to log alongside what's already proposed, as its own line — do NOT use "combine" for this just because it involves adding something; "combine" is only for an explicit request to merge everything into one named entry.
-- "reschedule": they want to save this SAME meal (same food, same numbers) for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead", "save it for the 5th" — NOT changing the food or its numbers, only which day it's recorded under.
+- "reschedule": they want to save this SAME meal (same food, same numbers) for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead", "save it for the 5th" — NOT changing the food or its numbers, only which day it's recorded under. If they say to reschedule ONLY SOME of the listed items (e.g. "only put the beer in for yesterday", "just the salad for Monday") — implicitly excluding the rest of the list from being saved right now — also include "onlyItems": an array with the exact "description" string(s) from the proposal above that should be KEPT; every other listed item is left out of this save.
 - "new": anything else — describing a genuinely different, unrelated food to log, confirming as-is, or unrelated.
-Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"add"|"reschedule"|"new", "calories"?: number, "protein"?: number, "description"?: string, "explanation"?: string, "combinedName"?: string, "addItems"?: { "description": string, "calories"?: number, "protein"?: number }[] }
+Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"add"|"reschedule"|"new", "calories"?: number, "protein"?: number, "description"?: string, "explanation"?: string, "combinedName"?: string, "addItems"?: { "description": string, "calories"?: number, "protein"?: number }[], "onlyItems"?: string[] }
 For "correction": include whichever of calories/protein the user specified (omit either not mentioned). If the food's name/identity should change, also include "description" — the corrected name, in ${lang === "he" ? "Hebrew" : "English"} — and omit calories/protein if the user only corrected the name (the caller re-derives the numbers for the corrected food).
 For "question": include a concise "explanation" answering what they asked about the estimate, about THIS meal only — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.
 For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.
 For "add": include "addItems" — one entry per new food named, each with "description" (in ${lang === "he" ? "Hebrew" : "English"}) and "calories"/"protein" ONLY if the user actually stated a number for that specific item in this message (omit them otherwise — the caller estimates unset ones).
-For "reschedule": no extra fields needed — the target date is resolved separately.`,
+For "reschedule": include "onlyItems" only when the user singled out a subset of the list — otherwise omit it (the target date is resolved separately).`,
       },
       ...toContextMessages(history),
       { role: "user", content: message },
@@ -576,6 +576,7 @@ For "reschedule": no extra fields needed — the target date is resolved separat
     explanation?: string;
     combinedName?: string;
     addItems?: { description: string; calories?: number; protein?: number }[];
+    onlyItems?: string[];
   };
   try {
     parsed = JSON.parse(raw ?? "{}");
@@ -585,15 +586,33 @@ For "reschedule": no extra fields needed — the target date is resolved separat
 
   if (parsed.kind === "reschedule") {
     const targetDate = await resolveLogDate(message, today);
-    const updatedPendingMeal = { ...openPendingMeal, date: targetDate };
-    const lines = openPendingMeal.items
+    // "only put the beer in for yesterday" means the rest of the list is
+    // NOT part of this save — without this filter, every item in the
+    // proposal silently got the new date regardless of which one the user
+    // actually named, saving items they never meant to reschedule.
+    const keptItems = parsed.onlyItems?.length
+      ? openPendingMeal.items.filter((item) =>
+          parsed.onlyItems!.some((wanted) => item.description.includes(wanted) || wanted.includes(item.description)),
+        )
+      : openPendingMeal.items;
+    // A bad/no match shouldn't silently empty the proposal — fall back to keeping everything.
+    const finalItems = keptItems.length > 0 ? keptItems : openPendingMeal.items;
+    const droppedCount = openPendingMeal.items.length - finalItems.length;
+    const updatedPendingMeal = { ...openPendingMeal, items: finalItems, date: targetDate };
+    const lines = finalItems
       .map((item) => `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`)
       .join("\n");
     const dateNote = targetDate !== today ? ` (${targetDate})` : "";
+    const droppedNote =
+      droppedCount > 0
+        ? lang === "he"
+          ? "\n\n(שאר הפריטים לא נכללו בשמירה הזו — תגיד לי אם תרצה לרשום אותם בנפרד.)"
+          : "\n\n(The other item(s) weren't included in this save — let me know if you'd like to log them separately.)"
+        : "";
     return {
       kind: "reschedule",
       pendingMeal: updatedPendingMeal,
-      replyContent: `${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+      replyContent: `${lines}${dateNote}${droppedNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
     };
   }
 
