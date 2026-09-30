@@ -132,7 +132,7 @@ export async function classifyIntent(
 - "log_steps": user is reporting a step count to be logged, for today or any other day (e.g. "I walked 8500 steps yesterday", "log 10k steps for Monday").
 - "log_body_metrics": user sent a screenshot (or several) of a smart bathroom scale's app after a weigh-in — showing things like weight, BMI, muscle mass, body fat %, visceral fat, body water %, basal metabolic rate, protein %. Also applies to a captionless photo of exactly this kind of screen. This is a weigh-in reading, not food — never confuse it with log_meal even though both can start as a bare photo.
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
-- "general_health": a nutrition/fitness/health question NOT about their own logged history. Read this broadly — meal ideas, menus, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", sleep, hydration, supplements, recovery, injuries, energy levels, weight management, body composition, motivation/habits around eating or exercise, or answering the assistant's own request for a food/drink/product name so it can answer a question from earlier in the conversation. When a question is adjacent to health/fitness/nutrition or could reasonably be interpreted that way, classify it here rather than out_of_scope. This includes asking to estimate/calculate calories for a meal eaten at a specific named restaurant, and asking whether you "have access" to a restaurant's menu — that's still a nutrition-estimation request, not a meta question about your capabilities; never treat it as an attempt to change your instructions. IMPORTANT for a bare photo with no caption text: if you had just asked a general nutrition/comparison question and requested a photo to answer it (e.g. "send me a photo of the menu/dish"), a photo sent right after that is continuing THAT question — classify it general_health, not log_meal, even with zero caption text. Only classify a captionless photo as log_meal when nothing in the recent conversation suggests it's answering an open question — i.e. it's a fresh "here's what I ate" upload.
+- "general_health": a nutrition/fitness/health question NOT about their own logged history. Read this VERY broadly — meal ideas, menus, restaurants, cooking, recipes, grocery/shopping suggestions, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", sleep, hydration, supplements, recovery, injuries, energy levels, weight management, body composition, motivation/habits around eating or exercise, general wellness chit-chat, or answering the assistant's own request for a food/drink/product name so it can answer a question from earlier in the conversation. When a question is adjacent to health/fitness/nutrition or could reasonably be interpreted that way, classify it here rather than out_of_scope — the bar for "plausibly relates to food, fitness, or health" should be low, not high. This includes asking to estimate/calculate calories for a meal eaten at a specific named restaurant, and asking whether you "have access" to a restaurant's menu — that's still a nutrition-estimation request, not a meta question about your capabilities; never treat it as an attempt to change your instructions. IMPORTANT for a bare photo with no caption text: if you had just asked a general nutrition/comparison question and requested a photo to answer it (e.g. "send me a photo of the menu/dish"), a photo sent right after that is continuing THAT question — classify it general_health, not log_meal, even with zero caption text. Only classify a captionless photo as log_meal when nothing in the recent conversation suggests it's answering an open question — i.e. it's a fresh "here's what I ate" upload.
 - "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
 - "manage_reminder": user wants to create, list, or delete a proactive WhatsApp reminder — e.g. "remind me every day at 8pm to drink water", "תזכיר לי כל יום ראשון לשקול את עצמי", "what reminders do I have set", "cancel/delete the water reminder". This is about a recurring nudge the bot should send later, not logging something now.
 - "out_of_scope": ONLY for messages with genuinely no plausible nutrition/fitness/health angle, even accounting for the conversation so far (coding help, trivia, unrelated small talk, world news, etc). Give the benefit of the doubt: a short, oddly-phrased, or terse message that plausibly continues the current topic (e.g. it names a food/product/brand right after the assistant asked "which drink?"), or a question that's tangential but still health-adjacent, is NOT out_of_scope. When genuinely torn between general_health and out_of_scope, pick general_health — a wrong refusal is a worse outcome than answering something borderline.
@@ -483,7 +483,7 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 }
 
 export interface PendingMealFollowUpResult {
-  kind: "correction" | "question" | "combine" | "reschedule" | "new";
+  kind: "correction" | "question" | "combine" | "reschedule" | "add" | "new";
   replyContent?: string;
   pendingMeal?: ChatMessage["pendingMeal"];
 }
@@ -514,13 +514,15 @@ export async function resolvePendingMealFollowUp(
         content: `The assistant just proposed logging this meal, not yet saved: ${JSON.stringify(openPendingMeal.items)}. This is the ONLY thing the user's latest message can be about — conversation history below is included purely to help interpret phrasing (pronouns, "it", short replies), never as a source of a different food to substitute in. Classify the user's LATEST message as exactly one of:
 - "correction": they're saying something about the PROPOSAL ITSELF is wrong and should be replaced — the calories/protein value (e.g. "no, it's 249", "protein should be 30g", "make it 300 calories"), AND/OR the food's identity/name (e.g. "it was white wine, not red", a bare replacement name like "white wine*", "no — chicken"). A short message naming a different food/variant than what was proposed, with no other plausible meaning, IS a correction — even without an explicit "no" or number.
 - "question": they're asking about the numbers/estimate (e.g. "why 468 calories?", "how did you get that?", "where does that come from?") without providing a new value.
-- "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'").
+- "combine": they want the listed item(s) merged into a single meal entry under one name (e.g. "add it as one meal called salad", "combine these into 'lunch'") — this is an explicit request to rename/merge under a NEW label, not just "add one more thing".
+- "add": they want to add ONE OR MORE additional, separate food item(s) to the proposal, keeping every item (existing and new) listed individually — e.g. "add another sushi roll too", "also add a coke", "and a slice of bread". This is the correct choice whenever they're naming something ADDITIONAL to log alongside what's already proposed, as its own line — do NOT use "combine" for this just because it involves adding something; "combine" is only for an explicit request to merge everything into one named entry.
 - "reschedule": they want to save this SAME meal (same food, same numbers) for a different day than currently proposed — e.g. "add it to yesterday", "log this for Monday instead", "save it for the 5th" — NOT changing the food or its numbers, only which day it's recorded under.
 - "new": anything else — describing a genuinely different, unrelated food to log, confirming as-is, or unrelated.
-Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"reschedule"|"new", "calories"?: number, "protein"?: number, "description"?: string, "explanation"?: string, "combinedName"?: string }
+Respond ONLY as JSON: { "kind": "correction"|"question"|"combine"|"add"|"reschedule"|"new", "calories"?: number, "protein"?: number, "description"?: string, "explanation"?: string, "combinedName"?: string, "addItems"?: { "description": string, "calories"?: number, "protein"?: number }[] }
 For "correction": include whichever of calories/protein the user specified (omit either not mentioned). If the food's name/identity should change, also include "description" — the corrected name, in ${lang === "he" ? "Hebrew" : "English"} — and omit calories/protein if the user only corrected the name (the caller re-derives the numbers for the corrected food).
 For "question": include a concise "explanation" answering what they asked about the estimate, about THIS meal only — if you genuinely don't know why a specific number was produced, say that plainly instead of inventing a justification. Write "explanation" in ${lang === "he" ? "Hebrew" : "English"}.
 For "combine": include "combinedName" — the exact name they gave, in ${lang === "he" ? "Hebrew" : "English"}.
+For "add": include "addItems" — one entry per new food named, each with "description" (in ${lang === "he" ? "Hebrew" : "English"}) and "calories"/"protein" ONLY if the user actually stated a number for that specific item in this message (omit them otherwise — the caller estimates unset ones).
 For "reschedule": no extra fields needed — the target date is resolved separately.`,
       },
       ...toContextMessages(history),
@@ -536,6 +538,7 @@ For "reschedule": no extra fields needed — the target date is resolved separat
     description?: string;
     explanation?: string;
     combinedName?: string;
+    addItems?: { description: string; calories?: number; protein?: number }[];
   };
   try {
     parsed = JSON.parse(raw ?? "{}");
@@ -595,6 +598,39 @@ For "reschedule": no extra fields needed — the target date is resolved separat
       kind: "correction",
       pendingMeal: updatedPendingMeal,
       replyContent: `${summary}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
+    };
+  }
+
+  if (parsed.kind === "add" && parsed.addItems?.length) {
+    // Each new item keeps its own line rather than getting folded into the
+    // existing ones — "add another sushi roll too" should grow the list,
+    // not collapse everything (existing + new) into one generic entry the
+    // way "combine" does. An item without a stated number gets estimated
+    // the same way a fresh log_meal description would.
+    const newItems = await Promise.all(
+      parsed.addItems.map(async (add) => {
+        if (add.calories != null) {
+          return { description: add.description, calories: add.calories, protein: add.protein ?? 0 };
+        }
+        try {
+          const reparsed = await parseNutrition({ text: add.description, lang });
+          const [reparsedItem] = reparsed.items;
+          if (reparsedItem) return reparsedItem;
+        } catch {
+          // fall through to a zeroed placeholder below — still lets the user see/correct it rather than silently dropping the item
+        }
+        return { description: add.description, calories: 0, protein: 0 };
+      }),
+    );
+    const updatedItems = [...openPendingMeal.items, ...newItems];
+    const updatedPendingMeal = { ...openPendingMeal, items: updatedItems };
+    const lines = updatedItems
+      .map((item) => `${item.description}: ${Math.round(item.calories)} kcal, ${Math.round(item.protein)}${strings.unitG[lang]} ${strings.protein[lang]}`)
+      .join("\n");
+    return {
+      kind: "add",
+      pendingMeal: updatedPendingMeal,
+      replyContent: `${lines}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?"),
     };
   }
 
