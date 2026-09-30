@@ -14,6 +14,7 @@ import type { ParsedNutrition } from "@/lib/types";
 import { getNutritionParserConfig } from "./config";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { lookupUsdaNutrients, webSearchNutrition } from "./usda";
+import { searchWeb } from "@/lib/chat/webSearch";
 
 // estimatedGrams/explicitCalories/explicitProtein are internal to this
 // module (used for USDA grounding below) and stripped before returning —
@@ -30,6 +31,8 @@ const itemSchema = z.object({
   explicitCalories: z.boolean().optional(),
   explicitProtein: z.boolean().optional(),
   usdaSearchTerm: z.string().optional(),
+  restaurantName: z.string().optional(),
+  menuGrounded: z.boolean().optional(),
   // The model doesn't always follow "array of strings" when there's only
   // one ingredient to list — it sometimes returns a bare string instead
   // (e.g. "yellow curry" instead of ["yellow curry"]), which used to fail
@@ -92,7 +95,29 @@ const EXPLICIT_VALUE_INSTRUCTION =
   " Also include for each item an \"estimatedGrams\" field: your best-guess portion weight in grams as a plain number." +
   " Also include a \"usdaSearchTerm\" field: a specific search phrase for grounding this food's real nutrition values — name the base ingredient AND its preparation/state (e.g. \"white rice, cooked\" not just \"rice\"; \"tilapia\" for a fish called \"אמנון\"/\"Amnon\" in Hebrew/Israeli usage, plus \"raw\" or \"cooked\" if known), always in English regardless of what language the \"description\" field is written in. A bare single-word term like \"rice\" tends to match unrelated products (crackers, flour, snacks) — always qualify it." +
   " EXCEPTION: if this is a specific packaged/branded product (a bottled drink, a snack bar, anything with a visible brand name and product line on its label/packaging), put the exact brand + product name here instead (e.g. \"Yotvata PRO Breakfast banana oat protein drink\", not a generic description) — a generic ingredient database won't have it, but naming it exactly lets a web lookup find the real label values instead of guessing." +
+  " If the user names a specific restaurant/venue for a dish (e.g. \"[dish name] at [restaurant name]\"), call the search_restaurant_menu tool with the place and dish name BEFORE estimating — you're looking for what's actually IN the dish (its ingredients/description), not a calorie number (real menus essentially never publish those). If the search finds a real ingredient list/description, use those actual ingredients — not your own generic assumption of a typical version of that dish — to estimate calories/protein the same way you would for any composite dish, and set \"menuGrounded\": true and \"restaurantName\" to the place's name on that item. If the search finds nothing useful, or no specific place was named, fall back to your normal estimate from whatever the user already described, and leave \"menuGrounded\" unset — don't call the tool more than once per distinct restaurant+dish." +
   " Group ingredients of ONE composite dish into a SINGLE item, not one item per ingredient — e.g. \"salad with red bell pepper, a bit of salt and pepper, olive oil, and a bit of parsley\" is ONE item named after the dish (\"salad\"), with its total calories/protein covering everything in it, and an \"ingredients\" field listing each ingredient the user actually mentioned (in the same language as \"description\"). Only split into separate items when the user is clearly describing distinct, separately-eaten foods (e.g. \"rice and grilled chicken\" is 2 items) — components of a single dish are never split out individually. Omit \"ingredients\" entirely for a plain single-food item with nothing to list (e.g. \"an apple\").";
+
+const SEARCH_MENU_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "search_restaurant_menu",
+    description:
+      "Search the web for what's actually IN a specific dish at a named restaurant/venue — its ingredients or menu description, not a calorie number (real menus essentially never publish those). Use this whenever the user names a specific place for a dish, before falling back to a generic estimate of that dish type. Returns a free-text summary of what was found, or null if the menu/dish couldn't be found online.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: 'A specific search query naming the place and the dish, e.g. "[restaurant name] [city] menu [dish name] ingredients".',
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const MAX_MENU_SEARCH_ROUNDS = 3;
 
 export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition> {
   if (!input.text && !input.imageUrls?.length) {
@@ -124,33 +149,62 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     .slice(-8)
     .map((m) => ({ role: m.role, content: m.content }));
 
-  const completion = await getOpenAIClient().chat.completions.create({
-    model: config.model,
-    response_format: { type: "json_object" },
-    // Minimize run-to-run variance for the same input. Not a hard guarantee
-    // of determinism (OpenAI notes seed/temperature reduce but don't
-    // eliminate drift, especially across model version changes), but this
-    // is the closest the API gets.
-    temperature: config.temperature,
-    seed: config.seed,
-    messages: [
-      {
-        role: "system",
-        content:
-          config.systemPrompt +
-          languageInstruction +
-          EXPLICIT_VALUE_INSTRUCTION +
-          multiImageInstruction +
-          (historyMessages.length > 0
-            ? "\n\nRecent conversation turns are included before the final message for context ONLY. Two specific uses are allowed: (a) if the final message doesn't itself describe any food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed in the preceding turns and extract that; (b) if the final message explicitly asks to include an earlier-mentioned food too — by naming it directly, or by a clear reference like \"what I ate before\", \"the other thing I mentioned\", \"combine everything from this session\" — include that food as well, using the calorie/protein values already established for it earlier if they were stated there. Otherwise (the normal case: the final message plainly describes new food(s) with no reference to anything earlier), extract items ONLY for what it actually describes — do NOT add other foods just because they happen to appear earlier in this history. An earlier food that the final message doesn't reference at all was a separate, already-handled request (already logged or already rejected), not part of what's being logged now."
-            : ""),
-      },
-      ...historyMessages,
-      { role: "user", content },
-    ],
-  });
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content:
+        config.systemPrompt +
+        languageInstruction +
+        EXPLICIT_VALUE_INSTRUCTION +
+        multiImageInstruction +
+        (historyMessages.length > 0
+          ? "\n\nRecent conversation turns are included before the final message for context ONLY. Two specific uses are allowed: (a) if the final message doesn't itself describe any food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed in the preceding turns and extract that; (b) if the final message explicitly asks to include an earlier-mentioned food too — by naming it directly, or by a clear reference like \"what I ate before\", \"the other thing I mentioned\", \"combine everything from this session\" — include that food as well, using the calorie/protein values already established for it earlier if they were stated there. Otherwise (the normal case: the final message plainly describes new food(s) with no reference to anything earlier), extract items ONLY for what it actually describes — do NOT add other foods just because they happen to appear earlier in this history. An earlier food that the final message doesn't reference at all was a separate, already-handled request (already logged or already rejected), not part of what's being logged now."
+          : ""),
+    },
+    ...historyMessages,
+    { role: "user", content },
+  ];
 
-  const raw = completion.choices[0]?.message?.content;
+  let raw: string | null | undefined;
+  for (let round = 0; round < MAX_MENU_SEARCH_ROUNDS; round++) {
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: config.model,
+      response_format: { type: "json_object" },
+      // Minimize run-to-run variance for the same input. Not a hard guarantee
+      // of determinism (OpenAI notes seed/temperature reduce but don't
+      // eliminate drift, especially across model version changes), but this
+      // is the closest the API gets.
+      temperature: config.temperature,
+      seed: config.seed,
+      tools: [SEARCH_MENU_TOOL],
+      messages,
+    });
+
+    const choice = completion.choices[0]?.message;
+    if (!choice) throw new Error("Empty response from nutrition parser");
+
+    const toolCalls = choice.tool_calls?.filter((c) => c.type === "function");
+    if (!toolCalls || toolCalls.length === 0) {
+      raw = choice.content;
+      break;
+    }
+
+    messages.push(choice);
+    for (const call of toolCalls) {
+      let query = "";
+      try {
+        query = JSON.parse(call.function.arguments).query ?? "";
+      } catch {
+        // malformed arguments — fall through with an empty query, handled as "nothing found" below
+      }
+      const result = query ? await searchWeb(query) : null;
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: result ?? "No menu/dish information found online for this search.",
+      });
+    }
+  }
   if (!raw) throw new Error("Empty response from nutrition parser");
 
   const parsed = parsedSchema.parse(JSON.parse(raw));
@@ -191,6 +245,21 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   // final map below.
   const provenance: { source: "explicit" | "usda" | "web" | "model"; note: string }[] = [];
   for (const item of parsed.items) {
+    // Already estimated from the restaurant's own real menu/ingredients via
+    // search_restaurant_menu above — trust that over a generic USDA/web
+    // lookup on a stripped-down ingredient term, which would just throw away
+    // the restaurant-specific grounding the model already did.
+    if (item.menuGrounded) {
+      provenance.push({
+        source: "web",
+        note: item.restaurantName
+          ? input.lang === "he"
+            ? `הוערך לפי התפריט/הרכיבים בפועל של ${item.restaurantName} (חיפוש ברשת).`
+            : `Estimated from ${item.restaurantName}'s actual menu/ingredients (web search).`
+          : nutritionNote("web", null, input.lang),
+      });
+      continue;
+    }
     const fullyExplicit = !!(item.explicitCalories && item.explicitProtein);
     if (!item.estimatedGrams || fullyExplicit) {
       provenance.push({
