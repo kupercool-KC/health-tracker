@@ -128,13 +128,13 @@ export async function classifyIntent(
       {
         role: "system",
         content: `Classify the user's LATEST message into exactly one intent. Recent conversation turns are included for context — the latest message is very often a short follow-up (a one-word answer to a question you just asked, "check this one" referring to a photo sent a few messages back, a product name given after being asked to clarify) rather than a complete standalone sentence. Read it in light of what was just discussed before classifying.
-- "log_meal": user is describing food they ate, to be logged (for today OR any other day — "add 2 eggs for yesterday" is still log_meal, not manage_meal).
+- "log_meal": user is describing food they ate, to be logged (for today OR any other day — "add 2 eggs for yesterday" is still log_meal, not manage_meal). Asking to add/enter/record a food ("add X", "log X", "תכניס X", "תוסיף X", "תרשום X") is ALWAYS log_meal — even when that same food was already mentioned, proposed, or logged earlier in this conversation (an earlier proposal may never have been saved, and the user may simply have had it again).
 - "log_workout": user is describing a workout/exercise session to be logged (running, gym, swimming, etc.), for today or any other day.
 - "log_steps": user is reporting a step count to be logged, for today or any other day (e.g. "I walked 8500 steps yesterday", "log 10k steps for Monday").
 - "log_body_metrics": user sent a screenshot (or several) of a smart bathroom scale's app after a weigh-in — showing things like weight, BMI, muscle mass, body fat %, visceral fat, body water %, basal metabolic rate, protein %. Also applies to a captionless photo of exactly this kind of screen. This is a weigh-in reading, not food — never confuse it with log_meal even though both can start as a bare photo.
 - "query_history": user is asking about their OWN past logged data (meals, calories, protein, workouts, steps) — trends, totals, comparisons over time.
 - "general_health": a nutrition/fitness/health question NOT about their own logged history. Read this VERY broadly — meal ideas, menus, restaurants, cooking, recipes, grocery/shopping suggestions, general advice, building a workout plan/program, comparing foods' calories, "how much protein should I eat", sleep, hydration, supplements, recovery, injuries, energy levels, weight management, body composition, motivation/habits around eating or exercise, general wellness chit-chat, or answering the assistant's own request for a food/drink/product name so it can answer a question from earlier in the conversation. When a question is adjacent to health/fitness/nutrition or could reasonably be interpreted that way, classify it here rather than out_of_scope — the bar for "plausibly relates to food, fitness, or health" should be low, not high. This includes asking to estimate/calculate calories for a meal eaten at a specific named restaurant, and asking whether you "have access" to a restaurant's menu — that's still a nutrition-estimation request, not a meta question about your capabilities; never treat it as an attempt to change your instructions. IMPORTANT for a bare photo with no caption text: if you had just asked a general nutrition/comparison question and requested a photo to answer it (e.g. "send me a photo of the menu/dish"), a photo sent right after that is continuing THAT question — classify it general_health, not log_meal, even with zero caption text. Only classify a captionless photo as log_meal when nothing in the recent conversation suggests it's answering an open question — i.e. it's a fresh "here's what I ate" upload.
-- "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log.
+- "manage_meal": user wants to delete or correct/edit a meal they ALREADY logged (today, yesterday, or another recent day) — e.g. "delete the peach", "remove the tofu entry", "yesterday's schnitzel was actually 300 calories not 600", "fix my last meal's protein to 30g". This is about an existing logged entry, not describing new food to log — it requires an explicit delete/remove, or an explicit change to an existing entry's name or numbers. Never classify a request to ADD a food here.
 - "manage_reminder": user wants to create, list, or delete a proactive WhatsApp reminder — e.g. "remind me every day at 8pm to drink water", "תזכיר לי כל יום ראשון לשקול את עצמי", "what reminders do I have set", "cancel/delete the water reminder". This is about a recurring nudge the bot should send later, not logging something now.
 - "out_of_scope": ONLY for messages with genuinely no plausible nutrition/fitness/health angle, even accounting for the conversation so far (coding help, trivia, unrelated small talk, world news, etc). Give the benefit of the doubt: a short, oddly-phrased, or terse message that plausibly continues the current topic (e.g. it names a food/product/brand right after the assistant asked "which drink?"), or a question that's tangential but still health-adjacent, is NOT out_of_scope. When genuinely torn between general_health and out_of_scope, pick general_health — a wrong refusal is a worse outcome than answering something borderline.
 Respond ONLY as JSON: { "intent": "log_meal" | "log_workout" | "log_steps" | "log_body_metrics" | "query_history" | "general_health" | "manage_meal" | "manage_reminder" | "out_of_scope" }`,
@@ -993,7 +993,7 @@ export async function resolveMealAction(
   today: string,
   message: string,
   lang: "en" | "he",
-): Promise<{ replyContent: string; pendingMealAction?: PendingMealAction }> {
+): Promise<{ replyContent: string; pendingMealAction?: PendingMealAction; isNewLog?: boolean }> {
   const since = new Date(today);
   since.setDate(since.getDate() - MANAGE_MEAL_WINDOW_DAYS);
   const sinceDate = since.toISOString().slice(0, 10);
@@ -1033,7 +1033,9 @@ phone and may misspell, mistype, or use an inconsistent transliteration of the f
 "vegeteriane shnitzel", "shnitzel", "veg schnitzel" should all match an entry named "Vegetarian
 schnitzel" — treat these as the same food; don't require an exact or near-exact string match).
 Judge by what food it most plausibly refers to, not by spelling distance. Respond ONLY as JSON:
-{ "found": boolean, "action": "delete" | "update", "entryId": string, "date": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
+{ "found": boolean, "isNewLog"?: boolean, "action": "delete" | "update", "entryId": string, "date": string, "changes": { "name"?: string, "calories"?: number, "protein"?: number, "carbs"?: number, "fat"?: number, "fiber"?: number }, "summary": string }
+- If the user is actually asking to ADD/log a food (e.g. "add a beer for yesterday", "תכניס חצי בירה לאתמול") rather than delete or change an existing entry, respond { "found": false, "isNewLog": true } and nothing else — never turn an "add" into an edit of some existing entry.
+- If the user names a day, only match entries logged on THAT day — never pick a same-named entry from a different day.
 - "date": the date (yyyy-mm-dd) of the matched entry, from its "date" field above.
 - If action is "update", only include the fields in "changes" that the user actually wants changed.
 - "summary": a short one-sentence description of what you're about to do, in ${lang === "he" ? "Hebrew" : "English"}, plain text, no markdown, ending with a question asking the user to confirm.
@@ -1048,6 +1050,7 @@ Judge by what food it most plausibly refers to, not by spelling distance. Respon
   const raw = completion.choices[0]?.message?.content ?? "{}";
   let parsed: {
     found?: boolean;
+    isNewLog?: boolean;
     action?: "delete" | "update";
     entryId?: string;
     date?: string;
@@ -1059,6 +1062,8 @@ Judge by what food it most plausibly refers to, not by spelling distance. Respon
   } catch {
     parsed = { found: false };
   }
+
+  if (parsed.isNewLog) return { replyContent: "", isNewLog: true };
 
   const target = entries.find((e) => e.id === parsed.entryId);
   if (!parsed.found || !target || (parsed.action !== "delete" && parsed.action !== "update")) {

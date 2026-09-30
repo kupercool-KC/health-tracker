@@ -22,6 +22,27 @@ function recomputeMealTotals(entries: MealEntry[]): MealDay["totals"] {
   );
 }
 
+/** Same edit/delete the web chat's Confirm button does via PATCH/DELETE /api/nutrition. Returns false if the entry no longer exists. */
+export async function applyMealActionFromPending(
+  uid: string,
+  pending: NonNullable<ChatMessage["pendingMealAction"]>,
+): Promise<boolean> {
+  const ref = adminDb.collection("users").doc(uid).collection("meals").doc(pending.date);
+  let found = false;
+  await adminDb.runTransaction(async (tx) => {
+    const existing = (await tx.get(ref)).data() as MealDay | undefined;
+    const before = existing?.entries ?? [];
+    found = before.some((e) => e.id === pending.entryId);
+    if (!found) return;
+    const entries =
+      pending.action === "delete"
+        ? before.filter((e) => e.id !== pending.entryId)
+        : before.map((e) => (e.id === pending.entryId ? { ...e, ...pending.changes } : e));
+    tx.set(ref, { date: pending.date, entries, totals: recomputeMealTotals(entries) });
+  });
+  return found;
+}
+
 export async function saveMealFromPending(uid: string, pending: NonNullable<ChatMessage["pendingMeal"]>): Promise<void> {
   const { imageUrls, date, items } = pending;
   const now = new Date().toISOString();

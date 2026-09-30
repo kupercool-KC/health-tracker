@@ -141,7 +141,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
         classifyIntent(userContent, priorMessages, imageUrls),
         imageUrls?.length ? Promise.resolve({ logs: [] }) : detectCompositeLog(userContent, priorMessages),
       ]);
-  const intent: ChatIntent = followUpHandled
+  let intent: ChatIntent = followUpHandled
     ? "log_meal"
     : workoutFollowUpHandled
       ? "log_workout"
@@ -150,6 +150,15 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
         : greeting
           ? "out_of_scope"
           : classifiedIntent!;
+
+  // Second line of defense for a misclassified "add X for yesterday" — the
+  // edit path would otherwise latch onto some same-named entry from another
+  // day and propose changing it.
+  let mealActionResult: Awaited<ReturnType<typeof resolveMealAction>> | undefined;
+  if (intent === "manage_meal") {
+    mealActionResult = await resolveMealAction(uid, today, userContent, lang);
+    if (mealActionResult.isNewLog) intent = "log_meal";
+  }
   const isComposite = composite.logs.length >= 2 && !!message?.trim();
 
   let replyContent: string;
@@ -402,10 +411,9 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
       imageUrls,
       summarizeProfileForChat(profile),
     );
-  } else if (intent === "manage_meal") {
-    const result = await resolveMealAction(uid, today, userContent, lang);
-    replyContent = result.replyContent;
-    pendingMealAction = result.pendingMealAction;
+  } else if (intent === "manage_meal" && mealActionResult) {
+    replyContent = mealActionResult.replyContent;
+    pendingMealAction = mealActionResult.pendingMealAction;
   } else if (intent === "manage_reminder") {
     const result = await resolveReminderAction(uid, userContent, lang, priorMessages);
     replyContent = result.replyContent;

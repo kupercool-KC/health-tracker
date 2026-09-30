@@ -28,6 +28,7 @@ import { sendWhatsAppText, downloadWhatsAppMedia, showTypingIndicator } from "@/
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import { transcribeAudio } from "@/lib/openai/transcribe";
 import {
+  applyMealActionFromPending,
   saveBodyMetricsFromPending,
   saveMealFromPending,
   saveStepsFromPending,
@@ -191,6 +192,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 
   const hasPending = !!(
     result.reply.pendingMeal ||
+    result.reply.pendingMealAction ||
     result.reply.pendingWorkout ||
     result.reply.pendingSteps ||
     result.reply.pendingBodyMetrics
@@ -205,9 +207,13 @@ async function tryConfirmPending(uid: string, sessionId: string, lang: "en" | "h
   const lastIndex = (session?.messages.length ?? 0) - 1;
   const last = session?.messages[lastIndex];
   if (!last || last.role !== "assistant") return false;
-  if (!(last.pendingMeal || last.pendingWorkout || last.pendingSteps || last.pendingBodyMetrics)) return false;
+  if (!(last.pendingMeal || last.pendingMealAction || last.pendingWorkout || last.pendingSteps || last.pendingBodyMetrics)) {
+    return false;
+  }
 
+  let mealActionFound = true;
   if (last.pendingMeal) await saveMealFromPending(uid, last.pendingMeal);
+  if (last.pendingMealAction) mealActionFound = await applyMealActionFromPending(uid, last.pendingMealAction);
   if (last.pendingWorkout) await saveWorkoutFromPending(uid, last.pendingWorkout);
   if (last.pendingSteps) await saveStepsFromPending(uid, last.pendingSteps);
   if (last.pendingBodyMetrics) await saveBodyMetricsFromPending(uid, last.pendingBodyMetrics);
@@ -222,6 +228,21 @@ async function tryConfirmPending(uid: string, sessionId: string, lang: "en" | "h
   messages[lastIndex] = rest as ChatMessage;
   await ref.update({ messages });
 
-  await sendWhatsAppText(from, lang === "he" ? "✅ נשמר" : "✅ Saved");
+  const reply = !mealActionFound
+    ? lang === "he"
+      ? "לא מצאתי את הרשומה הזו יותר — ייתכן שכבר נמחקה."
+      : "That entry no longer exists — it may have already been removed."
+    : last.pendingMealAction?.action === "delete"
+      ? lang === "he"
+        ? "✅ נמחק"
+        : "✅ Deleted"
+      : last.pendingMealAction
+        ? lang === "he"
+          ? "✅ עודכן"
+          : "✅ Updated"
+        : lang === "he"
+          ? "✅ נשמר"
+          : "✅ Saved";
+  await sendWhatsAppText(from, reply);
   return true;
 }
