@@ -315,11 +315,12 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
         // rather than silently presenting a guess as if it were grounded.
         const menuNotFoundNotes = parsed.items
           .filter((item) => item.restaurantMenuNotFound)
-          .map((item) =>
-            lang === "he"
-              ? `לא מצאתי את התפריט המדויק של ${item.restaurantName} עבור "${item.description}" — ההערכה מבוססת על מרכיבים טיפוסיים למנה כזו. אם אתה מכיר את המרכיבים או הערכים המדויקים מהתפריט, ספר לי ואעדכן.`
-              : `I couldn't find ${item.restaurantName}'s exact menu for "${item.description}" — this estimate is based on typical ingredients for that kind of dish. If you know the real ingredients or values from the menu, let me know and I'll update it.`,
-          );
+          .map((item) => {
+            const assumedIngredients = item.ingredients?.length ? item.ingredients.join(", ") : null;
+            return lang === "he"
+              ? `לא מצאתי את התפריט המדויק של ${item.restaurantName} עבור "${item.description}"${assumedIngredients ? ` — ההערכה מבוססת על מרכיבים טיפוסיים למנה כזו: ${assumedIngredients}` : " — ההערכה מבוססת על מרכיבים טיפוסיים למנה כזו"}. אם אתה מכיר את המרכיבים או הערכים המדויקים מהתפריט, ספר לי ואעדכן.`
+              : `I couldn't find ${item.restaurantName}'s exact menu for "${item.description}"${assumedIngredients ? ` — this estimate assumes: ${assumedIngredients}` : " — this estimate is based on typical ingredients for that kind of dish"}. If you know the real ingredients or values from the menu, let me know and I'll update it.`;
+          });
         const menuNote = menuNotFoundNotes.length > 0 ? `\n\n${menuNotFoundNotes.join("\n")}` : "";
 
         const dateNote = targetDate !== today ? ` (${targetDate})` : "";
