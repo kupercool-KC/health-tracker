@@ -82,6 +82,12 @@ export interface ParseInput {
    * hallucinates something ungrounded or fails schema validation outright.
    */
   history?: { role: "user" | "assistant"; content: string }[];
+  /**
+   * The user's own regularly-logged foods (most habitual first), so a vague
+   * reference to "my usual X" can be matched to real past values instead of
+   * guessed from scratch. See getFrequentMealsForChat.
+   */
+  frequentMeals?: { name: string; calories: number; protein: number; grams?: number; ingredients?: string[] }[];
 }
 
 /**
@@ -151,6 +157,20 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     .slice(-8)
     .map((m) => ({ role: m.role, content: m.content }));
 
+  const frequentMealsInstruction = input.frequentMeals?.length
+    ? "\n\nThe user's own regularly-logged foods, most habitual first (name — calories, protein" +
+      ", estimated grams, ingredients when known):\n" +
+      input.frequentMeals
+        .map(
+          (m) =>
+            `- ${m.name} — ${m.calories} kcal, ${m.protein}g protein` +
+            (m.grams != null ? `, ~${m.grams}g` : "") +
+            (m.ingredients?.length ? `, ingredients: ${m.ingredients.join(", ")}` : ""),
+        )
+        .join("\n") +
+      "\n\nIf the final message vaguely names a food (e.g. \"my usual protein shake\", \"שייק חלבון\", \"the usual omelet\") that reasonably matches one of these — even worded differently — treat it as that SAME food: use its calories/protein/grams as your estimate, and set \"description\" to that exact stored name so it keeps matching next time. An explicit number the user states in this message always overrides the stored value for that field (see the explicit-value rule above) — this list is only for filling in what the message itself leaves unstated. Only match when reasonably confident it's the same food; a message describing something clearly different (a different dish, a different brand, explicit different ingredients) is NOT a match — estimate it normally instead."
+    : "";
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -159,6 +179,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
         languageInstruction +
         EXPLICIT_VALUE_INSTRUCTION +
         multiImageInstruction +
+        frequentMealsInstruction +
         (historyMessages.length > 0
           ? "\n\nRecent conversation turns are included before the final message for context ONLY. Three specific uses are allowed: (a) if the final message doesn't itself describe any food (e.g. it's just \"add it\"/\"log that\"), figure out which food was being discussed in the preceding turns and extract that; (b) if the final message explicitly asks to include an earlier-mentioned food too — by naming it directly, or by a clear reference like \"what I ate before\", \"the other thing I mentioned\", \"combine everything from this session\" — include that food as well, using the calorie/protein values already established for it earlier if they were stated there; (c) if the final message refers to a restaurant/venue by pronoun or vague reference (\"their pizza\", \"the burger from that place\", \"שלהם\") instead of repeating its name, resolve WHICH place is meant from the preceding turns — this is identifying an entity already being discussed, not adding an extra food item, so it's allowed even though it draws on history. Otherwise (the normal case: the final message plainly describes new food(s) with no reference to anything earlier), extract items ONLY for what it actually describes — do NOT add other foods just because they happen to appear earlier in this history. An earlier food that the final message doesn't reference at all was a separate, already-handled request (already logged or already rejected), not part of what's being logged now."
           : ""),

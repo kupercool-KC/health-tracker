@@ -13,6 +13,7 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
+import { getFrequentMealsForChat } from "@/lib/nutrition/frequentMeals";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
 import { parseBodyMetrics } from "@/lib/bodyMetrics/parser";
@@ -174,6 +175,13 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
   }
   const isComposite = composite.logs.length >= 2 && !!message?.trim();
 
+  // Only fetched when a meal will actually be parsed — a vague reference
+  // ("my usual protein shake") needs the user's real past values to resolve
+  // against instead of a fresh guess (see EXPLICIT_VALUE_INSTRUCTION's
+  // sibling logic in parser.ts).
+  const willParseMeal = intent === "log_meal" || (isComposite && composite.logs.includes("meal"));
+  const frequentMeals = willParseMeal ? await getFrequentMealsForChat(uid) : undefined;
+
   let replyContent: string;
   let pendingMeal: ChatMessage["pendingMeal"];
   let pendingMealAction: ChatMessage["pendingMealAction"];
@@ -203,7 +211,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
         composite.logs.includes("meal")
           ? (async () => {
               try {
-                const parsed = await parseNutrition({ text: message, lang, history: priorMessages });
+                const parsed = await parseNutrition({ text: message, lang, history: priorMessages, frequentMeals });
                 const targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
                 pendingMeal = { ...parsed, date: targetDate };
                 const lines = parsed.items
@@ -292,7 +300,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
           parsed = { items: [{ description: genericMealDescription(lang), calories: generic.calories, protein: generic.protein }] };
           targetDate = message?.trim() ? await resolveLogDate(message.trim(), today) : today;
         } else {
-          parsed = await parseNutrition({ text: message, imageUrls, lang, history: priorMessages });
+          parsed = await parseNutrition({ text: message, imageUrls, lang, history: priorMessages, frequentMeals });
           // Only worth a date-resolution call when there's actual text to
           // resolve against — an image-only message ("[photo]" placeholder)
           // has no calendar phrase to find, so it always means today.
