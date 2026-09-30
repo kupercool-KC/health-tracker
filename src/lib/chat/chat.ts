@@ -213,7 +213,7 @@ export async function resolveLogDate(message: string, today: string): Promise<st
     messages: [
       {
         role: "system",
-        content: `Today's date is ${today} (yyyy-mm-dd). The user is logging something (a meal, workout, or step count) and may mention which day it's for — "yesterday", "3 days ago", "on Monday", "last Tuesday" — or may not mention a day at all, which means today. Resolve their message to a single date. Respond ONLY as JSON: { "date": "yyyy-mm-dd" }. Never return a date in the future.`,
+        content: `Today's date is ${today} (yyyy-mm-dd). The user is logging something (a meal, workout, or step count) and may mention which day it's for — "yesterday", "3 days ago", "on Monday", "last Tuesday" — or may not mention a day at all, which means today. The date phrase can appear ANYWHERE in the message, including as a short trailing instruction after a long, detailed list of items (e.g. several foods each with their own calorie/protein numbers, followed by "add all of this to yesterday" or "כל זה תוסיף ליום של אתמול") — read the message in full and don't let a dense list of numbers earlier in the message distract you from a date instruction at the end. Resolve their message to a single date. Respond ONLY as JSON: { "date": "yyyy-mm-dd" }. Never return a date in the future.`,
       },
       { role: "user", content: message },
     ],
