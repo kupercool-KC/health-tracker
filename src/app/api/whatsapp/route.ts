@@ -116,7 +116,7 @@ interface IncomingMessage {
   from: string;
   type: string;
   text?: { body?: string };
-  image?: { id?: string };
+  image?: { id?: string; caption?: string };
   audio?: { id?: string; mime_type?: string };
   reaction?: { message_id?: string; emoji?: string };
   context?: { id?: string };
@@ -150,7 +150,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
   const lang = ((profileSnap.data() as UserProfile | undefined)?.language ?? "he") as "en" | "he";
 
-  let text = message.text?.body?.trim() || undefined;
+  let text = message.text?.body?.trim() || message.image?.caption?.trim() || undefined;
   let imageUrls: string[] | undefined;
   if (message.type === "image" && message.image?.id) {
     try {

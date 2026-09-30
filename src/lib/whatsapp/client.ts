@@ -12,6 +12,15 @@ function graphUrl(path: string): string {
   return `https://graph.facebook.com/${GRAPH_VERSION}/${path}`;
 }
 
+/** WhatsApp aligns each line by its first strong character, so a Hebrew line that starts with a digit, "(" or Latin text renders left-aligned; a leading RLM (U+200F) forces every Hebrew line to start right-to-left. */
+function forceRtlLines(body: string): string {
+  if (!/[\u0590-\u05FF]/.test(body)) return body;
+  return body
+    .split("\n")
+    .map((line) => (line.trim() ? `\u200F${line}` : line))
+    .join("\n");
+}
+
 /** Best-effort — a failed send just means the user doesn't get a reply, not worth throwing and failing the whole webhook. */
 export async function sendWhatsAppText(to: string, body: string): Promise<string | null> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -23,7 +32,7 @@ export async function sendWhatsAppText(to: string, body: string): Promise<string
   const res = await fetch(graphUrl(`${phoneNumberId}/messages`), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body } }),
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: forceRtlLines(body) } }),
   }).catch((err) => {
     console.error("[whatsapp] send request failed:", err);
     return null;
