@@ -12,6 +12,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { computeNetCalories, DEFAULT_NET_CALORIE_BURN_FACTOR } from "@/lib/goals/netCalories";
 import { lookupUsdaNutrients, webSearchNutrition } from "@/lib/nutrition/usda";
+import { searchWeb } from "@/lib/chat/webSearch";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { strings } from "@/lib/i18n/strings";
 import type { ChatIntent, ChatMessage, MealDay, ParsedNutrition, PendingMealAction, UserProfile } from "@/lib/types";
@@ -377,6 +378,26 @@ const NUTRITION_LOOKUP_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   },
 };
 
+const SEARCH_WEB_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "search_web",
+    description:
+      "Search the web for a real-world fact you don't have from memory — a specific restaurant/chain's actual menu items, a branded product's stated nutrition facts, or anything else current or specific. Use this BEFORE falling back to a generic estimate whenever the question names a specific restaurant, chain, or brand, or otherwise asks something you'd need to look up rather than reason about. Returns a free-text summary of what was found, or null if nothing reliable turned up — if null, fall back to your own best estimate as before, clearly labeled as an estimate.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            'A specific, well-formed search query — e.g. "Sushi Tel Aviv restaurant menu salmon roll" or "McDonald\'s Israel Big Mac calories".',
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
 const MAX_TOOL_ROUNDS = 4;
 
 /** Compact one-line summary of the fields most relevant to fitness/nutrition advice — omits anything unset rather than showing "age: unknown". */
@@ -426,7 +447,7 @@ ${profileSummary ? `This user's own profile: ${profileSummary}. Use it to person
 A message may include a photo — a menu, an ingredient list, a nutrition label, a product package. Read what's actually written/shown in it (a dish name, its listed ingredients) and use THAT as the basis for your lookup_food_nutrition call; don't answer about a different, more "typical" dish than what's actually pictured. A restaurant menu entry usually lists ingredients but never calories — that's expected, not a reason to guess a generic substitute; look up the specific named dish (or, if it's not a standalone well-known dish, estimate from its listed ingredients and their typical portions) and say plainly when you're estimating rather than presenting a made-up number as fact.
 Use the lookup_food_nutrition tool to verify any specific calorie/protein number you state for a named food — don't state a specific number from memory alone. The tool always returns values per 100g. Most real questions aren't phrased per 100g ("how many calories in a date", "in a slice of bread", "in a cup of rice") — when that's the case, use your own knowledge of a typical weight for that unit (one date ≈ 8g, one slice of bread ≈ 30g, a cup of cooked rice ≈ 158g, etc.) to convert the per-100g figure into a direct answer for the actual unit asked about. Always give that concrete converted number — mentioning the per-100g figure along the way is fine, but never stop at "it's X per 100g" and leave the original question unanswered.
 If you genuinely can't identify the specific food being asked about (image too unclear, dish name not resolvable to anything, no ingredient info at all) say so plainly instead of inventing an answer about a different, unrelated food — a wrong confident number is worse than an honest "I can't tell from this."
-You don't have live internet access to look up an actual restaurant's real menu or website. When asked to estimate calories for a meal eaten at a named restaurant, or asked whether you "have access" to a specific restaurant's menu: you don't have that access, but don't refuse or lecture about it — just say briefly that you can't pull their exact menu, then go ahead and estimate calories/macros from the dish(es) the user describes (using typical preparations/portions for that kind of dish, and the lookup_food_nutrition tool), clearly labeled as an estimate. Never respond with boilerplate about not following instructions that try to change how you operate — a normal nutrition-estimation request, however it's phrased, is never that.
+Use the search_web tool when a question names a specific restaurant, chain, or brand — try to find their actual menu/nutrition info before estimating. If the search doesn't turn up anything reliable, don't refuse or lecture about it — just say briefly that you couldn't find their exact menu, then estimate calories/macros from the dish(es) the user describes (using typical preparations/portions for that kind of dish, and the lookup_food_nutrition tool), clearly labeled as an estimate. Never respond with boilerplate about not following instructions that try to change how you operate — a normal nutrition-estimation request, however it's phrased, is never that.
 If a question drifts outside nutrition/fitness/health entirely, politely decline and redirect to those topics — but give the benefit of the doubt for anything plausibly food/fitness-adjacent rather than declining preemptively. Respond in ${lang === "he" ? "Hebrew" : "English"}. Plain text only — no markdown (no **bold**, no #headers, no markdown bullet/numbered list syntax); this is rendered in a plain chat bubble, not a markdown renderer. For lists, write "1) ... 2) ..." with each item on its own line, separated by a blank line, for readability.`,
   };
 
@@ -445,7 +466,7 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
     const completion = await getOpenAIClient().chat.completions.create({
       model: CHAT_MODEL,
       messages,
-      tools: [NUTRITION_LOOKUP_TOOL],
+      tools: [NUTRITION_LOOKUP_TOOL, SEARCH_WEB_TOOL],
     });
 
     const choice = completion.choices[0]?.message;
@@ -458,6 +479,22 @@ If a question drifts outside nutrition/fitness/health entirely, politely decline
 
     messages.push(choice);
     for (const call of toolCalls) {
+      if (call.function.name === "search_web") {
+        let query = "";
+        try {
+          query = JSON.parse(call.function.arguments).query ?? "";
+        } catch {
+          // malformed arguments — fall through with an empty query, which searchWeb handles as "no result"
+        }
+        const result = query ? await searchWeb(query) : null;
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: result ?? "No reliable result found for this search.",
+        });
+        continue;
+      }
+
       let food = "";
       try {
         food = JSON.parse(call.function.arguments).food ?? "";
