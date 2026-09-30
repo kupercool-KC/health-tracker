@@ -109,7 +109,8 @@ const SEARCH_MENU_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
       properties: {
         query: {
           type: "string",
-          description: 'A specific search query naming the place and the dish, e.g. "[restaurant name] [city] menu [dish name] ingredients".',
+          description:
+            'A short, simple, natural search query — just the place, city, and "menu" (e.g. "[restaurant name] [city] menu"). Prefer English even when the conversation is in Hebrew — it tends to surface more results (delivery-platform menus, review sites). Never add extra qualifier words like "ingredients"/"nutrition facts" to the query itself — that tends to return nothing even for a well-known, easily findable place; search for the plain menu and read the dish\'s ingredients off of whatever description comes back.',
         },
       },
       required: ["query"],

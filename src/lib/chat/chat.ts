@@ -390,7 +390,7 @@ const SEARCH_WEB_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         query: {
           type: "string",
           description:
-            'A specific, well-formed search query — e.g. "Sushi Tel Aviv restaurant menu salmon roll" or "McDonald\'s Israel Big Mac calories".',
+            'A short, simple, natural search query — just the name, place/city, and "menu" (e.g. "Nam restaurant Tel Aviv menu", "McDonald\'s Israel Big Mac calories"). Prefer English even when the conversation is in Hebrew — it tends to surface more results (delivery-platform menus, review sites). Never add extra qualifier words like "nutritional info"/"nutrition facts" to the query itself — real menus don\'t publish that, and adding it tends to return nothing even for a well-known, easily findable place; search for the menu/dish plainly and estimate nutrition yourself from what you find.',
         },
       },
       required: ["query"],
