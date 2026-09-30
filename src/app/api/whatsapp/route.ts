@@ -72,6 +72,8 @@ function isAffirmativeReply(message: IncomingMessage): boolean {
   return THUMBS_UP_RE.test(text) || AFFIRMATIVE_RE.test(text);
 }
 
+const CONFIRM_LOOKBACK_MESSAGES = 8;
+
 const CONFIRM_HINT = {
   he: '\n\n👍 (תגובת אמוג׳י) או "כן" כדי לשמור.',
   en: '\n\n👍 (react) or reply "yes" to save.',
@@ -183,6 +185,15 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   if (sessionId && isAffirmativeReply(message)) {
     const confirmed = await tryConfirmPending(uid, sessionId, lang, from);
     if (confirmed) return;
+    if (message.type === "reaction") {
+      await sendWhatsAppText(
+        from,
+        lang === "he"
+          ? "אין כרגע הצעה פתוחה לאישור — ייתכן שכבר נשמרה או שעברו כמה הודעות. שלח שוב את מה שרצית לרשום."
+          : "There's no open proposal to confirm right now — it may already be saved, or too many messages have passed. Send what you wanted to log again.",
+      );
+      return;
+    }
   }
 
   if (!text && !imageUrls?.length) return; // unsupported message type (sticker, video, reaction to something else, …) — nothing to act on
@@ -204,12 +215,21 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 async function tryConfirmPending(uid: string, sessionId: string, lang: "en" | "he", from: string): Promise<boolean> {
   const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
   const session = (await ref.get()).data() as ChatSession | undefined;
-  const lastIndex = (session?.messages.length ?? 0) - 1;
-  const last = session?.messages[lastIndex];
-  if (!last || last.role !== "assistant") return false;
-  if (!(last.pendingMeal || last.pendingMealAction || last.pendingWorkout || last.pendingSteps || last.pendingBodyMetrics)) {
-    return false;
+  const hasOpenProposal = (m: ChatMessage) =>
+    m.role === "assistant" &&
+    !!(m.pendingMeal || m.pendingMealAction || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
+  // The user may confirm after a few more messages (e.g. asked a question in between), so look back
+  // for the most recent open proposal instead of only checking the very last message.
+  let lastIndex = -1;
+  const total = session?.messages.length ?? 0;
+  for (let i = total - 1; i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
+    if (hasOpenProposal(session!.messages[i])) {
+      lastIndex = i;
+      break;
+    }
   }
+  if (lastIndex < 0) return false;
+  const last = session!.messages[lastIndex];
 
   let mealActionFound = true;
   if (last.pendingMeal) await saveMealFromPending(uid, last.pendingMeal);
