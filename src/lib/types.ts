@@ -123,6 +123,10 @@ export interface ParsedNutritionItem {
   /** See MealEntry — carried through from parseNutrition so the confirm flow (chat + direct log) can persist it unchanged. */
   nutritionSource?: "manual" | "explicit" | "usda" | "web" | "model";
   nutritionNote?: string;
+  /** Transient — not persisted to MealEntry. The venue name parseNutrition identified for this item, when a specific restaurant/place was named. */
+  restaurantName?: string;
+  /** Transient — not persisted to MealEntry. True when a restaurant was named but its actual menu/ingredients for this dish couldn't be found online, so the estimate falls back to a generic guess for that dish type — the chat reply uses this to invite the user to supply the real values if they know them. */
+  restaurantMenuNotFound?: boolean;
 }
 
 /**

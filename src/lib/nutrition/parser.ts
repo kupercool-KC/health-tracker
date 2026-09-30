@@ -298,6 +298,8 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
       ingredients: item.ingredients,
       nutritionSource: provenance[i]?.source,
       nutritionNote: provenance[i]?.note,
+      restaurantName: item.restaurantName,
+      restaurantMenuNotFound: !!(item.restaurantName && !item.menuGrounded),
     })),
   };
 }

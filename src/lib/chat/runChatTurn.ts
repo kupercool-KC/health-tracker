@@ -309,8 +309,21 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
           )
           .join("\n");
 
+        // A restaurant was named but its actual menu/ingredients for this
+        // dish couldn't be found online (parseNutrition fell back to a
+        // generic estimate) — say so plainly and invite the real values,
+        // rather than silently presenting a guess as if it were grounded.
+        const menuNotFoundNotes = parsed.items
+          .filter((item) => item.restaurantMenuNotFound)
+          .map((item) =>
+            lang === "he"
+              ? `לא מצאתי את התפריט המדויק של ${item.restaurantName} עבור "${item.description}" — ההערכה מבוססת על מרכיבים טיפוסיים למנה כזו. אם אתה מכיר את המרכיבים או הערכים המדויקים מהתפריט, ספר לי ואעדכן.`
+              : `I couldn't find ${item.restaurantName}'s exact menu for "${item.description}" — this estimate is based on typical ingredients for that kind of dish. If you know the real ingredients or values from the menu, let me know and I'll update it.`,
+          );
+        const menuNote = menuNotFoundNotes.length > 0 ? `\n\n${menuNotFoundNotes.join("\n")}` : "";
+
         const dateNote = targetDate !== today ? ` (${targetDate})` : "";
-        replyContent = `${warning}${lines}${dateNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
+        replyContent = `${warning}${lines}${dateNote}${menuNote}\n` + (lang === "he" ? "לאשר ולשמור?" : "Confirm to save it?");
       }
     } catch (err) {
       // Nothing extractable (no food named anywhere nearby, or the model's
