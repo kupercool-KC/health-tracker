@@ -12,12 +12,28 @@ function graphUrl(path: string): string {
   return `https://graph.facebook.com/${GRAPH_VERSION}/${path}`;
 }
 
-/** WhatsApp aligns each line by its first strong character, so a Hebrew line that starts with a digit, "(" or Latin text renders left-aligned; a leading RLM (U+200F) forces every Hebrew line to start right-to-left. */
+/**
+ * WhatsApp aligns each line by its first strong character, so a Hebrew line
+ * that starts with a digit, "(" or Latin text renders left-aligned; a
+ * leading RLM (U+200F) forces every Hebrew line to start right-to-left.
+ *
+ * A Hebrew line with more than one number/Latin run (e.g. "\u05DB\u05D5\u05EA\u05E8\u05EA: 150 kcal,
+ * 20 \u05D2\u05E8\u05DD \u05D7\u05DC\u05D1\u05D5\u05DF") has a second bidi problem: the bidi algorithm can swap the
+ * visual order of separate LTR runs sitting inside one RTL line, showing
+ * "150 20 kcal" instead of "150 kcal, 20". Wrapping each run in an isolate
+ * (U+2066 LRI \u2026 U+2069 PDI) keeps it self-contained so runs stay in the
+ * order they were written, while still rendering each number left-to-right
+ * internally.
+ */
+function isolateLtrRuns(line: string): string {
+  return line.replace(/[A-Za-z0-9][A-Za-z0-9.,:%/'-]*/g, (run) => `\u2066${run}\u2069`);
+}
+
 function forceRtlLines(body: string): string {
   if (!/[\u0590-\u05FF]/.test(body)) return body;
   return body
     .split("\n")
-    .map((line) => (line.trim() ? `\u200F${line}` : line))
+    .map((line) => (line.trim() ? `\u200F${isolateLtrRuns(line)}` : line))
     .join("\n");
 }
 
