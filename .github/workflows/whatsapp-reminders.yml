@@ -1,11 +1,14 @@
 name: WhatsApp reminders
 
-# Drives /api/cron/whatsapp-reminders on a schedule Vercel's own Cron Jobs
-# can't offer on the Hobby plan (Hobby is limited to once-daily crons). This
-# workflow does the scheduling only — all the actual logic lives in the app.
+# GitHub Actions' own `schedule` trigger turned out unreliable for this
+# (best-effort only — observed running ~3 times in 19 hours against a
+# "*/15 * * * *" cron, with gaps of several hours, so reminders silently
+# stopped firing near their configured time). An external pinger
+# (cron-job.org) now hits /api/cron/whatsapp-reminders every 15 minutes
+# instead. `workflow_dispatch` is kept for manually re-running this by hand
+# if needed — do not re-add a `schedule` trigger here, it would double-send
+# every reminder alongside the external pinger.
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
