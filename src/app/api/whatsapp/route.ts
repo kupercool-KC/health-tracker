@@ -26,6 +26,7 @@ import { runChatTurn } from "@/lib/chat/runChatTurn";
 import { getUidForPhone } from "@/lib/whatsapp/link";
 import { sendWhatsAppText, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
+import { transcribeAudio } from "@/lib/openai/transcribe";
 import {
   saveBodyMetricsFromPending,
   saveMealFromPending,
@@ -113,6 +114,7 @@ interface IncomingMessage {
   type: string;
   text?: { body?: string };
   image?: { id?: string };
+  audio?: { id?: string; mime_type?: string };
   reaction?: { message_id?: string; emoji?: string };
 }
 
@@ -144,7 +146,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
   const lang = ((profileSnap.data() as UserProfile | undefined)?.language ?? "he") as "en" | "he";
 
-  const text = message.text?.body?.trim() || undefined;
+  let text = message.text?.body?.trim() || undefined;
   let imageUrls: string[] | undefined;
   if (message.type === "image" && message.image?.id) {
     try {
@@ -152,6 +154,25 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
       imageUrls = [await uploadWhatsAppImage(uid, buffer, contentType, "whatsapp-images")];
     } catch (err) {
       console.error("[whatsapp] media download failed:", err);
+    }
+  } else if (message.type === "audio" && message.audio?.id) {
+    try {
+      const { buffer, contentType } = await downloadWhatsAppMedia(message.audio.id);
+      text = await transcribeAudio(buffer, contentType, lang);
+    } catch (err) {
+      console.error("[whatsapp] audio transcription failed:", err);
+      await sendWhatsAppText(
+        from,
+        lang === "he" ? "לא הצלחתי להבין את ההקלטה — אפשר לכתוב במקום?" : "I couldn't understand that voice note — could you type it instead?",
+      );
+      return;
+    }
+    if (!text) {
+      await sendWhatsAppText(
+        from,
+        lang === "he" ? "לא שמעתי כלום בהקלטה — אפשר לנסות שוב?" : "I didn't hear anything in that recording — mind trying again?",
+      );
+      return;
     }
   }
 

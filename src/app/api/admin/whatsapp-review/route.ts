@@ -28,7 +28,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const days = Number(new URL(req.url).searchParams.get("days") ?? "7") || 7;
+  // Capped at 7 regardless of what's requested — this is a weekly review, and
+  // a stray larger value (or a run that fires more often than expected)
+  // shouldn't re-read further back than one week's worth of tokens.
+  const days = Math.min(Number(new URL(req.url).searchParams.get("days") ?? "7") || 7, 7);
   const since = new Date();
   since.setDate(since.getDate() - days);
   const sinceIso = since.toISOString();
