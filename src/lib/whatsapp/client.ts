@@ -18,15 +18,19 @@ function graphUrl(path: string): string {
  * leading RLM (U+200F) forces every Hebrew line to start right-to-left.
  *
  * A Hebrew line with more than one number/Latin run (e.g. "\u05DB\u05D5\u05EA\u05E8\u05EA: 150 kcal,
- * 20 \u05D2\u05E8\u05DD \u05D7\u05DC\u05D1\u05D5\u05DF") has a second bidi problem: the bidi algorithm can swap the
- * visual order of separate LTR runs sitting inside one RTL line, showing
- * "150 20 kcal" instead of "150 kcal, 20". Wrapping each run in an isolate
- * (U+2066 LRI \u2026 U+2069 PDI) keeps it self-contained so runs stay in the
- * order they were written, while still rendering each number left-to-right
- * internally.
+ * 20 \u05D2\u05E8\u05DD \u05D7\u05DC\u05D1\u05D5\u05DF", or "90 min, 550 kcal") has a second bidi problem:
+ * the bidi algorithm can swap the visual order of separate LTR runs sitting
+ * inside one RTL line. Isolating each individual token (U+2066 LRI \u2026
+ * U+2069 PDI) is NOT enough to fix this \u2014 tokens separated only by spaces
+ * (a neutral character with no direction of its own) can still be
+ * reordered relative to each other, since an isolate carries no directional
+ * "glue" to its neighbor. The actual fix is to isolate each *maximal* run
+ * of Latin/digit content as ONE block \u2014 e.g. the whole "90 min, 550 kcal"
+ * together, not "90", "min,", "550", "kcal" separately \u2014 so there's nothing
+ * left for the algorithm to reorder within it.
  */
 function isolateLtrRuns(line: string): string {
-  return line.replace(/[A-Za-z0-9][A-Za-z0-9.,:%/'-]*/g, (run) => `\u2066${run}\u2069`);
+  return line.replace(/[A-Za-z0-9][A-Za-z0-9\s.,:%/'-]*[A-Za-z0-9%]|[A-Za-z0-9]/g, (run) => `\u2066${run}\u2069`);
 }
 
 function forceRtlLines(body: string): string {
