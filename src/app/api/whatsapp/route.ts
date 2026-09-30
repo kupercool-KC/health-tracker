@@ -107,6 +107,14 @@ export async function POST(req: Request) {
     await handleIncomingMessage(message);
   } catch (err) {
     console.error("[whatsapp] failed to handle incoming message:", err);
+    // Every other failure path above replies with something — this is the
+    // catch-all for anything that throws (e.g. an upstream API outage),
+    // which otherwise left the user staring at a message that silently
+    // never gets a reply, with no way to tell whether it was received.
+    await sendWhatsAppText(
+      message.from,
+      "😕 קרתה תקלה וההודעה שלך לא עובדה. נסה שוב בעוד כמה דקות.\n\n😕 Something went wrong and your message wasn't processed. Please try again in a few minutes.",
+    ).catch(() => {});
   }
   return NextResponse.json({ ok: true });
 }
