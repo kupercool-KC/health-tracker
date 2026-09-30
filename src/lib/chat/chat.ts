@@ -182,6 +182,8 @@ export async function detectCompositeLog(message: string, history: ChatMessage[]
       {
         role: "system",
         content: `The user's latest message may describe MORE THAN ONE kind of thing to log in a single message — e.g. "ate a tofu salad, 300 calories, and went for a 5km run" describes both a meal AND a workout to log together. Detect every distinct category with actual, concrete content to log in THIS message (not just mentioned in passing or discussed earlier in the conversation).
+A calorie number by itself does NOT mean "meal" — a workout message routinely states calories BURNED (e.g. "did a strength workout, burned 550 calories" / "עשיתי אימון כוח ושרפתי 550 קלוריות") and that's "workout" only, never "meal", even when recent conversation turns above were about food. Only include "meal" when the message itself names food actually eaten/drunk in this message.
+Ignore what earlier turns in the conversation were about entirely when deciding categories for THIS message — they're shown only so you don't misread a short follow-up in isolation (e.g. "add it" needs the prior turn to know what "it" is); a food discussed two turns ago is never itself a reason to include "meal" here unless this message actually references it.
 Respond ONLY as JSON: { "logs": ("meal"|"workout"|"steps")[] } — list every category actually being logged in this message, deduplicated, in any order. A message describing only one category (or none — a question, a correction, small talk) should list just that one (or none) — this isn't only for the multi-category case.`,
       },
       ...toContextMessages(history),
