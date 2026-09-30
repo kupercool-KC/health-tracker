@@ -119,6 +119,7 @@ interface IncomingMessage {
   image?: { id?: string };
   audio?: { id?: string; mime_type?: string };
   reaction?: { message_id?: string; emoji?: string };
+  context?: { id?: string };
 }
 
 function extractMessage(payload: unknown): IncomingMessage | null {
@@ -183,7 +184,8 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const sessionId = ((await whatsappMetaRef.get()).data() as { sessionId?: string } | undefined)?.sessionId;
 
   if (sessionId && isAffirmativeReply(message)) {
-    const confirmed = await tryConfirmPending(uid, sessionId, lang, from);
+    const targetWaId = message.type === "reaction" ? message.reaction?.message_id : message.context?.id;
+    const confirmed = await tryConfirmPending(uid, sessionId, lang, from, targetWaId);
     if (confirmed) return;
     if (message.type === "reaction") {
       await sendWhatsAppText(
@@ -198,7 +200,16 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 
   if (!text && !imageUrls?.length) return; // unsupported message type (sticker, video, reaction to something else, …) — nothing to act on
 
-  const result = await runChatTurn({ uid, sessionId, message: text, imageUrls, lang, date: todayInIsrael() });
+  const result = await runChatTurn({
+    uid,
+    sessionId,
+    message: text,
+    imageUrls,
+    lang,
+    date: todayInIsrael(),
+    waMessageId: message.id,
+    quotedWaId: message.context?.id,
+  });
   await whatsappMetaRef.set({ sessionId: result.sessionId }, { merge: true });
 
   const hasPending = !!(
@@ -208,11 +219,31 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
     result.reply.pendingSteps ||
     result.reply.pendingBodyMetrics
   );
-  await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content);
+  const sentId = await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content);
+  if (sentId) await tagLastAssistantMessage(uid, result.sessionId, sentId);
+}
+
+/** Records the WhatsApp id of the reply just sent on the session's last (assistant) message, so a later quote-reply or 👍 reaction on it can be matched back. */
+async function tagLastAssistantMessage(uid: string, sessionId: string, waId: string): Promise<void> {
+  const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
+  await adminDb.runTransaction(async (tx) => {
+    const session = (await tx.get(ref)).data() as ChatSession | undefined;
+    const messages = session?.messages;
+    if (!messages?.length || messages[messages.length - 1].role !== "assistant") return;
+    const updated = [...messages];
+    updated[updated.length - 1] = { ...updated[updated.length - 1], waId };
+    tx.update(ref, { messages: updated });
+  });
 }
 
 /** Returns true if the last assistant message in this session had a pendingX that got saved (and a "✅ Saved" reply was sent) — false means there was nothing open to confirm, so the caller should fall through to treating the message as new input. */
-async function tryConfirmPending(uid: string, sessionId: string, lang: "en" | "he", from: string): Promise<boolean> {
+async function tryConfirmPending(
+  uid: string,
+  sessionId: string,
+  lang: "en" | "he",
+  from: string,
+  targetWaId?: string,
+): Promise<boolean> {
   const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
   const session = (await ref.get()).data() as ChatSession | undefined;
   const hasOpenProposal = (m: ChatMessage) =>
@@ -222,7 +253,13 @@ async function tryConfirmPending(uid: string, sessionId: string, lang: "en" | "h
   // for the most recent open proposal instead of only checking the very last message.
   let lastIndex = -1;
   const total = session?.messages.length ?? 0;
-  for (let i = total - 1; i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
+  // A 👍 or quote-reply aimed at a specific message confirms exactly that one.
+  const targetIndex = targetWaId ? (session?.messages.findIndex((m) => m.waId === targetWaId) ?? -1) : -1;
+  if (targetIndex >= 0) {
+    if (!hasOpenProposal(session!.messages[targetIndex])) return false;
+    lastIndex = targetIndex;
+  }
+  for (let i = total - 1; lastIndex < 0 && i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
     if (hasOpenProposal(session!.messages[i])) {
       lastIndex = i;
       break;

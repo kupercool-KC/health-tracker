@@ -13,12 +13,12 @@ function graphUrl(path: string): string {
 }
 
 /** Best-effort — a failed send just means the user doesn't get a reply, not worth throwing and failing the whole webhook. */
-export async function sendWhatsAppText(to: string, body: string): Promise<void> {
+export async function sendWhatsAppText(to: string, body: string): Promise<string | null> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
   if (!phoneNumberId || !token) {
     console.error("[whatsapp] WHATSAPP_PHONE_NUMBER_ID/WHATSAPP_TOKEN not configured");
-    return;
+    return null;
   }
   const res = await fetch(graphUrl(`${phoneNumberId}/messages`), {
     method: "POST",
@@ -30,7 +30,10 @@ export async function sendWhatsAppText(to: string, body: string): Promise<void> 
   });
   if (res && !res.ok) {
     console.error("[whatsapp] send failed:", res.status, await res.text().catch(() => ""));
+    return null;
   }
+  const json = (await res?.json().catch(() => null)) as { messages?: { id?: string }[] } | null;
+  return json?.messages?.[0]?.id ?? null;
 }
 
 /**

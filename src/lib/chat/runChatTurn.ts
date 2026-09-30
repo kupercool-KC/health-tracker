@@ -53,6 +53,10 @@ export interface ChatTurnInput {
   date?: string;
   overrideCalories?: number;
   overrideProtein?: number;
+  /** WhatsApp id of this incoming message, stored so later quote-replies/reactions can refer back to it. */
+  waMessageId?: string;
+  /** WhatsApp id of the older message this one quote-replies to — used as the reference for follow-ups. */
+  quotedWaId?: string;
 }
 
 export interface ChatTurnResult {
@@ -62,7 +66,7 @@ export interface ChatTurnResult {
 }
 
 export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
-  const { uid, email, sessionId, message, imageUrls, lang, date, overrideCalories, overrideProtein } = input;
+  const { uid, email, sessionId, message: rawMessage, imageUrls, lang, date, overrideCalories, overrideProtein, waMessageId, quotedWaId } = input;
 
   // Fetched once and reused by both log_meal's avoid-food warning and
   // general_health's personalization — same doc, no reason to read it twice.
@@ -77,10 +81,19 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
   const existing = snap.data() as ChatSession | undefined;
   const messages: ChatMessage[] = existing?.messages ?? [];
 
+  const quoted = quotedWaId ? messages.find((m) => m.waId === quotedWaId) : undefined;
+  const quotePreview = quoted ? quoted.content.replace(/\s+/g, " ").slice(0, 300) : undefined;
+  const message =
+    quotePreview && rawMessage?.trim()
+      ? lang === "he"
+        ? `(בתגובה להודעה: "${quotePreview}")\n${rawMessage.trim()}`
+        : `(replying to the message: "${quotePreview}")\n${rawMessage.trim()}`
+      : rawMessage;
+
   const multiplePhotos = (imageUrls?.length ?? 0) > 1;
   const userContent =
     message?.trim() || (lang === "he" ? (multiplePhotos ? "[תמונות]" : "[תמונה]") : multiplePhotos ? "[photos]" : "[photo]");
-  messages.push({ role: "user", content: userContent, createdAt: now });
+  messages.push({ role: "user", content: userContent, createdAt: now, ...(waMessageId ? { waId: waMessageId } : {}) });
 
   // Prompt-injection / jailbreak guard — only meaningful for actual typed
   // text, not an image upload (which produces the "[photo]" placeholder).
@@ -98,7 +111,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
   // has no memory of the number just discussed and (being deterministic at
   // temperature 0) kept regenerating the exact same wrong estimate no
   // matter what the user said, ignoring corrections and questions alike.
-  const lastMessage = priorMessages.at(-1);
+  const lastMessage = quoted ?? priorMessages.at(-1);
   const openPendingMeal = !safety.flagged && lastMessage?.role === "assistant" ? lastMessage.pendingMeal : undefined;
   const today = date ?? now.slice(0, 10);
   const pendingMealFollowUp =

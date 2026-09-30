@@ -322,6 +322,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  /** WhatsApp message id (wamid) — lets a quote-reply or 👍 reaction on an old message be matched back to this one. */
+  waId?: string;
   /** Present on an assistant message that's proposing meal(s) to log — not yet saved. `date` is the resolved target day (defaults to today, but a message like "add this for Monday" resolves elsewhere). */
   pendingMeal?: ParsedNutrition & { imageUrls?: string[]; date?: string };
   /** Present on an assistant message that's proposing an edit/delete of an existing meal. */
