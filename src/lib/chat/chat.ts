@@ -776,7 +776,8 @@ export async function resolveLogFromPriorAnswer(
       {
         role: "system",
         content: `Below is the recent conversation. The user's latest message might be asking to log/save food(s) that were discussed there (e.g. "add it", "log it", "add this to my intake", "add it with calories and protein") — determine whether that's actually the case AND that the conversation contains specific, already-computed calorie/protein number(s) for one or more identifiable foods/ingredients (a full ingredient-by-ingredient breakdown counts — extract each line as its own item; not just general advice with no concrete numbers). Calories and protein for the same food may have been given in DIFFERENT messages (e.g. calories in one answer, protein in a later answer to "and protein?") — look across the whole conversation below, not just the very last message, and combine them onto the same item.
-CRITICAL: if the user's LATEST message itself states a specific calorie and/or protein number for the food (e.g. "add a protein shake, 126 calories and 26g protein"), that is NOT this pattern — respond { "applies": false, "items": [] } and let it be parsed as a fresh, standalone food description instead. This function is ONLY for a bare reference ("add it", "log that") with no number in the current message, reaching back to reuse a number computed earlier. A number restated or newly given in the current message always wins over anything from earlier in the conversation — never substitute an older number for what the user just said.
+CRITICAL — this is a narrow pattern, not a general "log my food" handler: it applies ONLY when the specific food(s) named in the user's latest message were ALREADY discussed earlier in the conversation below WITH a specific calorie/protein number actually stated for them there. If the user's latest message is itself the FIRST time these foods are being described — even in rich, specific detail ("I ate half a portion of lemon pasta, some focaccia with ricotta...") — that is NOT this pattern, even though it sounds like a natural, complete log request: respond { "applies": false, "items": [] } and let the normal estimation path handle it. Never invent, estimate, or guess a plausible-sounding number for a food that has no actual prior number in the conversation below — every number you return must be traceable to a specific earlier message, not synthesized to look like one.
+Also: if the user's LATEST message itself states a specific calorie and/or protein number for the food (e.g. "add a protein shake, 126 calories and 26g protein"), that is NOT this pattern either — respond { "applies": false, "items": [] }. This function is ONLY for a bare reference ("add it", "log that") with no number in the current message, reaching back to reuse a number computed earlier. A number restated or newly given in the current message always wins over anything from earlier in the conversation — never substitute an older number for what the user just said.
 Respond ONLY as JSON: { "applies": boolean, "items": [{ "description": string, "calories": number, "protein"?: number, "grams"?: number }] }
 If "applies" is true: extract EXACTLY the number(s) already stated for each item, from wherever in the conversation below they were stated — do not recalculate, round differently, sum, or combine different foods, UNLESS the user's latest message explicitly asks to log everything as one combined meal under a given name (e.g. "add it as one meal called salad") — in that case return a SINGLE item using that exact name and the sum of the already-given numbers, not a recalculation. "description" MUST be the actual food/dish name as it was discussed (e.g. "Eggplant lasagna") — NEVER a generic placeholder like "today's intake" or "logged meal", even if the user's message itself didn't repeat the name. Write it in ${lang === "he" ? "Hebrew" : "English"}. Omit "protein"/"grams" per item only if truly never stated anywhere in the conversation below.
 If "applies" is false (a new food is being described instead, there's no concrete number to reuse, or the message is unrelated): respond { "applies": false, "items": [] }.`,
@@ -795,6 +796,12 @@ If "applies" is false (a new food is being described instead, there's no concret
   }
   if (!parsed.applies || !parsed.items || parsed.items.length === 0) return null;
 
+  // This path skips the normal log_meal branch entirely, so it must resolve
+  // the date itself rather than defaulting to today — "add it, for
+  // yesterday" is a real message shape and was previously always logged
+  // under today regardless of what the user said.
+  const targetDate = await resolveLogDate(message, today);
+
   return {
     parsed: {
       items: parsed.items.map((item) => ({
@@ -804,7 +811,7 @@ If "applies" is false (a new food is being described instead, there's no concret
         ...(item.grams != null ? { grams: item.grams } : {}),
       })),
     },
-    date: today,
+    date: targetDate,
   };
 }
 
