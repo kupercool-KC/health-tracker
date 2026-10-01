@@ -45,4 +45,8 @@ export const adminStorage = getStorage(app);
 // round-trip); doing it once here at the source removes the whole class of
 // bug instead of relying on every call site remembering to strip. Must be
 // set before any Firestore operation runs.
-adminDb.settings({ ignoreUndefinedProperties: true });
+try {
+  adminDb.settings({ ignoreUndefinedProperties: true });
+} catch {
+  // Dev hot-reload re-evaluates this module against an already-configured Firestore instance; the setting is already applied.
+}

@@ -164,3 +164,49 @@ export async function resolveReminderAction(
 
   return { replyContent: lang === "he" ? `נשמר: ${formatReminder(newReminder, lang)}` : `Saved: ${formatReminder(newReminder, lang)}` };
 }
+
+
+export async function listCustomReminders(uid: string): Promise<CustomReminder[]> {
+  const { settings } = await loadOrInitSettings(uid);
+  return settings?.customReminders ?? [];
+}
+
+export async function createCustomReminder(
+  uid: string,
+  input: { text: string; intent: string; time: string; recurrence: "daily" | "weekly"; weekday?: number; lang: "en" | "he" },
+): Promise<{ ok: true; reminder: CustomReminder } | { ok: false; error: string }> {
+  const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
+  const profile = profileSnap.data() as UserProfile | undefined;
+  if (!profile?.whatsappPhone) return { ok: false, error: "No WhatsApp number is linked to this account (Profile → Link WhatsApp), so reminders can't be delivered." };
+
+  const { ref, settings } = await loadOrInitSettings(uid);
+  const reminder: CustomReminder = {
+    id: crypto.randomUUID(),
+    text: input.text,
+    intent: input.intent,
+    time: input.time,
+    recurrence: input.recurrence,
+    ...(input.recurrence === "weekly" && input.weekday != null ? { weekday: input.weekday } : {}),
+    createdAt: new Date().toISOString(),
+  };
+  await ref.set(
+    {
+      phone: profile.whatsappPhone,
+      lang: profile.language ?? input.lang,
+      customReminders: [...(settings?.customReminders ?? []), reminder],
+      lastSent: settings?.lastSent ?? {},
+    },
+    { merge: true },
+  );
+  return { ok: true, reminder };
+}
+
+export async function deleteCustomReminder(uid: string, idOrText: string): Promise<CustomReminder | null> {
+  const { ref, settings } = await loadOrInitSettings(uid);
+  const reminders = settings?.customReminders ?? [];
+  const needle = idOrText.trim().toLowerCase();
+  const match = reminders.find((r) => r.id === idOrText.trim()) ?? reminders.find((r) => (r.intent ?? r.text).toLowerCase().includes(needle));
+  if (!match) return null;
+  await ref.set({ customReminders: reminders.filter((r) => r.id !== match.id) }, { merge: true });
+  return match;
+}

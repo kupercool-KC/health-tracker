@@ -1,0 +1,155 @@
+/**
+ * The single chat agent: one model call loop with tools and an explicit
+ * per-turn state, replacing the old chain of ~12 independent classifiers.
+ * Pure of session persistence — runAgentChatTurn (runAgentChatTurn.ts) wraps
+ * it with Firestore; evals call runAgent directly with an in-memory
+ * conversation.
+ */
+import "server-only";
+import type OpenAI from "openai";
+import { getOpenAIClient } from "@/lib/openai/client";
+import { buildSystemPrompt } from "./prompt";
+import { renderDraft, renderState, type AgentState, type Draft } from "./state";
+import { TOOL_BY_NAME, TOOL_DEFS, type TurnContext } from "./tools";
+import type { ChatMessage } from "@/lib/types";
+
+export const AGENT_MODEL = "gpt-4.1";
+const MAX_TOOL_ROUNDS = 8;
+const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
+const HISTORY_MESSAGES = 24;
+
+export interface AgentInput {
+  uid: string;
+  lang: "en" | "he";
+  today: string;
+  userMessage: string;
+  imageUrls?: string[];
+  /** Conversation before this message (oldest first). */
+  priorMessages: ChatMessage[];
+  state: AgentState;
+  /** Draft carried over from the latest open proposal. */
+  draft: Draft;
+  dryRun?: boolean;
+}
+
+export interface AgentOutput {
+  replyContent: string;
+  draft: Draft;
+  mistakeFlagged: boolean;
+  toolCalls: { name: string; args: unknown }[];
+}
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .trim();
+}
+
+/** Last line of defence for the one thing that must never be wrong: a proposal's numbers must be visible to the user. */
+function ensureNumbersShown(text: string, draft: Draft, lang: "en" | "he"): string {
+  const digits = text.replace(/[,\s]/g, "");
+  const missing: string[] = [];
+  if (draft.meal) {
+    for (const it of draft.meal.items) {
+      if (!digits.includes(String(Math.round(it.calories)))) {
+        missing.push(`${it.description}: ${Math.round(it.calories)} kcal, ${Math.round(it.protein)}${lang === "he" ? " גרם חלבון" : "g protein"}`);
+      }
+    }
+  }
+  if (draft.workout?.calories != null && !digits.includes(String(Math.round(draft.workout.calories)))) {
+    const w = draft.workout;
+    missing.push(`${w.type}: ${Math.round(w.durationSec / 60)} min${w.distanceMeters != null ? `, ${(w.distanceMeters / 1000).toFixed(1)} km` : ""}, ${Math.round(w.calories ?? 0)} kcal`);
+  }
+  if (draft.steps && !digits.includes(String(draft.steps.steps))) missing.push(`${draft.steps.steps} ${lang === "he" ? "צעדים" : "steps"}`);
+  return missing.length ? `${text}\n\n${missing.join("\n")}` : text;
+}
+
+export async function runAgent(input: AgentInput): Promise<AgentOutput> {
+  const ctx: TurnContext = {
+    uid: input.uid,
+    lang: input.lang,
+    today: input.today,
+    userMessage: input.userMessage,
+    imageUrls: input.imageUrls,
+    priorMessages: input.priorMessages,
+    state: input.state,
+    draft: input.draft,
+    dryRun: input.dryRun,
+  };
+
+  const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = input.priorMessages
+    .slice(-HISTORY_MESSAGES)
+    .map((m) => ({ role: m.role, content: m.content }) as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+
+  const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: "text", text: input.userMessage || (input.lang === "he" ? "[תמונה]" : "[photo]") }];
+  for (const url of input.imageUrls ?? []) userContent.push({ type: "image_url", image_url: { url } });
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: buildSystemPrompt(input.lang, input.state.profile?.gender) },
+    { role: "system", content: `CURRENT STATE (authoritative, rebuilt this turn):\n${renderState(input.state, input.draft)}` },
+    ...history,
+    { role: "user", content: userContent },
+  ];
+
+  const toolCalls: { name: string; args: unknown }[] = [];
+  let finalText = "";
+  let toolsRan = false;
+  let retriedClaim = false;
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: AGENT_MODEL,
+      temperature: 0.4,
+      messages,
+      tools: TOOL_DEFS,
+    });
+    const msg = completion.choices[0]?.message;
+    if (!msg) break;
+    const calls = msg.tool_calls?.filter((c) => c.type === "function") ?? [];
+    if (calls.length === 0) {
+      const text = msg.content ?? "";
+      // A reply that says it logged/changed something when no tool ran this turn is a hallucinated action — nothing actually happened. Make the model do it for real.
+      if (!toolsRan && !retriedClaim && CLAIMS_ACTION.test(text)) {
+        retriedClaim = true;
+        messages.push(msg);
+        messages.push({
+          role: "system",
+          content: "Your reply claims you logged/changed/recorded something, but you called NO tool this turn, so nothing was actually done. Call the right tool(s) now (log_food, log_workout, update_draft, manage_reminders…), then answer using their real results. If no action was actually needed, answer again without claiming an action.",
+        });
+        continue;
+      }
+      finalText = text;
+      break;
+    }
+    toolsRan = true;
+    messages.push(msg);
+    for (const call of calls) {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(call.function.arguments || "{}");
+      } catch {
+        // malformed arguments → handled below as an empty-args error result
+      }
+      toolCalls.push({ name: call.function.name, args });
+      const tool = TOOL_BY_NAME.get(call.function.name);
+      let result: unknown;
+      try {
+        result = tool ? await tool.run(args, ctx) : { error: `Unknown tool ${call.function.name}` };
+      } catch (err) {
+        console.error(`[agent] tool ${call.function.name} failed:`, err);
+        result = { error: `Tool failed: ${err instanceof Error ? err.message : String(err)}. Tell the user honestly it didn't work and offer to try again.` };
+      }
+      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+    // The draft changed under the model's feet — keep its picture of it current for the next round.
+    messages.push({ role: "system", content: `DRAFT NOW:\n${renderDraft(ctx.draft).join("\n") || "(empty)"}` });
+  }
+
+  if (!finalText.trim()) {
+    const fallback = await getOpenAIClient().chat.completions.create({ model: AGENT_MODEL, temperature: 0.4, messages });
+    finalText = fallback.choices[0]?.message?.content ?? "";
+  }
+  const replyContent = ensureNumbersShown(stripMarkdown(finalText), ctx.draft, input.lang);
+  return { replyContent, draft: ctx.draft, mistakeFlagged: !!ctx.mistakeFlagged, toolCalls };
+}

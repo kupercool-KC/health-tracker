@@ -37,6 +37,8 @@ const bodySchema = z
     message: "Provide message or imageUrls",
   });
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   try {
     return await handleChat(req);

@@ -238,7 +238,7 @@ const HISTORY_WINDOW_DAYS = 90;
 /** Window for general_health's "personalize using recent activity" context — 3 months, same as the deep-history path, so a nutrition-advice question can reference anything recent enough to still be relevant. */
 const RECENT_CONTEXT_WINDOW_DAYS = 90;
 
-interface RecentHistoryData {
+export interface RecentHistoryData {
   meals: {
     date: string;
     totals: MealDay["totals"];
@@ -261,7 +261,7 @@ interface RecentHistoryData {
  * answerGeneralHealth (so a generic nutrition/fitness question can factor
  * in what's actually been logged instead of only static profile fields).
  */
-async function fetchRecentHistory(uid: string, windowDays: number): Promise<RecentHistoryData> {
+export async function fetchRecentHistory(uid: string, windowDays: number): Promise<RecentHistoryData> {
   const since = new Date();
   since.setDate(since.getDate() - windowDays);
   const sinceDate = since.toISOString().slice(0, 10);

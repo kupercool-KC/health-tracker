@@ -84,6 +84,8 @@ function todayInIsrael(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
 }
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const rawBody = await req.text();
   if (!verifySignature(rawBody, req.headers.get("x-hub-signature-256"))) {
@@ -263,10 +265,8 @@ async function tryConfirmPending(
   const total = session?.messages.length ?? 0;
   // A 👍 or quote-reply aimed at a specific message confirms exactly that one.
   const targetIndex = targetWaId ? (session?.messages.findIndex((m) => m.waId === targetWaId) ?? -1) : -1;
-  if (targetIndex >= 0) {
-    if (!hasOpenProposal(session!.messages[targetIndex])) return false;
-    lastIndex = targetIndex;
-  }
+  // An open proposal moves forward into the newest reply, so a 👍 on an older message that no longer holds it falls through to the lookback below.
+  if (targetIndex >= 0 && hasOpenProposal(session!.messages[targetIndex])) lastIndex = targetIndex;
   for (let i = total - 1; lastIndex < 0 && i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
     if (hasOpenProposal(session!.messages[i])) {
       lastIndex = i;

@@ -14,6 +14,7 @@ import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { getFrequentMealsForChat } from "@/lib/nutrition/frequentMeals";
+import { isAgentEnabled, runAgentChatTurn } from "@/lib/agent/runAgentChatTurn";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
 import { parseBodyMetrics } from "@/lib/bodyMetrics/parser";
@@ -67,6 +68,18 @@ export interface ChatTurnResult {
 }
 
 export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
+  // The single-agent pipeline is the default; the classifier chain below is the automatic fallback (agent error) and the kill-switch target (appConfig/chatAgent.enabled=false).
+  if (await isAgentEnabled()) {
+    try {
+      return await runAgentChatTurn(input);
+    } catch (err) {
+      console.error("[chat] agent failed, falling back to legacy pipeline:", err);
+    }
+  }
+  return runLegacyChatTurn(input);
+}
+
+async function runLegacyChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
   const { uid, email, sessionId, message: rawMessage, imageUrls, lang, date, overrideCalories, overrideProtein, waMessageId, quotedWaId } = input;
 
   // Fetched once and reused by both log_meal's avoid-food warning and

@@ -17,6 +17,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { sendWhatsAppText } from "@/lib/whatsapp/client";
+import { getOpenAIClient } from "@/lib/openai/client";
 import type { CustomGoalDef, DailyGoalEntry, DailyGoals, MealDay, UserProfile, WhatsAppReminderSettings } from "@/lib/types";
 
 type ReminderType = keyof WhatsAppReminderSettings["lastSent"];
@@ -40,15 +41,72 @@ function israelNow(): { date: string; hm: string; weekday: number } {
   return { date, hm, weekday };
 }
 
-/** True if `configuredTime` (HH:mm) falls in the same 15-minute bucket as `nowHm` (HH:mm) — the cron only runs every 15 min, so an exact-minute match would silently never fire. */
-function inCurrentBucket(nowHm: string, configuredTime: string): boolean {
-  const toMinutes = (hm: string) => {
-    const [h, m] = hm.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const now = toMinutes(nowHm);
+const toMinutes = (hm: string) => {
+  const [h, m] = hm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+/**
+ * A reminder is due from its configured time until DUE_WINDOW_MIN later, once
+ * per day. The old "same 15-minute bucket" test silently skipped a reminder
+ * whenever it was created inside the bucket the cron had already passed
+ * (e.g. created 20:37 for 20:38 — the 20:30 run was too early, the 20:45 run
+ * a different bucket → never fired) and fired up to 14 minutes EARLY.
+ * `createdAt` guards the other direction: a reminder created after today's
+ * time has passed means "from tomorrow", not "right now".
+ */
+const DUE_WINDOW_MIN = 120;
+function isDue(now: { date: string; hm: string }, configuredTime: string, createdAt?: string): boolean {
+  const nowMin = toMinutes(now.hm);
   const target = toMinutes(configuredTime);
-  return Math.floor(now / 15) === Math.floor(target / 15);
+  if (nowMin < target || nowMin - target > DUE_WINDOW_MIN) return false;
+  if (createdAt) {
+    const created = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(createdAt));
+    const g = (t: string) => created.find((p) => p.type === t)?.value ?? "";
+    if (`${g("year")}-${g("month")}-${g("day")}` === now.date && toMinutes(`${g("hour")}:${g("minute")}`) > target) return false;
+  }
+  return true;
+}
+
+/** Writes the reminder the way a friend would, using today's real numbers — not the user's request copied back verbatim. Falls back to the stored text on any failure. */
+async function composeReminderText(uid: string, reminder: { intent?: string; text: string }, lang: "en" | "he", today: string): Promise<string> {
+  try {
+    const usersCol = adminDb.collection("users").doc(uid);
+    const [mealsSnap, profileSnap, workoutsSnap] = await Promise.all([
+      usersCol.collection("meals").doc(today).get(),
+      usersCol.collection("meta").doc("profile").get(),
+      usersCol.collection("workouts").where("date", "==", today).get(),
+    ]);
+    const meals = mealsSnap.data() as MealDay | undefined;
+    const profile = profileSnap.data() as UserProfile | undefined;
+    const context = {
+      userName: profile?.name,
+      userGender: profile?.gender,
+      mealsLoggedToday: meals?.entries.length ?? 0,
+      caloriesSoFar: Math.round(meals?.totals.calories ?? 0),
+      calorieGoal: profile?.calorieGoal,
+      proteinSoFar: Math.round(meals?.totals.protein ?? 0),
+      proteinGoal: profile?.proteinGoal,
+      workoutsToday: workoutsSnap.size,
+    };
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      max_tokens: 120,
+      messages: [
+        {
+          role: "system",
+          content: `You are Lilly, the user's warm nutrition-and-fitness companion, sending a scheduled WhatsApp reminder. Write ONE short, friendly, personal message (1–2 sentences, plain text, at most one emoji) in ${lang === "he" ? "natural colloquial Hebrew" : "English"} that gently nudges the user to do what they asked to be reminded of. Use the day's real numbers when they make the nudge more useful (e.g. few/no meals logged yet), but never invent data and don't recite stats for their own sake. Don't copy the request word-for-word; don't be pushy or robotic. Address the user in the grammatical gender matching userGender (male → masculine Hebrew forms, female → feminine; unknown → phrase neutrally). Output only the message.`,
+        },
+        { role: "user", content: JSON.stringify({ whatTheyAskedToBeRemindedOf: reminder.intent ?? reminder.text, today: context }) },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content?.trim();
+    return text || reminder.text;
+  } catch (err) {
+    console.error("[cron/whatsapp-reminders] compose failed, using stored text:", err);
+    return reminder.text;
+  }
 }
 
 function yesterday(date: string): string {
@@ -79,7 +137,7 @@ async function evaluateAndSend(
     | undefined;
   if (!config?.enabled) return false;
   if (settings.lastSent[type] === now.date) return false;
-  if (!inCurrentBucket(now.hm, config.time)) return false;
+  if (!isDue(now, config.time)) return false;
   if (type === "weeklyWeighIn" && now.weekday !== 0) return false;
 
   const lang = settings.lang;
@@ -222,9 +280,9 @@ export async function GET(req: Request) {
     for (const reminder of settings.customReminders ?? []) {
       try {
         if (reminder.lastSent === now.date) continue;
-        if (!inCurrentBucket(now.hm, reminder.time)) continue;
+        if (!isDue(now, reminder.time, reminder.createdAt)) continue;
         if (reminder.recurrence === "weekly" && reminder.weekday !== now.weekday) continue;
-        await sendWhatsAppText(settings.phone, reminder.text);
+        await sendWhatsAppText(settings.phone, await composeReminderText(doc.id, reminder, settings.lang, now.date));
         sent++;
         const updated = (settings.customReminders ?? []).map((r) =>
           r.id === reminder.id ? { ...r, lastSent: now.date } : r,

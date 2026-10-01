@@ -247,6 +247,8 @@ export interface CustomReminder {
   weekday?: number;
   lastSent?: string;
   createdAt: string;
+  /** What the user actually asked to be reminded of, in their words — the cron composes the delivered message from this plus the day's context, `text` is only the fallback. */
+  intent?: string;
 }
 
 /**
