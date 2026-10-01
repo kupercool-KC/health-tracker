@@ -36,7 +36,8 @@ export async function isAgentEnabled(): Promise<boolean> {
 }
 
 function stripPending(m: ChatMessage): ChatMessage {
-  const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, ...rest } = m;
+  const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, pendingActions, ...rest } = m;
+  void pendingActions;
   void pendingMeal;
   void pendingMealAction;
   void pendingWorkout;
@@ -106,6 +107,7 @@ export async function runAgentChatTurn(input: ChatTurnInput): Promise<ChatTurnRe
     ...(draft.workout ? { pendingWorkout: draft.workout } : {}),
     ...(draft.steps ? { pendingSteps: draft.steps } : {}),
     ...(draft.bodyMetrics ? { pendingBodyMetrics: draft.bodyMetrics } : {}),
+    ...(draft.actions?.length ? { pendingActions: draft.actions } : {}),
   };
   const messages = [...cleaned, userMsg, assistantMsg];
 

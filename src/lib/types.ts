@@ -320,6 +320,26 @@ export interface PendingMealAction {
   changes?: Partial<Pick<MealEntry, "name" | "calories" | "protein" | "carbs" | "fat" | "fiber">>;
 }
 
+/**
+ * Everything beyond "add a meal/workout/steps/weigh-in" that the chat can
+ * do to the user's data — edits/deletes of saved entries and profile changes.
+ * Proposed by the agent, applied only after the user confirms (WhatsApp 👍/"כן",
+ * or the web Confirm button via /api/chat/apply-actions) — see
+ * src/lib/chat/applyActions.ts.
+ */
+export type PendingAction =
+  | { type: "workout_delete"; id: string; date: string; label: string }
+  | {
+      type: "workout_update";
+      id: string;
+      date: string;
+      label: string;
+      changes: { type?: string; duration?: number; distance?: number; calories?: number };
+    }
+  | { type: "steps_delete"; date: string; label: string }
+  | { type: "body_metrics_delete"; date: string; label: string }
+  | { type: "profile_update"; label: string; changes: Partial<UserProfile> };
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -336,6 +356,8 @@ export interface ChatMessage {
   pendingSteps?: { steps: number; date: string };
   /** Present on an assistant message that's proposing a weigh-in's readings to log — not yet saved. */
   pendingBodyMetrics?: ParsedBodyMetrics & { imageUrls?: string[]; date: string };
+  /** Present on an assistant message proposing edits/deletes of saved workouts/steps/weigh-ins or profile changes — see PendingAction. */
+  pendingActions?: PendingAction[];
 }
 
 /** users/{uid}/chatSessions/{sessionId} */

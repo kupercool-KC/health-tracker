@@ -27,6 +27,7 @@ import { getUidForPhone } from "@/lib/whatsapp/link";
 import { sendWhatsAppText, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import { transcribeAudio } from "@/lib/openai/transcribe";
+import { applyPendingActions } from "@/lib/chat/applyActions";
 import {
   applyMealActionFromPending,
   saveBodyMetricsFromPending,
@@ -225,6 +226,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const hasPending = !!(
     result.reply.pendingMeal ||
     result.reply.pendingMealAction ||
+    result.reply.pendingActions?.length ||
     result.reply.pendingWorkout ||
     result.reply.pendingSteps ||
     result.reply.pendingBodyMetrics
@@ -258,7 +260,7 @@ async function tryConfirmPending(
   const session = (await ref.get()).data() as ChatSession | undefined;
   const hasOpenProposal = (m: ChatMessage) =>
     m.role === "assistant" &&
-    !!(m.pendingMeal || m.pendingMealAction || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
+    !!(m.pendingMeal || m.pendingMealAction || m.pendingActions?.length || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
   // The user may confirm after a few more messages (e.g. asked a question in between), so look back
   // for the most recent open proposal instead of only checking the very last message.
   let lastIndex = -1;
@@ -282,8 +284,11 @@ async function tryConfirmPending(
   if (last.pendingWorkout) await saveWorkoutFromPending(uid, last.pendingWorkout);
   if (last.pendingSteps) await saveStepsFromPending(uid, last.pendingSteps);
   if (last.pendingBodyMetrics) await saveBodyMetricsFromPending(uid, last.pendingBodyMetrics);
+  let actionsFailed: string[] = [];
+  if (last.pendingActions?.length) actionsFailed = (await applyPendingActions(uid, last.pendingActions)).failed;
 
-  const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, ...rest } = last;
+  const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, pendingActions, ...rest } = last;
+  void pendingActions;
   void pendingMeal;
   void pendingMealAction;
   void pendingWorkout;
@@ -293,7 +298,15 @@ async function tryConfirmPending(
   messages[lastIndex] = rest as ChatMessage;
   await ref.update({ messages });
 
-  const reply = !mealActionFound
+  const reply = actionsFailed.length
+    ? lang === "he"
+      ? `לא הצלחתי לבצע: ${actionsFailed.join(", ")} — ייתכן שזה כבר השתנה.`
+      : `Couldn't apply: ${actionsFailed.join(", ")} — it may have already changed.`
+    : last.pendingActions?.length && !last.pendingMeal && !last.pendingMealAction && !last.pendingWorkout && !last.pendingSteps && !last.pendingBodyMetrics
+      ? lang === "he"
+        ? "✅ בוצע"
+        : "✅ Done"
+      : !mealActionFound
     ? lang === "he"
       ? "לא מצאתי את הרשומה הזו יותר — ייתכן שכבר נמחקה."
       : "That entry no longer exists — it may have already been removed."

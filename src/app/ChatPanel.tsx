@@ -366,6 +366,30 @@ export default function ChatPanel({
     }
   }
 
+  async function confirmActions(index: number) {
+    if (!activeId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not signed in");
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/chat/apply-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ sessionId: activeId, messageIndex: index }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && !(Array.isArray(body.failed) && body.failed.length)) throw new Error(apiErrorMessage(body, res.statusText));
+      if (Array.isArray(body.failed) && body.failed.length) throw new Error(body.failed.join(", "));
+      setConfirmedKeys((prev) => new Set(prev).add(`${index}:actions`));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function renameSession(id: string) {
     if (!user || !renameValue.trim()) {
       setRenamingId(null);
@@ -587,6 +611,15 @@ export default function ChatPanel({
                   </button>
                 )
               )}
+              {m.pendingActions?.length ? (
+                confirmedKeys.has(`${i}:actions`) ? (
+                  <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>
+                ) : (
+                  <button onClick={() => confirmActions(i)} disabled={busy} style={{ marginTop: 4 }}>
+                    {t("confirm")}
+                  </button>
+                )
+              ) : null}
               {m.pendingWorkout && (
                 confirmedKeys.has(`${i}:workout`) ? (
                   <p style={{ color: "var(--burned)", fontSize: 12, margin: "4px 0 0" }}>{t("saved")}</p>

@@ -42,38 +42,41 @@ export async function getFrequentMealsForChat(uid: string): Promise<FrequentMeal
   const days = snap.docs.map((d) => d.data() as MealDay);
 
   const now = Date.now();
-  const groups = new Map<
-    string,
-    { name: string; weight: number; calories: number; protein: number; carbs?: number; fat?: number; grams?: number; ingredients?: string[] }
-  >();
+  // Per food name: the value that keeps coming back wins (recency-weighted vote), not simply the latest log —
+  // one-off different entries (another brand, a mistake) used to overwrite a shake the user has logged 20 times at 128/26.
+  type Variant = { weight: number; lastTs: number; calories: number; protein: number; carbs?: number; fat?: number; grams?: number; ingredients?: string[] };
+  const groups = new Map<string, { name: string; weight: number; variants: Map<string, Variant> }>();
   for (const day of days) {
     const daysAgo = Math.max(0, (now - new Date(`${day.date}T00:00:00Z`).getTime()) / 86_400_000);
     const decay = Math.pow(0.5, daysAgo / HALF_LIFE_DAYS);
     for (const entry of day.entries ?? []) {
       const key = entry.name.trim().toLowerCase();
       if (!key) continue;
-      const g = groups.get(key) ?? { name: entry.name.trim(), weight: 0, calories: 0, protein: 0 };
+      const g = groups.get(key) ?? { name: entry.name.trim(), weight: 0, variants: new Map() };
       g.name = entry.name.trim();
       g.weight += decay;
-      g.calories = entry.calories;
-      g.protein = entry.protein;
-      g.carbs = entry.carbs;
-      g.fat = entry.fat;
-      g.grams = entry.grams;
-      g.ingredients = entry.ingredients;
+      const vkey = `${Math.round(entry.calories)}|${Math.round(entry.protein)}`;
+      const v = g.variants.get(vkey) ?? { weight: 0, lastTs: 0, calories: entry.calories, protein: entry.protein };
+      v.weight += 1 + decay;
+      v.lastTs = Math.max(v.lastTs, new Date(entry.time ?? day.date).getTime());
+      v.carbs = entry.carbs; v.fat = entry.fat; v.grams = entry.grams; v.ingredients = entry.ingredients;
+      g.variants.set(vkey, v);
       groups.set(key, g);
     }
   }
   return Array.from(groups.values())
     .sort((a, b) => b.weight - a.weight)
     .slice(0, LIMIT)
-    .map((g) => ({
-      name: g.name,
-      calories: Math.round(g.calories),
-      protein: Math.round(g.protein * 10) / 10,
-      carbs: g.carbs,
-      fat: g.fat,
-      grams: g.grams,
-      ingredients: g.ingredients,
-    }));
+    .map((g) => {
+      const best = [...g.variants.values()].sort((x, y) => y.weight - x.weight || y.lastTs - x.lastTs)[0];
+      return {
+        name: g.name,
+        calories: Math.round(best.calories),
+        protein: Math.round(best.protein * 10) / 10,
+        carbs: best.carbs,
+        fat: best.fat,
+        grams: best.grams,
+        ingredients: best.ingredients,
+      };
+    });
 }

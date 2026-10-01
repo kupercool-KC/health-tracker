@@ -127,7 +127,7 @@ const cases = [
     draft: { meal: { items: [item("חציל עם טחינה", 50, 1)], date: TODAY } },
     prior: [u("חצי חציל עם כף טחינה"), a("חציל עם טחינה: 50 kcal, 1גר חלבון\nלאשר ולשמור?"), u("כמה קלוריות יש בכף טחינה?"), a("בכף טחינה יש בדרך כלל בין 80 ל-90 קלוריות.")],
     message: "אז איך זה תואם את הערכים שנתת לי קודם",
-    check: (o) => [["draft corrected upward (>=85)", (o.draft.meal?.items[0]?.calories ?? 0) >= 85], ["reply acknowledges the mismatch", /80|85|90|טעית|לא תואם|לא מדויק|תיקנ|עדכנ/.test(o.replyContent)]],
+    check: (o) => [["draft corrected upward (>=85)", (o.draft.meal?.items[0]?.calories ?? 0) >= 85], ["reply acknowledges the mismatch", /80|85|90|טעית|לא תואם|לא מדויק|תיקנ|עדכנ|מעודכן/.test(o.replyContent)]],
   },
   {
     name: "unrelated_question_keeps_draft",
@@ -135,6 +135,55 @@ const cases = [
     prior: [a("חציל עם טחינה: 110 kcal, 2 גר חלבון\nלאשר ולשמור?")],
     message: "כמה צעדים כדאי ללכת ביום?",
     check: (o) => [["draft still there", !!o.draft.meal], ["reply mentions the waiting item", /חציל|ממתין|מחכה|לאשר/.test(o.replyContent)]],
+  },
+  {
+    name: "fact_fixes_draft_immediately",
+    draft: { meal: { items: [item("שייק חלבון", 153, 17)], date: TODAY } },
+    prior: [u("שתיתי את השייק הרגיל שלי הבוקר"), a("שייק חלבון: 153 kcal, 17 גרם חלבון\nלאשר ולשמור?")],
+    message: "הערך שכמעט תמיד חוזר על עצמו עבור שייק חלבון הוא 128 קלוריות ו26 גרם חלבון",
+    check: (o) => [
+      ["draft updated to 128/26", Math.round(o.draft.meal?.items[0]?.calories) === 128 && Math.round(o.draft.meal?.items[0]?.protein) === 26],
+      ["remembered the fact", o.toolCalls.some((t) => t.name === "remember")],
+    ],
+  },
+  {
+    name: "delete_saved_workout",
+    state: { workouts: [{ id: "w1", date: TODAY, type: "רכיבה על אופניים", durationMin: 5, distanceKm: 25, calories: 600 }] },
+    message: "תמחק את הרכיבה של 5 דקות מהיום",
+    check: (o) => [["workout delete proposed", o.draft.actions?.some((x) => x.type === "workout_delete" && x.id === "w1")]],
+  },
+  {
+    name: "edit_saved_workout",
+    state: { workouts: [{ id: "w1", date: TODAY, type: "רכיבה על אופניים", durationMin: 5, distanceKm: 25, calories: 600 }] },
+    message: "תתקן את הרכיבה של היום ל-55 דקות",
+    check: (o) => [["workout update proposed 55 min", o.draft.actions?.some((x) => x.type === "workout_update" && x.id === "w1" && x.changes.duration === 3300)]],
+  },
+  {
+    name: "delete_steps_yesterday",
+    message: "תמחק את הצעדים של אתמול",
+    check: (o) => [["steps delete proposed for yesterday", o.draft.actions?.some((x) => x.type === "steps_delete" && x.date === YESTERDAY)]],
+  },
+  {
+    name: "change_protein_goal",
+    message: "תעלה את יעד החלבון שלי ל-150",
+    check: (o) => [["profile_update proteinGoal=150", o.draft.actions?.some((x) => x.type === "profile_update" && x.changes.proteinGoal === 150)]],
+  },
+  {
+    name: "tick_custom_goal",
+    state: { profile: { calorieGoal: 2000, proteinGoal: 140, language: "he", customGoals: [{ id: "g1", name: "שתיית מים", type: "numeric", unit: "כוסות", target: 8 }] } },
+    message: "שתיתי 8 כוסות מים היום",
+    check: (o) => [["set_daily_goal called with 8", o.toolCalls.some((t) => t.name === "set_daily_goal" && t.args.value === 8)]],
+  },
+  {
+    name: "builtin_reminder_toggle",
+    state: { profile: { calorieGoal: 2000, proteinGoal: 140, language: "he", whatsappPhone: "972500000000" } },
+    message: "תפעילי לי סיכום ערב ב-21:30",
+    check: (o) => [["set_builtin_reminder eveningSummary 21:30", o.toolCalls.some((t) => t.name === "set_builtin_reminder" && t.args.type === "eveningSummary" && t.args.time === "21:30" && t.args.enabled === true)]],
+  },
+  {
+    name: "ask_about_my_goals",
+    message: "מה היעדים שלי?",
+    check: (o) => [["answers with goal numbers", /\d{3,}/.test(o.replyContent)]],
   },
 ];
 

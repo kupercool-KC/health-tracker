@@ -13,7 +13,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getFrequentMealsForChat, type FrequentMealForChat } from "@/lib/nutrition/frequentMeals";
 import { summarizeProfileForChat } from "@/lib/chat/chat";
 import { readFacts, type AgentFact } from "./memory";
-import type { ChatMessage, MealDay, UserProfile, Workout } from "@/lib/types";
+import type { ChatMessage, MealDay, PendingAction, UserProfile, Workout } from "@/lib/types";
 
 export interface Draft {
   meal?: NonNullable<ChatMessage["pendingMeal"]>;
@@ -21,6 +21,8 @@ export interface Draft {
   workout?: NonNullable<ChatMessage["pendingWorkout"]>;
   steps?: NonNullable<ChatMessage["pendingSteps"]>;
   bodyMetrics?: NonNullable<ChatMessage["pendingBodyMetrics"]>;
+  /** Edits/deletes of saved workouts/steps/weigh-ins and profile changes — see PendingAction. */
+  actions?: PendingAction[];
 }
 
 export interface SavedMealEntry {
@@ -36,7 +38,7 @@ export interface AgentState {
   yesterday: string;
   weekday: string;
   meals: { date: string; entries: SavedMealEntry[]; totalCalories: number; totalProtein: number }[];
-  workouts: { date: string; type: string; durationMin: number; distanceKm?: number; calories?: number }[];
+  workouts: { id: string; date: string; type: string; durationMin: number; distanceKm?: number; calories?: number }[];
   stepsToday?: number;
   calorieGoal?: number;
   proteinGoal?: number;
@@ -51,7 +53,7 @@ export interface AgentState {
 export const OPEN_PROPOSAL_LOOKBACK = 8;
 
 export function hasPending(m: ChatMessage): boolean {
-  return !!(m.pendingMeal || m.pendingMealAction || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
+  return !!(m.pendingMeal || m.pendingMealAction || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics || m.pendingActions?.length);
 }
 
 export function draftFromMessage(m: ChatMessage): Draft {
@@ -61,11 +63,12 @@ export function draftFromMessage(m: ChatMessage): Draft {
     ...(m.pendingWorkout ? { workout: structuredClone(m.pendingWorkout) } : {}),
     ...(m.pendingSteps ? { steps: structuredClone(m.pendingSteps) } : {}),
     ...(m.pendingBodyMetrics ? { bodyMetrics: structuredClone(m.pendingBodyMetrics) } : {}),
+    ...(m.pendingActions?.length ? { actions: structuredClone(m.pendingActions) } : {}),
   };
 }
 
 export function isDraftEmpty(d: Draft): boolean {
-  return !(d.meal || d.mealAction || d.workout || d.steps || d.bodyMetrics);
+  return !(d.meal || d.mealAction || d.workout || d.steps || d.bodyMetrics || d.actions?.length);
 }
 
 /** Index of the most recent still-open proposal message within the lookback, or -1. */
@@ -117,6 +120,7 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     .map((d) => d.data() as Workout)
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((w) => ({
+      id: w.id,
       date: w.date,
       type: w.type,
       durationMin: Math.round(w.duration / 60),
@@ -157,7 +161,7 @@ export function renderState(state: AgentState, draft: Draft): string {
     for (const e of day.entries) lines.push(`    - [${e.id}] ${e.name}: ${e.calories} kcal, ${e.protein}g protein`);
   }
   for (const w of state.workouts) {
-    lines.push(`  Workout ${w.date}: ${w.type}, ${w.durationMin} min${w.distanceKm != null ? `, ${w.distanceKm} km` : ""}${w.calories != null ? `, ${w.calories} kcal` : ""}`);
+    lines.push(`  Workout ${w.date} [${w.id}]: ${w.type}, ${w.durationMin} min${w.distanceKm != null ? `, ${w.distanceKm} km` : ""}${w.calories != null ? `, ${w.calories} kcal` : ""}`);
   }
   if (state.stepsToday != null) lines.push(`  Steps today: ${state.stepsToday}`);
 
@@ -188,6 +192,7 @@ export function renderDraft(draft: Draft): string[] {
   }
   if (draft.steps) out.push(`Steps proposal for ${draft.steps.date}: ${draft.steps.steps}`);
   if (draft.bodyMetrics) out.push(`Body-metrics proposal for ${draft.bodyMetrics.date}: ${JSON.stringify(draft.bodyMetrics)}`);
+  for (const a of draft.actions ?? []) out.push(`Proposed action: ${a.label}`);
   if (draft.mealAction) {
     const a = draft.mealAction;
     out.push(`Proposed ${a.action} of saved meal "${a.entryName}" (${a.date})${a.changes ? ` with changes ${JSON.stringify(a.changes)}` : ""}`);

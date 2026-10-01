@@ -21,7 +21,8 @@ import { createCustomReminder, deleteCustomReminder, listCustomReminders } from 
 import { strings } from "@/lib/i18n/strings";
 import { addFact, logMistake, removeFact } from "./memory";
 import type { AgentState, Draft } from "./state";
-import type { ChatMessage, MealDay, ParsedNutritionItem, Workout } from "@/lib/types";
+import { pickWritableProfile } from "@/lib/chat/applyActions";
+import type { ChatMessage, CustomGoalDef, DailyGoalEntry, DailyGoals, MealDay, ParsedNutritionItem, PendingAction, UserProfile, WhatsAppReminderSettings, Workout } from "@/lib/types";
 
 export interface TurnContext {
   uid: string;
@@ -327,7 +328,7 @@ const removeFromDraft: Tool = {
     "remove_from_draft",
     "Remove something from the DRAFT: one meal item (item_index) or a whole kind (omit item_index). Use for 'only the workout', 'forget the beer', 'cancel that'. kind 'all' empties the draft.",
     {
-      kind: { type: "string", enum: ["meal", "workout", "steps", "body_metrics", "meal_action", "all"] },
+      kind: { type: "string", enum: ["meal", "workout", "steps", "body_metrics", "meal_action", "actions", "all"] },
       item_index: { type: "number" },
     },
     ["kind"],
@@ -353,7 +354,13 @@ const removeFromDraft: Tool = {
     else if (kind === "steps") delete d.steps;
     else if (kind === "body_metrics") delete d.bodyMetrics;
     else if (kind === "meal_action") delete d.mealAction;
-    return { removed: kind, draft_empty: !(d.meal || d.workout || d.steps || d.bodyMetrics || d.mealAction) };
+    else if (kind === "actions") {
+      const idx = num(args.item_index);
+      if (idx != null && d.actions?.[idx]) d.actions.splice(idx, 1);
+      else delete d.actions;
+      if (d.actions && d.actions.length === 0) delete d.actions;
+    }
+    return { removed: kind, draft_empty: !(d.meal || d.workout || d.steps || d.bodyMetrics || d.mealAction || d.actions?.length) };
   },
 };
 
@@ -364,7 +371,7 @@ async function mealDay(uid: string, date: string): Promise<MealDay | undefined> 
 const findLogged: Tool = {
   def: fn(
     "find_logged",
-    "Look up what is ALREADY SAVED in the user's log (with entry ids) for a date range — meals, workouts, steps. The state block already lists the last 3 days; use this for older days or to double-check before editing/deleting.",
+    "Look up what is ALREADY SAVED in the user's log (with entry ids) for a date range — meals, workouts, steps, weigh-ins (body metrics) and custom daily-goal check-ins. The state block already lists the last 3 days; use this for older days or to double-check before editing/deleting.",
     {
       date_from: DATE_PROP,
       date_to: DATE_PROP,
@@ -385,9 +392,21 @@ const findLogged: Tool = {
       const entries = (day?.entries ?? []).filter((e) => !q || e.name.toLowerCase().includes(q));
       if (entries.length) days.push({ date, entries: entries.map((e) => ({ id: e.id, name: e.name, calories: Math.round(e.calories), protein: Math.round(e.protein * 10) / 10 })) });
     }
-    const wSnap = await adminDb.collection("users").doc(ctx.uid).collection("workouts").where("date", ">=", from).where("date", "<=", to).get();
-    const workouts = wSnap.docs.map((d) => d.data() as Workout).map((w) => ({ date: w.date, type: w.type, duration_min: Math.round(w.duration / 60), distance_km: w.distance != null ? w.distance / 1000 : undefined, calories: w.calories }));
-    return { meals: days, workouts };
+    const u = adminDb.collection("users").doc(ctx.uid);
+    const [wSnap, stSnap, bSnap, gSnap] = await Promise.all([
+      u.collection("workouts").where("date", ">=", from).where("date", "<=", to).get(),
+      u.collection("steps").where("date", ">=", from).where("date", "<=", to).get(),
+      u.collection("bodyMetrics").where("date", ">=", from).where("date", "<=", to).get(),
+      u.collection("dailyGoals").where("date", ">=", from).where("date", "<=", to).get(),
+    ]);
+    const workouts = wSnap.docs.map((d) => d.data() as Workout).map((w) => ({ id: w.id, date: w.date, type: w.type, duration_min: Math.round(w.duration / 60), distance_km: w.distance != null ? w.distance / 1000 : undefined, calories: w.calories }));
+    return {
+      meals: days,
+      workouts,
+      steps: stSnap.docs.map((d) => d.data() as { date: string; steps: number }).map((x) => ({ date: x.date, steps: x.steps })),
+      body_metrics: bSnap.docs.map((d) => d.data()),
+      daily_goal_checkins: gSnap.docs.map((d) => d.data()),
+    };
   },
 };
 
@@ -536,6 +555,233 @@ const flagMistake: Tool = {
   },
 };
 
+
+function ownLabel(ctx: TurnContext, he: string, en: string) {
+  return ctx.lang === "he" ? he : en;
+}
+
+function addAction(ctx: TurnContext, action: PendingAction) {
+  const key = (a: PendingAction) => `${a.type}:${"id" in a ? a.id : "date" in a ? a.date : ""}`;
+  ctx.draft.actions = [...(ctx.draft.actions ?? []).filter((a) => key(a) !== key(action)), action];
+}
+
+const changeLoggedWorkout: Tool = {
+  def: fn(
+    "change_logged_workout",
+    "Propose deleting or editing a workout that is ALREADY SAVED (goes to the DRAFT; the user confirms). id comes from the ALREADY SAVED list / find_logged. Use only when the user explicitly wants an existing saved workout changed/removed — to add a new one use log_workout.",
+    {
+      id: { type: "string" },
+      action: { type: "string", enum: ["delete", "update"] },
+      type: { type: "string" },
+      duration_min: { type: "number" },
+      distance_km: { type: "number" },
+      calories: { type: "number" },
+    },
+    ["id", "action"],
+  ),
+  async run(args, ctx) {
+    const id = str(args.id);
+    if (!id) return { error: "id is required" };
+    const fromState = ctx.state.workouts.find((x) => x.id === id);
+    const snap = fromState ? null : await adminDb.collection("users").doc(ctx.uid).collection("workouts").doc(id).get();
+    if (!fromState && !snap?.exists) return { error: `No saved workout with id ${id}. Check the ALREADY SAVED list or find_logged.` };
+    const w = (fromState ? { type: fromState.type, date: fromState.date, duration: fromState.durationMin * 60, distance: fromState.distanceKm != null ? fromState.distanceKm * 1000 : undefined, calories: fromState.calories } : snap!.data()) as Workout;
+    const name = `${w.type} (${w.date}, ${Math.round(w.duration / 60)} min)`;
+    if (args.action === "delete") {
+      addAction(ctx, { type: "workout_delete", id, date: w.date, label: ownLabel(ctx, `מחיקת האימון ${name}`, `delete workout ${name}`) });
+      return { proposed: `delete workout ${name}` };
+    }
+    const changes = {
+      ...(str(args.type) ? { type: str(args.type)! } : {}),
+      ...(num(args.duration_min) != null ? { duration: Math.round(num(args.duration_min)! * 60) } : {}),
+      ...(num(args.distance_km) != null ? { distance: Math.round(num(args.distance_km)! * 1000) } : {}),
+      ...(num(args.calories) != null ? { calories: num(args.calories)! } : {}),
+    };
+    if (!Object.keys(changes).length) return { error: "Nothing to change — pass type, duration_min, distance_km or calories." };
+    const merged = { type: changes.type ?? w.type, durationSec: changes.duration ?? w.duration, distanceMeters: changes.distance ?? w.distance, calories: changes.calories ?? w.calories };
+    const warnings = workoutWarnings(merged);
+    if (warnings.length) return { needs_clarification: true, warnings, instruction: "Do NOT propose this. Ask the user which number they really meant." };
+    addAction(ctx, { type: "workout_update", id, date: w.date, changes, label: ownLabel(ctx, `עדכון האימון ${name}`, `update workout ${name}`) });
+    return { proposed: { update_workout: name, changes } };
+  },
+};
+
+const deleteLoggedSteps: Tool = {
+  def: fn("delete_logged_steps", "Propose deleting the saved step count of a day (DRAFT; the user confirms). To CHANGE a day's steps use log_steps instead.", { date: DATE_PROP }),
+  async run(args, ctx) {
+    const date = asDate(args.date, ctx);
+    const snap = await adminDb.collection("users").doc(ctx.uid).collection("steps").doc(date).get();
+    if (!snap.exists && !ctx.dryRun) return { error: `No saved steps on ${date}.` };
+    addAction(ctx, { type: "steps_delete", date, label: ownLabel(ctx, `מחיקת הצעדים של ${date}`, `delete steps of ${date}`) });
+    return { proposed: `delete steps of ${date}`, current: (snap.data() as { steps?: number } | undefined)?.steps };
+  },
+};
+
+const deleteLoggedBodyMetrics: Tool = {
+  def: fn("delete_logged_body_metrics", "Propose deleting a saved weigh-in (body metrics) of a day (DRAFT; the user confirms).", { date: DATE_PROP }),
+  async run(args, ctx) {
+    const date = asDate(args.date, ctx);
+    const snap = await adminDb.collection("users").doc(ctx.uid).collection("bodyMetrics").doc(date).get();
+    if (!snap.exists && !ctx.dryRun) return { error: `No saved weigh-in on ${date}.` };
+    addAction(ctx, { type: "body_metrics_delete", date, label: ownLabel(ctx, `מחיקת השקילה של ${date}`, `delete weigh-in of ${date}`) });
+    return { proposed: `delete weigh-in of ${date}` };
+  },
+};
+
+const GOALS = ["buildMuscle", "cut", "loseWeight", "maintain"];
+const ACTIVITY = ["sedentary", "light", "moderate", "intense", "veryIntense"];
+const DIETS = ["everything", "vegetarian", "vegan", "glutenFree", "lactoseFree", "other"];
+
+const updateProfile: Tool = {
+  def: fn(
+    "update_profile",
+    "Propose changing the user's profile/goals (DRAFT; the user confirms): daily calorie/protein/carb/fat/step goals, body stats, goal types, activity level, dietary preferences, foods to avoid/allergies/preferred foods, the % of workout calories counted toward the net deficit, display name/units/language. Pass only the fields that change.",
+    {
+      calorie_goal: { type: "number" },
+      protein_goal: { type: "number" },
+      carb_goal: { type: "number" },
+      fat_goal: { type: "number" },
+      step_goal: { type: "number" },
+      weight_kg: { type: "number" },
+      height_cm: { type: "number" },
+      age: { type: "number" },
+      name: { type: "string" },
+      goals: { type: "array", items: { type: "string", enum: GOALS }, description: "buildMuscle | cut | loseWeight | maintain" },
+      activity_level: { type: "string", enum: ACTIVITY },
+      dietary_prefs: { type: "array", items: { type: "string", enum: DIETS } },
+      avoid_foods: { type: "array", items: { type: "string" } },
+      allergies: { type: "array", items: { type: "string" } },
+      preferred_foods: { type: "array", items: { type: "string" } },
+      net_calorie_burn_percent: { type: "number", description: "0-100: share of workout calories subtracted when computing net calories." },
+      units: { type: "string", enum: ["metric", "imperial"] },
+      language: { type: "string", enum: ["en", "he"] },
+    },
+  ),
+  async run(args, ctx) {
+    const map: Record<string, string> = {
+      calorie_goal: "calorieGoal", protein_goal: "proteinGoal", carb_goal: "carbGoal", fat_goal: "fatGoal", step_goal: "stepGoal",
+      weight_kg: "weight", height_cm: "height", age: "age", name: "name", goals: "goals", activity_level: "activityLevel",
+      dietary_prefs: "dietaryPrefs", avoid_foods: "avoidFoods", allergies: "allergies", preferred_foods: "preferredFoods",
+      net_calorie_burn_percent: "netCalorieBurnFactor", units: "units", language: "language",
+    };
+    const changes: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args)) if (map[k] && v !== undefined && v !== null) changes[map[k]] = v;
+    const writable = pickWritableProfile(changes);
+    if (!Object.keys(writable).length) return { error: "No valid field to change." };
+    const prev = ctx.draft.actions?.find((a) => a.type === "profile_update");
+    const merged = { ...(prev?.type === "profile_update" ? prev.changes : {}), ...writable } as Partial<UserProfile>;
+    ctx.draft.actions = [...(ctx.draft.actions ?? []).filter((a) => a.type !== "profile_update"), { type: "profile_update", changes: merged, label: ownLabel(ctx, `עדכון פרופיל: ${Object.keys(merged).join(", ")}`, `update profile: ${Object.keys(merged).join(", ")}`) }];
+    const current = ctx.state.profile as Record<string, unknown> | undefined;
+    return { proposed_changes: Object.fromEntries(Object.entries(merged).map(([k, v]) => [k, { from: current?.[k], to: v }])) };
+  },
+};
+
+const manageCustomGoals: Tool = {
+  def: fn(
+    "manage_custom_goals",
+    "The user's custom daily goals (e.g. 'drink water', 'read'): list them, or propose adding/removing one (DRAFT; the user confirms). To mark a goal done/progress for a day use set_daily_goal.",
+    {
+      action: { type: "string", enum: ["list", "add", "remove"] },
+      name: { type: "string" },
+      type: { type: "string", enum: ["boolean", "numeric"] },
+      unit: { type: "string", description: "numeric only, e.g. 'כוסות'." },
+      target: { type: "number", description: "numeric only: value at which the day counts as done." },
+    },
+    ["action"],
+  ),
+  async run(args, ctx) {
+    const defs: CustomGoalDef[] = (ctx.state.profile?.customGoals ?? []) as CustomGoalDef[];
+    if (args.action === "list") return { custom_goals: defs };
+    const name = str(args.name);
+    if (!name) return { error: "name is required" };
+    if (args.action === "remove") {
+      const g = defs.find((d) => d.name.toLowerCase() === name.toLowerCase() || d.id === name) ?? defs.find((d) => d.name.toLowerCase().includes(name.toLowerCase()));
+      if (!g) return { error: "No such custom goal.", existing: defs.map((d) => d.name) };
+      const next = defs.filter((d) => d.id !== g.id);
+      ctx.draft.actions = [...(ctx.draft.actions ?? []).filter((a) => a.type !== "profile_update"), { type: "profile_update", changes: { customGoals: next }, label: ownLabel(ctx, `הסרת היעד היומי "${g.name}"`, `remove daily goal "${g.name}"`) }];
+      return { proposed: `remove daily goal ${g.name}` };
+    }
+    const type = args.type === "numeric" ? "numeric" : "boolean";
+    const def: CustomGoalDef = { id: crypto.randomUUID().slice(0, 8), name, type, ...(type === "numeric" ? { unit: str(args.unit), target: num(args.target) } : {}) };
+    const clean = JSON.parse(JSON.stringify(def)) as CustomGoalDef;
+    ctx.draft.actions = [...(ctx.draft.actions ?? []).filter((a) => a.type !== "profile_update"), { type: "profile_update", changes: { customGoals: [...defs, clean] }, label: ownLabel(ctx, `הוספת יעד יומי "${name}"`, `add daily goal "${name}"`) }];
+    return { proposed: `add daily goal ${name}`, goal: clean };
+  },
+};
+
+const setDailyGoal: Tool = {
+  def: fn(
+    "set_daily_goal",
+    "Mark a custom daily goal done / set its numeric progress for a day (written immediately — it's the same as ticking the box in the app; tell the user it's done). goal = its name or id from manage_custom_goals.",
+    { goal: { type: "string" }, date: DATE_PROP, done: { type: "boolean" }, value: { type: "number" }, note: { type: "string" } },
+    ["goal"],
+  ),
+  async run(args, ctx) {
+    const defs: CustomGoalDef[] = (ctx.state.profile?.customGoals ?? []) as CustomGoalDef[];
+    const q = (str(args.goal) ?? "").toLowerCase();
+    const g = defs.find((d) => d.id === args.goal) ?? defs.find((d) => d.name.toLowerCase() === q) ?? defs.find((d) => d.name.toLowerCase().includes(q));
+    if (!g) return { error: "No such custom goal.", existing: defs.map((d) => d.name) };
+    const date = asDate(args.date, ctx);
+    const value = num(args.value);
+    const done = typeof args.done === "boolean" ? args.done : g.type === "numeric" ? (value ?? 0) >= (g.target ?? 0) : true;
+    const entry: DailyGoalEntry = { goalId: g.id, done, ...(value != null ? { value } : {}), ...(str(args.note) ? { note: str(args.note) } : {}) };
+    if (ctx.dryRun) return { set: { goal: g.name, date, ...entry } };
+    const ref = adminDb.collection("users").doc(ctx.uid).collection("dailyGoals").doc(date);
+    const current = ((await ref.get()).data() as DailyGoals | undefined)?.entries ?? [];
+    await ref.set({ date, entries: [...current.filter((e) => e.goalId !== g.id), entry] });
+    return { set: { goal: g.name, date, done, value } };
+  },
+};
+
+const getSettings: Tool = {
+  def: fn("get_settings", "Everything the user can see in the app's Profile/settings: full profile (goals, stats, preferences), custom daily goals, built-in WhatsApp reminder settings, custom reminders. Use to answer 'what are my goals/settings/reminders'.", {}),
+  async run(_args, ctx) {
+    const snap = await adminDb.collection("whatsappReminders").doc(ctx.uid).get();
+    const r = snap.data() as WhatsAppReminderSettings | undefined;
+    const { email: _e, whatsappPhone: _p, ...profile } = (ctx.state.profile ?? {}) as Record<string, unknown>;
+    return {
+      profile,
+      whatsapp_linked: !!ctx.state.profile?.whatsappPhone,
+      builtin_reminders: r ? { breakfastCheckIn: r.breakfastCheckIn, middayCheckIn: r.middayCheckIn, eveningSummary: r.eveningSummary, morningRecap: r.morningRecap, weeklyWeighIn: r.weeklyWeighIn, customGoalsCheckIn: r.customGoalsCheckIn } : "not configured yet",
+      custom_reminders: (r?.customReminders ?? []).map((c) => ({ id: c.id, intent: c.intent ?? c.text, time: c.time, recurrence: c.recurrence, weekday: c.weekday })),
+    };
+  },
+};
+
+const BUILTIN = ["breakfastCheckIn", "middayCheckIn", "eveningSummary", "morningRecap", "weeklyWeighIn", "customGoalsCheckIn"];
+const setBuiltinReminder: Tool = {
+  def: fn(
+    "set_builtin_reminder",
+    "Turn one of the app's built-in WhatsApp check-ins on/off or change its time (written immediately, same as the toggles in Profile). breakfastCheckIn = nudge if no meal logged yet; middayCheckIn = nudge if calories are low so far (threshold_percent); eveningSummary = today's totals; morningRecap = yesterday's totals; weeklyWeighIn = Sunday weigh-in nudge; customGoalsCheckIn = unticked daily goals.",
+    {
+      type: { type: "string", enum: BUILTIN },
+      enabled: { type: "boolean" },
+      time: { type: "string", description: "HH:mm (Israel time)." },
+      threshold_percent: { type: "number", description: "middayCheckIn only." },
+    },
+    ["type"],
+  ),
+  async run(args, ctx) {
+    const type = BUILTIN.includes(String(args.type)) ? String(args.type) : null;
+    if (!type) return { error: "unknown reminder type" };
+    const time = str(args.time);
+    if (time && !/^\d{2}:\d{2}$/.test(time)) return { error: "time must be HH:mm" };
+    const ref = adminDb.collection("whatsappReminders").doc(ctx.uid);
+    const existing = (await ref.get()).data() as Record<string, any> | undefined;
+    if (!ctx.state.profile?.whatsappPhone) return { error: "No WhatsApp number is linked to this account." };
+    const DEF: Record<string, { enabled: boolean; time: string }> = {
+      breakfastCheckIn: { enabled: false, time: "10:00" }, middayCheckIn: { enabled: false, time: "14:00" }, eveningSummary: { enabled: false, time: "21:00" },
+      morningRecap: { enabled: false, time: "08:00" }, weeklyWeighIn: { enabled: false, time: "09:00" }, customGoalsCheckIn: { enabled: false, time: "20:30" },
+    };
+    const cur = { ...DEF[type], ...(existing?.[type] ?? {}) } as Record<string, unknown>;
+    const next = { ...cur, ...(typeof args.enabled === "boolean" ? { enabled: args.enabled } : {}), ...(time ? { time } : {}), ...(type === "middayCheckIn" && num(args.threshold_percent) != null ? { thresholdPercent: num(args.threshold_percent) } : {}) };
+    if (type === "middayCheckIn" && next.thresholdPercent == null) next.thresholdPercent = 40;
+    if (ctx.dryRun) return { set: { type, ...next } };
+    await ref.set({ [type]: next, phone: ctx.state.profile.whatsappPhone, lang: ctx.state.profile.language ?? ctx.lang, lastSent: existing?.lastSent ?? {}, customReminders: existing?.customReminders ?? [], updatedAt: new Date().toISOString() }, { merge: true });
+    return { set: { type, ...next } };
+  },
+};
+
 export const TOOLS: Tool[] = [
   logFood,
   logWorkout,
@@ -544,6 +790,14 @@ export const TOOLS: Tool[] = [
   updateDraft,
   removeFromDraft,
   changeLoggedMeal,
+  changeLoggedWorkout,
+  deleteLoggedSteps,
+  deleteLoggedBodyMetrics,
+  updateProfile,
+  manageCustomGoals,
+  setDailyGoal,
+  getSettings,
+  setBuiltinReminder,
   findLogged,
   getHistory,
   lookupNutrition,

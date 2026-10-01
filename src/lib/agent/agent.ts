@@ -15,7 +15,7 @@ import type { ChatMessage } from "@/lib/types";
 
 export const AGENT_MODEL = "gpt-4.1";
 const MAX_TOOL_ROUNDS = 8;
-const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
+const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
 const HISTORY_MESSAGES = 24;
 
 export interface AgentInput {
