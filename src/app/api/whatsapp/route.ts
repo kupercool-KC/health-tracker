@@ -173,7 +173,9 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   } else if (message.type === "audio" && message.audio?.id) {
     try {
       const { buffer, contentType } = await downloadWhatsAppMedia(message.audio.id);
-      text = await transcribeAudio(buffer, contentType, profileLang);
+      // No forced language: the profile can say "en" while the user speaks Hebrew, and a forced language makes the model translate/mangle the speech.
+      const transcript = await transcribeAudio(buffer, contentType);
+      text = transcript ? `${HEBREW.test(transcript) ? "[הודעה קולית]" : "[voice note]"} ${transcript}` : transcript;
     } catch (err) {
       console.error("[whatsapp] audio transcription failed:", err);
       await sendWhatsAppText(
