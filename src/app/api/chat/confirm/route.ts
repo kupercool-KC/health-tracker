@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     if (!target || !(field in target)) return;
     const messages = [...session!.messages];
     const { [field]: _cleared, ...rest } = target;
-    messages[messageIndex] = rest as ChatMessage;
+    messages[messageIndex] = { ...(rest as ChatMessage), confirmedAt: new Date().toISOString() };
     tx.update(ref, { messages });
   });
 

@@ -295,7 +295,7 @@ async function tryConfirmPending(
   void pendingSteps;
   void pendingBodyMetrics;
   const messages = [...session!.messages];
-  messages[lastIndex] = rest as ChatMessage;
+  messages[lastIndex] = { ...(rest as ChatMessage), confirmedAt: new Date().toISOString() };
   await ref.update({ messages });
 
   const reply = actionsFailed.length

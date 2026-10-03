@@ -81,7 +81,14 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
 
   const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = input.priorMessages
     .slice(-HISTORY_MESSAGES)
-    .map((m) => ({ role: m.role, content: m.content }) as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+    .map(
+      (m) =>
+        ({
+          role: m.role,
+          // A confirmed proposal still reads "…לאשר?" in its text — say plainly it was saved, or the model keeps calling it a draft.
+          content: m.confirmedAt ? `${m.content}\n[SYSTEM NOTE: the user CONFIRMED this proposal and it is now SAVED in the log — it is no longer a draft.]` : m.content,
+        }) as OpenAI.Chat.Completions.ChatCompletionMessageParam,
+    );
 
   const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: "text", text: input.userMessage || (input.lang === "he" ? "[תמונה]" : "[photo]") }];
   for (const url of input.imageUrls ?? []) userContent.push({ type: "image_url", image_url: { url } });
