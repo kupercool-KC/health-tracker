@@ -159,7 +159,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   }
 
   const profileSnap = await adminDb.collection("users").doc(uid).collection("meta").doc("profile").get();
-  const lang = ((profileSnap.data() as UserProfile | undefined)?.language ?? "he") as "en" | "he";
+  const profileLang = ((profileSnap.data() as UserProfile | undefined)?.language ?? "he") as "en" | "he";
 
   let text = message.text?.body?.trim() || message.image?.caption?.trim() || undefined;
   let imageUrls: string[] | undefined;
@@ -173,19 +173,19 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   } else if (message.type === "audio" && message.audio?.id) {
     try {
       const { buffer, contentType } = await downloadWhatsAppMedia(message.audio.id);
-      text = await transcribeAudio(buffer, contentType, lang);
+      text = await transcribeAudio(buffer, contentType, profileLang);
     } catch (err) {
       console.error("[whatsapp] audio transcription failed:", err);
       await sendWhatsAppText(
         from,
-        lang === "he" ? "לא הצלחתי להבין את ההקלטה — אפשר לכתוב במקום?" : "I couldn't understand that voice note — could you type it instead?",
+        profileLang === "he" ? "לא הצלחתי להבין את ההקלטה — אפשר לכתוב במקום?" : "I couldn't understand that voice note — could you type it instead?",
       );
       return;
     }
     if (!text) {
       await sendWhatsAppText(
         from,
-        lang === "he" ? "לא שמעתי כלום בהקלטה — אפשר לנסות שוב?" : "I didn't hear anything in that recording — mind trying again?",
+        profileLang === "he" ? "לא שמעתי כלום בהקלטה — אפשר לנסות שוב?" : "I didn't hear anything in that recording — mind trying again?",
       );
       return;
     }
@@ -193,6 +193,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 
   const whatsappMetaRef = adminDb.collection("users").doc(uid).collection("meta").doc("whatsapp");
   const sessionId = ((await whatsappMetaRef.get()).data() as { sessionId?: string } | undefined)?.sessionId;
+  const lang = await detectLang(uid, sessionId, text, profileLang);
 
   if (sessionId && isAffirmativeReply(message)) {
     const targetWaId = message.type === "reaction" ? message.reaction?.message_id : message.context?.id;
@@ -233,6 +234,17 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   );
   const sentId = await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content);
   if (sentId) await tagLastAssistantMessage(uid, result.sessionId, sentId);
+}
+
+const HEBREW = /[\u0590-\u05FF]/;
+
+/** The profile language follows the web app's toggle (it can sit on "en" while the user chats in Hebrew), so for WhatsApp the language the user is actually writing in wins; photos/reactions inherit it from their last text message. */
+async function detectLang(uid: string, sessionId: string | undefined, text: string | undefined, profileLang: "en" | "he"): Promise<"en" | "he"> {
+  if (text) return HEBREW.test(text) ? "he" : /[A-Za-z]{3}/.test(text) ? "en" : profileLang;
+  if (!sessionId) return profileLang;
+  const session = (await adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId).get()).data() as ChatSession | undefined;
+  const lastText = [...(session?.messages ?? [])].reverse().find((m) => m.role === "user" && /[A-Za-z\u0590-\u05FF]{3}/.test(m.content) && !/^\[(photos?|תמונות?)\]$/.test(m.content));
+  return lastText ? (HEBREW.test(lastText.content) ? "he" : "en") : profileLang;
 }
 
 /** Records the WhatsApp id of the reply just sent on the session's last (assistant) message, so a later quote-reply or 👍 reaction on it can be matched back. */

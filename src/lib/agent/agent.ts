@@ -14,9 +14,10 @@ import { TOOL_BY_NAME, TOOL_DEFS, type TurnContext } from "./tools";
 import type { ChatMessage } from "@/lib/types";
 
 export const AGENT_MODEL = "gpt-4.1";
+const FALLBACK_MODEL = "gpt-4.1-mini"; // separate rate-limit bucket from gpt-4.1
 const MAX_TOOL_ROUNDS = 8;
 const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
-const HISTORY_MESSAGES = 24;
+const HISTORY_MESSAGES = 16;
 
 export interface AgentInput {
   uid: string;
@@ -66,6 +67,30 @@ function ensureNumbersShown(text: string, draft: Draft, lang: "en" | "he"): stri
   return missing.length ? `${text}\n\n${missing.join("\n")}` : text;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The org's gpt-4.1 TPM cap (30k) is easy to hit when several WhatsApp messages land within a minute. Wait out a short 429 once; if still limited, use the mini model rather than dropping to the legacy pipeline. */
+async function createCompletion(
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const call = (model: string) => getOpenAIClient().chat.completions.create({ model, temperature: 0.4, messages, tools: TOOL_DEFS });
+  try {
+    return await call(AGENT_MODEL);
+  } catch (err) {
+    if ((err as { status?: number }).status !== 429) throw err;
+    const wait = Number(/try again in ([\d.]+)s/i.exec((err as Error).message ?? "")?.[1]);
+    if (Number.isFinite(wait) && wait <= 10) {
+      await sleep((wait + 0.5) * 1000);
+      try {
+        return await call(AGENT_MODEL);
+      } catch (err2) {
+        if ((err2 as { status?: number }).status !== 429) throw err2;
+      }
+    }
+    return call(FALLBACK_MODEL);
+  }
+}
+
 export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   const ctx: TurnContext = {
     uid: input.uid,
@@ -105,12 +130,7 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   let toolsRan = false;
   let retriedClaim = false;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const completion = await getOpenAIClient().chat.completions.create({
-      model: AGENT_MODEL,
-      temperature: 0.4,
-      messages,
-      tools: TOOL_DEFS,
-    });
+    const completion = await createCompletion(messages);
     const msg = completion.choices[0]?.message;
     if (!msg) break;
     const calls = msg.tool_calls?.filter((c) => c.type === "function") ?? [];
