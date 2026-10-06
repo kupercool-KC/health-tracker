@@ -68,6 +68,36 @@ function isDue(now: { date: string; hm: string }, configuredTime: string, create
   return true;
 }
 
+/** Today's balance the way the app's net-calorie view computes it: workout burn counts at netCalorieBurnFactor% (default 50), so "remaining" is goal − (eaten − credited burn). */
+function dayBalance(mealDay: MealDay | undefined, workouts: { calories?: number }[], profile: UserProfile | undefined) {
+  const eaten = Math.round(mealDay?.totals.calories ?? 0);
+  const protein = Math.round(mealDay?.totals.protein ?? 0);
+  const factor = (profile?.netCalorieBurnFactor ?? 50) / 100;
+  const burned = Math.round(workouts.reduce((sum, w) => sum + (w.calories ?? 0), 0) * factor);
+  const net = eaten - burned;
+  return {
+    eaten,
+    burned,
+    net,
+    caloriesRemaining: profile?.calorieGoal != null ? Math.round(profile.calorieGoal - net) : undefined,
+    protein,
+    proteinRemaining: profile?.proteinGoal != null ? Math.round(profile.proteinGoal - protein) : undefined,
+  };
+}
+
+/** The chat can be in Hebrew while the stored reminder language (copied from the web app's toggle) says "en" — the language the user actually writes in wins. */
+async function resolveLang(uid: string, stored: "en" | "he"): Promise<"en" | "he"> {
+  try {
+    const sessionId = ((await adminDb.collection("users").doc(uid).collection("meta").doc("whatsapp").get()).data() as { sessionId?: string } | undefined)?.sessionId;
+    if (!sessionId) return stored;
+    const session = (await adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId).get()).data() as { messages?: { role: string; content: string }[] } | undefined;
+    const lastText = [...(session?.messages ?? [])].reverse().find((m) => m.role === "user" && /[A-Za-z\u0590-\u05FF]{3}/.test(m.content));
+    return lastText ? (/[\u0590-\u05FF]/.test(lastText.content) ? "he" : "en") : stored;
+  } catch {
+    return stored;
+  }
+}
+
 /** Writes the reminder the way a friend would, using today's real numbers — not the user's request copied back verbatim. Falls back to the stored text on any failure. */
 async function composeReminderText(uid: string, reminder: { intent?: string; text: string }, lang: "en" | "he", today: string): Promise<string> {
   try {
@@ -79,6 +109,7 @@ async function composeReminderText(uid: string, reminder: { intent?: string; tex
     ]);
     const meals = mealsSnap.data() as MealDay | undefined;
     const profile = profileSnap.data() as UserProfile | undefined;
+    const balance = dayBalance(meals, workoutsSnap.docs.map((d) => d.data() as { calories?: number }), profile);
     const context = {
       userName: profile?.name,
       userGender: profile?.gender,
@@ -88,15 +119,19 @@ async function composeReminderText(uid: string, reminder: { intent?: string; tex
       proteinSoFar: Math.round(meals?.totals.protein ?? 0),
       proteinGoal: profile?.proteinGoal,
       workoutsToday: workoutsSnap.size,
+      caloriesBurnedCreditedFromWorkouts: balance.burned,
+      netCaloriesSoFar: balance.net,
+      netCaloriesRemainingToGoal: balance.caloriesRemaining,
+      proteinRemainingToGoal: balance.proteinRemaining, // negative = already above the goal
     };
     const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.7,
-      max_tokens: 120,
+      max_tokens: 160,
       messages: [
         {
           role: "system",
-          content: `You are Lilly, the user's warm nutrition-and-fitness companion, sending a scheduled WhatsApp reminder. Write ONE short, friendly, personal message (1–2 sentences, plain text, at most one emoji) in ${lang === "he" ? "natural colloquial Hebrew" : "English"} that gently nudges the user to do what they asked to be reminded of. Use the day's real numbers when they make the nudge more useful (e.g. few/no meals logged yet), but never invent data and don't recite stats for their own sake. Don't copy the request word-for-word; don't be pushy or robotic. Address the user in the grammatical gender matching userGender (male → masculine Hebrew forms, female → feminine; unknown → phrase neutrally). Output only the message.`,
+          content: `You are Lilly, the user's warm nutrition-and-fitness companion, sending a scheduled WhatsApp reminder. Write ONE short, friendly, personal message (1–3 short sentences, plain text, at most one emoji) in ${lang === "he" ? "natural colloquial Hebrew" : "English"} that gently nudges the user to do what they asked to be reminded of. Use the day's real numbers when they make the nudge more useful (e.g. few/no meals logged yet). If the reminder is about logging intake / the daily summary / what's left, ALWAYS state how many calories (net, netCaloriesRemainingToGoal) and how much protein (proteinRemainingToGoal) are left — or by how much they're over. Never invent data. Don't copy the request word-for-word; don't be pushy or robotic. Address the user in the grammatical gender matching userGender (male → masculine Hebrew forms, female → feminine; unknown → phrase neutrally). Output only the message.`,
         },
         { role: "user", content: JSON.stringify({ whatTheyAskedToBeRemindedOf: reminder.intent ?? reminder.text, today: context }) },
       ],
@@ -140,7 +175,7 @@ async function evaluateAndSend(
   if (!isDue(now, config.time)) return false;
   if (type === "weeklyWeighIn" && now.weekday !== 0) return false;
 
-  const lang = settings.lang;
+  const lang = await resolveLang(uid, settings.lang);
   const usersCol = adminDb.collection("users").doc(uid);
 
   if (type === "breakfastCheckIn") {
@@ -188,12 +223,23 @@ async function evaluateAndSend(
     const profile = profileSnap.data() as UserProfile | undefined;
     const stepsCount = (steps.data() as { steps?: number } | undefined)?.steps ?? 0;
     const workoutCount = workoutsSnap.size;
-    const calories = Math.round(mealDay?.totals.calories ?? 0);
-    const protein = Math.round(mealDay?.totals.protein ?? 0);
+    const b = dayBalance(mealDay, workoutsSnap.docs.map((d) => d.data() as { calories?: number }), profile);
+    const calories = b.eaten;
+    const protein = b.protein;
+    const calLeft = b.caloriesRemaining;
+    const proLeft = b.proteinRemaining;
+    const balanceHe = [
+      calLeft != null ? (calLeft >= 0 ? `נשארו ${calLeft} קלוריות נטו` : `חרגת ב-${-calLeft} קלוריות נטו`) : null,
+      proLeft != null ? (proLeft > 0 ? `חסרים ${proLeft}ג חלבון` : "יעד החלבון הושג") : null,
+    ].filter(Boolean).join(" · ");
+    const balanceEn = [
+      calLeft != null ? (calLeft >= 0 ? `${calLeft} net kcal left` : `${-calLeft} net kcal over`) : null,
+      proLeft != null ? (proLeft > 0 ? `${proLeft}g protein to go` : "protein goal reached") : null,
+    ].filter(Boolean).join(" · ");
     const msg =
       lang === "he"
-        ? `📅 סיכום היום:\n${calories}/${profile?.calorieGoal ?? "?"} קלוריות\n${protein}/${profile?.proteinGoal ?? "?"}ג חלבון\n${stepsCount}/${profile?.stepGoal ?? "?"} צעדים\n${workoutCount} אימונים`
-        : `📅 Today's summary:\n${calories}/${profile?.calorieGoal ?? "?"} kcal\n${protein}/${profile?.proteinGoal ?? "?"}g protein\n${stepsCount}/${profile?.stepGoal ?? "?"} steps\n${workoutCount} workouts`;
+        ? `📅 סיכום היום:\n${calories}/${profile?.calorieGoal ?? "?"} קלוריות\n${protein}/${profile?.proteinGoal ?? "?"}ג חלבון\n${stepsCount}/${profile?.stepGoal ?? "?"} צעדים\n${workoutCount} אימונים${balanceHe ? `\n⚖️ מאזן: ${balanceHe}` : ""}`
+        : `📅 Today's summary:\n${calories}/${profile?.calorieGoal ?? "?"} kcal\n${protein}/${profile?.proteinGoal ?? "?"}g protein\n${stepsCount}/${profile?.stepGoal ?? "?"} steps\n${workoutCount} workouts${balanceEn ? `\n⚖️ Balance: ${balanceEn}` : ""}`;
     await sendWhatsAppText(settings.phone, msg);
     return true;
   }
@@ -282,7 +328,7 @@ export async function GET(req: Request) {
         if (reminder.lastSent === now.date) continue;
         if (!isDue(now, reminder.time, reminder.createdAt)) continue;
         if (reminder.recurrence === "weekly" && reminder.weekday !== now.weekday) continue;
-        await sendWhatsAppText(settings.phone, await composeReminderText(doc.id, reminder, settings.lang, now.date));
+        await sendWhatsAppText(settings.phone, await composeReminderText(doc.id, reminder, await resolveLang(doc.id, settings.lang), now.date));
         sent++;
         const updated = (settings.customReminders ?? []).map((r) =>
           r.id === reminder.id ? { ...r, lastSent: now.date } : r,
