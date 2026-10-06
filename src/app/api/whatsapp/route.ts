@@ -63,6 +63,8 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
 // standalone "כן" and the reply fell through to being reprocessed as a new
 // message instead of confirming. `(?=\s|$)` works for both alphabets.
 const AFFIRMATIVE_RE = /^(כן|אשר|תשמור|שמור|אישור|אוקיי|בדיוק|yes|yeah|yep|confirm|save|ok|okay)(?=\s|$)/i;
+// "תאשר" / "אני מאשר, תוסיף" — a bare approval, optionally with a filler word. Anything naming a subset ("מאשר את השייק") is NOT matched: that one goes to the agent so it doesn't save the whole draft.
+const APPROVE_PHRASE_RE = /^(אני\s+)?(מאשר|מאשרת|תאשר|תאשרי|אשרי)(\s*[,.!]?\s*(תוסיף|תוסיפי|תשמור|תשמרי|בבקשה|הכל|הכול|את הכל|את הכול))*\s*[.!]*$/;
 const THUMBS_UP_RE = /\u{1F44D}/u; // 👍, with or without a skin-tone modifier
 
 /** True for a 👍 emoji reaction on any message, or a text reply that's a thumbs-up or one of AFFIRMATIVE_RE's words — the two ways WhatsApp users can confirm an open proposal (there's no Confirm button like the web chat has). */
@@ -70,7 +72,7 @@ function isAffirmativeReply(message: IncomingMessage): boolean {
   if (message.type === "reaction") return !!message.reaction?.emoji && THUMBS_UP_RE.test(message.reaction.emoji);
   const text = message.text?.body?.trim();
   if (!text) return false;
-  return THUMBS_UP_RE.test(text) || AFFIRMATIVE_RE.test(text);
+  return THUMBS_UP_RE.test(text) || AFFIRMATIVE_RE.test(text) || APPROVE_PHRASE_RE.test(text);
 }
 
 const CONFIRM_LOOKBACK_MESSAGES = 8;
@@ -103,6 +105,13 @@ export async function POST(req: Request) {
   const message = extractMessage(payload);
   if (!message) {
     // Delivery-status callbacks and other webhook fields carry no `messages` array — nothing to do.
+    return NextResponse.json({ ok: true });
+  }
+
+  // Meta re-delivers a webhook it thinks was slow to answer (voice notes / photos take a while) — the same wamid then ran twice and every reply came out doubled. create() fails if the id was already claimed.
+  try {
+    await adminDb.collection("whatsappProcessed").doc(message.id).create({ at: new Date().toISOString() });
+  } catch {
     return NextResponse.json({ ok: true });
   }
 

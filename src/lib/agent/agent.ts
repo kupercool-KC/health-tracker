@@ -9,7 +9,7 @@ import "server-only";
 import type OpenAI from "openai";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { buildSystemPrompt } from "./prompt";
-import { renderDraft, renderState, type AgentState, type Draft } from "./state";
+import { isDraftEmpty, renderDraft, renderState, type AgentState, type Draft } from "./state";
 import { TOOL_BY_NAME, TOOL_DEFS, type TurnContext } from "./tools";
 import type { ChatMessage } from "@/lib/types";
 
@@ -17,6 +17,8 @@ export const AGENT_MODEL = "gpt-4.1";
 const FALLBACK_MODEL = "gpt-4.1-mini"; // separate rate-limit bucket from gpt-4.1
 const MAX_TOOL_ROUNDS = 8;
 const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
+// The agent can never save anything itself, so a reply saying it did (while a draft is open) is a hallucination — seen live: "הפריטים נשמרו!" for items that were still waiting.
+const CLAIMS_SAVED = /(?<!לא )(?<!עדיין לא )נשמר|(has|have) been saved|saved (it|them|those)/i;
 const HISTORY_MESSAGES = 16;
 
 export interface AgentInput {
@@ -129,6 +131,7 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   let finalText = "";
   let toolsRan = false;
   let retriedClaim = false;
+  let retriedSaved = false;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const completion = await createCompletion(messages);
     const msg = completion.choices[0]?.message;
@@ -143,6 +146,15 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
         messages.push({
           role: "system",
           content: "Your reply claims you logged/changed/recorded something, but you called NO tool this turn, so nothing was actually done. Call the right tool(s) now (log_food, log_workout, update_draft, manage_reminders…), then answer using their real results. If no action was actually needed, answer again without claiming an action.",
+        });
+        continue;
+      }
+      if (!retriedSaved && CLAIMS_SAVED.test(text) && !isDraftEmpty(ctx.draft)) {
+        retriedSaved = true;
+        messages.push(msg);
+        messages.push({
+          role: "system",
+          content: "Your reply says something was SAVED, but you can't save anything — the draft is still waiting for the user's confirmation (👍 / \"כן\"). Answer again without claiming it was saved: say it's ready/waiting and that a 👍 or \"כן\" will save it.",
         });
         continue;
       }
