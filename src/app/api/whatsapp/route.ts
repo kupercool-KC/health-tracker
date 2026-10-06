@@ -19,7 +19,7 @@
  * (this route never needs an approved message template) always lands within
  * WhatsApp's 24-hour customer-service window.
  */
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { adminDb } from "@/lib/firebase/admin";
 import { runChatTurn } from "@/lib/chat/runChatTurn";
@@ -115,19 +115,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  try {
-    await handleIncomingMessage(message);
-  } catch (err) {
-    console.error("[whatsapp] failed to handle incoming message:", err);
-    // Every other failure path above replies with something — this is the
-    // catch-all for anything that throws (e.g. an upstream API outage),
-    // which otherwise left the user staring at a message that silently
-    // never gets a reply, with no way to tell whether it was received.
-    await sendWhatsAppText(
-      message.from,
-      "😕 קרתה תקלה וההודעה שלך לא עובדה. נסה שוב בעוד כמה דקות.\n\n😕 Something went wrong and your message wasn't processed. Please try again in a few minutes.",
-    ).catch(() => {});
-  }
+  // Answer Meta right away and do the (slow: model + tools, 5–30s) work after the response. Meta re-sends any webhook not acknowledged within ~20s, which is what produced the doubled replies; after() keeps the function alive until the work finishes (up to maxDuration).
+  after(async () => {
+    try {
+      await handleIncomingMessage(message);
+    } catch (err) {
+      console.error("[whatsapp] failed to handle incoming message:", err);
+      // Catch-all for anything that throws (e.g. an upstream API outage), so the user never stares at a message that silently gets no reply.
+      await sendWhatsAppText(
+        message.from,
+        "😕 קרתה תקלה וההודעה שלך לא עובדה. נסה שוב בעוד כמה דקות.\n\n😕 Something went wrong and your message wasn't processed. Please try again in a few minutes.",
+      ).catch(() => {});
+    }
+  });
   return NextResponse.json({ ok: true });
 }
 
