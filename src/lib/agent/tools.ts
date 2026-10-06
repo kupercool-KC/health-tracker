@@ -22,7 +22,7 @@ import { strings } from "@/lib/i18n/strings";
 import { addFact, logMistake, removeFact } from "./memory";
 import type { AgentState, Draft } from "./state";
 import { pickWritableProfile } from "@/lib/chat/applyActions";
-import type { ChatMessage, CustomGoalDef, DailyGoalEntry, DailyGoals, MealDay, ParsedNutritionItem, PendingAction, UserProfile, WhatsAppReminderSettings, Workout } from "@/lib/types";
+import type { ChatMessage, CustomGoalDef, CustomReminder, DailyGoalEntry, DailyGoals, MealDay, ParsedNutritionItem, PendingAction, UserProfile, WhatsAppReminderSettings, Workout } from "@/lib/types";
 
 export interface TurnContext {
   uid: string;
@@ -479,13 +479,41 @@ const searchWebTool: Tool = {
   },
 };
 
+const BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  breakfastCheckIn: "Nudge if no meal has been logged yet today (skipped when something is already logged).",
+  middayCheckIn: "Nudge if calories logged so far are below a threshold % of the daily goal.",
+  eveningSummary: "Today's totals: calories, protein, steps, workouts, plus the net balance left (calories and protein).",
+  morningRecap: "Yesterday's totals: calories, protein, steps, workouts.",
+  weeklyWeighIn: "Sunday nudge to weigh in and send a scale screenshot (skipped if already logged).",
+  customGoalsCheckIn: "Lists the custom daily goals not ticked yet today (skipped if all done).",
+};
+
+async function listAllReminders(uid: string) {
+  const r = (await adminDb.collection("whatsappReminders").doc(uid).get()).data() as Record<string, any> | undefined;
+  const builtin = Object.entries(BUILTIN_DESCRIPTIONS).map(([type, what_it_sends]) => {
+    const c = r?.[type] as { enabled?: boolean; time?: string; thresholdPercent?: number } | undefined;
+    return { type, enabled: !!c?.enabled, time: c?.time ?? null, ...(type === "middayCheckIn" && c?.thresholdPercent != null ? { threshold_percent: c.thresholdPercent } : {}), what_it_sends, last_sent: r?.lastSent?.[type] ?? null };
+  });
+  const custom = ((r?.customReminders ?? []) as CustomReminder[]).map((c) => ({
+    id: c.id,
+    what_it_is_about: c.intent ?? c.text,
+    fallback_text: c.text,
+    time: c.time,
+    recurrence: c.recurrence,
+    weekday: c.weekday,
+    note: "The message is re-written fresh each time from today's real numbers (calories left, protein left, meals logged…).",
+    last_sent: c.lastSent ?? null,
+  }));
+  return { builtin_reminders: builtin, custom_reminders: custom };
+}
+
 const manageReminders: Tool = {
   def: fn(
     "manage_reminders",
-    "Create, list or delete the user's recurring WhatsApp reminders. When creating, `message` is the text that will be sent — write it yourself in Lilly's warm voice, fitted to the request (don't copy their wording verbatim; make it friendly, specific and human, one or two short sentences, may include one emoji). `intent` is a short plain description of what they asked to be reminded of (used later to compose the day's message with real context).",
+    "Create, list, update or delete the user's recurring WhatsApp reminders. `list` returns EVERYTHING that can message them — the app's built-in check-ins (on/off, time, what each sends) AND their custom reminders — use it for any 'what reminders do I have / what does the 22:00 one say / what is X' question and explain each in plain words. To CHANGE an existing custom reminder (time, wording, what it should include) use `update` — never delete+create. Built-in ones are changed with set_builtin_reminder. When creating, `message` is the text that will be sent — write it yourself in Lilly's warm voice, fitted to the request (don't copy their wording verbatim; make it friendly, specific and human, one or two short sentences, may include one emoji). `intent` is a short plain description of what they asked to be reminded of (used later to compose the day's message with real context).",
     {
-      action: { type: "string", enum: ["create", "list", "delete"] },
-      intent: { type: "string", description: "create: what the user asked to be reminded of, plain." },
+      action: { type: "string", enum: ["create", "list", "update", "delete"] },
+      intent: { type: "string", description: "create/update: what the user asked to be reminded of, plain." },
       message: { type: "string", description: "create: the friendly fallback message text." },
       time: { type: "string", description: "create: HH:mm 24h, Israel time." },
       recurrence: { type: "string", enum: ["daily", "weekly"] },
@@ -495,9 +523,22 @@ const manageReminders: Tool = {
     ["action"],
   ),
   async run(args, ctx) {
-    if (args.action === "list") {
-      const rs = await listCustomReminders(ctx.uid);
-      return { reminders: rs.map((r) => ({ id: r.id, intent: r.intent ?? r.text, time: r.time, recurrence: r.recurrence, weekday: r.weekday })) };
+    if (args.action === "list") return listAllReminders(ctx.uid);
+    if (args.action === "update") {
+      const match = str(args.match);
+      if (!match) return { error: "match is required (id or phrase)" };
+      const time = str(args.time);
+      if (time && !/^\d{2}:\d{2}$/.test(time)) return { error: "time must be HH:mm" };
+      const ref = adminDb.collection("whatsappReminders").doc(ctx.uid);
+      const settings = (await ref.get()).data() as { customReminders?: CustomReminder[] } | undefined;
+      const list = settings?.customReminders ?? [];
+      const needle = match.toLowerCase();
+      const hit = list.find((r) => r.id === match) ?? list.find((r) => `${r.intent ?? ""} ${r.text} ${r.time}`.toLowerCase().includes(needle));
+      if (!hit) return { error: "No custom reminder matched." };
+      const updated = { ...hit, ...(time ? { time } : {}), ...(str(args.message) ? { text: str(args.message)! } : {}), ...(str(args.intent) ? { intent: str(args.intent)! } : {}), ...(args.recurrence ? { recurrence: args.recurrence === "weekly" ? "weekly" : "daily" } : {}), ...(num(args.weekday) != null ? { weekday: num(args.weekday) } : {}), ...(time && time !== hit.time ? { lastSent: undefined, createdAt: new Date().toISOString() } : {}) } as CustomReminder;
+      if (ctx.dryRun) return { updated };
+      await ref.set({ customReminders: list.map((r) => (r.id === hit.id ? JSON.parse(JSON.stringify(updated)) : r)) }, { merge: true });
+      return { updated: { id: updated.id, intent: updated.intent ?? updated.text, time: updated.time, recurrence: updated.recurrence } };
     }
     if (args.action === "delete") {
       const match = str(args.match);
@@ -744,6 +785,7 @@ const getSettings: Tool = {
       whatsapp_linked: !!ctx.state.profile?.whatsappPhone,
       builtin_reminders: r ? { breakfastCheckIn: r.breakfastCheckIn, middayCheckIn: r.middayCheckIn, eveningSummary: r.eveningSummary, morningRecap: r.morningRecap, weeklyWeighIn: r.weeklyWeighIn, customGoalsCheckIn: r.customGoalsCheckIn } : "not configured yet",
       custom_reminders: (r?.customReminders ?? []).map((c) => ({ id: c.id, intent: c.intent ?? c.text, time: c.time, recurrence: c.recurrence, weekday: c.weekday })),
+      note: "For a full explanation of what each reminder sends, call manage_reminders with action=list.",
     };
   },
 };
