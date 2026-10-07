@@ -15,6 +15,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { parseNutrition } from "@/lib/nutrition/parser";
 import { getFrequentMealsForChat } from "@/lib/nutrition/frequentMeals";
 import { isAgentEnabled, runAgentChatTurn } from "@/lib/agent/runAgentChatTurn";
+import { getEntitlement, paywallMessage } from "@/lib/billing/entitlement";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
 import { parseBodyMetrics } from "@/lib/bodyMetrics/parser";
@@ -68,6 +69,16 @@ export interface ChatTurnResult {
 }
 
 export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
+  // Billing gate (a no-op until appConfig/billing.enforce is switched on). Confirming an already-open proposal never reaches here, so nobody loses something they were mid-way through saving.
+  const entitlement = await getEntitlement(input.uid).catch(() => ({ active: true }) as const);
+  if (!entitlement.active) {
+    const now = new Date().toISOString();
+    return {
+      sessionId: input.sessionId ?? adminDb.collection("users").doc(input.uid).collection("chatSessions").doc().id,
+      reply: { role: "assistant", content: paywallMessage(input.lang), createdAt: now },
+      title: input.lang === "he" ? "מנוי" : "Subscription",
+    };
+  }
   // The single-agent pipeline is the default; the classifier chain below is the automatic fallback (agent error) and the kill-switch target (appConfig/chatAgent.enabled=false).
   if (await isAgentEnabled()) {
     try {

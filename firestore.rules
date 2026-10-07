@@ -16,8 +16,22 @@ service cloud.firestore {
     // unlike healthTokenHash on the users/{uid} doc itself, these aren't
     // security-sensitive, and the Profile screen edits them directly from the
     // client (language toggle, dietary prefs, goals, memory notes, etc.).
+    //
+    // Exception: meta/profile.whatsappPhone is server-owned. It decides where
+    // proactive WhatsApp messages (reminders, summaries) are sent, and is only
+    // set by POST /api/whatsapp/link (Admin SDK). If a client could write it,
+    // anyone could point their account's reminders at somebody else's number.
     match /users/{userId}/meta/{document} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId
+        && (document != 'profile' || !touchesWhatsappPhone());
+    }
+
+    function touchesWhatsappPhone() {
+      return request.resource != null
+        && (resource == null
+          ? request.resource.data.keys().hasAny(['whatsappPhone'])
+          : request.resource.data.diff(resource.data).affectedKeys().hasAny(['whatsappPhone']));
     }
 
     // Custom daily-goal check-ins (done/value/note per goal per day) — no AI
