@@ -13,7 +13,7 @@ import { isDraftEmpty, renderDraft, renderState, type AgentState, type Draft } f
 import { TOOL_BY_NAME, TOOL_DEFS, type TurnContext } from "./tools";
 import type { ChatMessage } from "@/lib/types";
 
-export const AGENT_MODEL = "gpt-4.1";
+export const AGENT_MODEL = process.env.AGENT_MODEL || "gpt-4.1-mini";
 const FALLBACK_MODEL = "gpt-4.1-mini"; // separate rate-limit bucket from gpt-4.1
 const MAX_TOOL_ROUNDS = 8;
 const CLAIMS_ACTION = /הכנסתי|רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;

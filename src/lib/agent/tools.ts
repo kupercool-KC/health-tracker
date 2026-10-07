@@ -267,7 +267,7 @@ const logBodyMetrics: Tool = {
 const updateDraft: Tool = {
   def: fn(
     "update_draft",
-    "Change something in the DRAFT: a meal item's name/numbers, the workout's duration/distance/calories/type, the steps, or the date of a whole kind. Use this for corrections ('it was 55 minutes', 'make it 300 calories', 'put it on yesterday').",
+    "Change something in the DRAFT (only what is listed under DRAFT in the current state — if the DRAFT is empty or lacks that item, this is the WRONG tool: for an already-SAVED entry use change_logged_meal / change_logged_workout / delete_logged_*). A meal item's name/numbers, the workout's duration/distance/calories/type, the steps, or the date of a whole kind. Use this for corrections ('it was 55 minutes', 'make it 300 calories', 'put it on yesterday').",
     {
       kind: { type: "string", enum: ["meal", "workout", "steps", "body_metrics"] },
       item_index: { type: "number", description: "Meal only: which item (#index from the draft)." },
