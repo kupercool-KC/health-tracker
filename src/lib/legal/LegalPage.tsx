@@ -35,4 +35,4 @@ export default function LegalPage({ he, en, heTitle, enTitle, updated }: { he: L
   );
 }
 
-export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "(support address to be added)";
+export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "kupercool@gmail.com";
