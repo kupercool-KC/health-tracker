@@ -24,6 +24,7 @@ import crypto from "node:crypto";
 import { adminDb } from "@/lib/firebase/admin";
 import { runChatTurn } from "@/lib/chat/runChatTurn";
 import { getUidForPhone } from "@/lib/whatsapp/link";
+import { consumeLinkCode } from "@/lib/whatsapp/linkCode";
 import { sendWhatsAppText, sendWhatsAppButtons, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import { transcribeAudio } from "@/lib/openai/transcribe";
@@ -170,14 +171,26 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   await showTypingIndicator(message.id);
 
   const from = message.from;
-  const uid = await getUidForPhone(from);
+  let uid = await getUidForPhone(from);
   if (!uid) {
+    // Unknown number: either it's sending the one-time code from the app's Profile screen (verifies the number is theirs → link it), or it isn't linked at all.
+    const linked = message.text?.body ? await consumeLinkCode(from, message.text.body) : null;
+    if (linked) {
+      const lp = ((await adminDb.collection("users").doc(linked.uid).collection("meta").doc("profile").get()).data() as UserProfile | undefined)?.language;
+      await sendWhatsAppText(
+        from,
+        lp === "en"
+          ? "✅ Linked! I'm Lilly — tell me what you ate, did or weighed, or just ask how your day is going."
+          : "✅ המספר קושר! אני לילי — ספר לי מה אכלת, עשית או שקלת, או פשוט שאל איך היום שלך מתקדם.",
+      );
+      return;
+    }
     await sendWhatsAppText(
       from,
       "היי! 👋 המספר הזה עוד לא מקושר לחשבון ב-Health Tracker.\n" +
-        "היכנס ל-https://health-tracker-sepia.vercel.app ← פרופיל ← קישור WhatsApp, והזן את המספר הזה כדי לקשר.\n\n" +
+        "היכנס ל-https://health-tracker-sepia.vercel.app ← פרופיל ← קישור WhatsApp, לחץ על \"קבל קוד\" ושלח לי את הקוד מכאן.\n\n" +
         "Hi! 👋 This number isn't linked to a Health Tracker account yet.\n" +
-        "Open https://health-tracker-sepia.vercel.app → Profile → Link WhatsApp, and enter this number to link it.",
+        "Open https://health-tracker-sepia.vercel.app → Profile → Link WhatsApp, tap \"Get code\" and send me the code from here.",
     );
     return;
   }

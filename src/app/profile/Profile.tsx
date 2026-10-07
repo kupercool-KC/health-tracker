@@ -165,7 +165,7 @@ export default function Profile() {
   const [newGoalTarget, setNewGoalTarget] = useState("");
   const [customGoalsBusy, setCustomGoalsBusy] = useState(false);
 
-  const [whatsappPhoneInput, setWhatsappPhoneInput] = useState("");
+  const [linkCode, setLinkCode] = useState<{ code: string; botNumber: string | null } | null>(null);
   const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
 
@@ -253,27 +253,36 @@ export default function Profile() {
   }
 
   async function linkWhatsapp() {
-    if (!user || !whatsappPhoneInput.trim()) return;
+    if (!user) return;
     setWhatsappBusy(true);
     setWhatsappError(null);
     try {
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) throw new Error("Not signed in");
-      const res = await fetch("/api/whatsapp/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ phone: whatsappPhoneInput.trim() }),
-      });
+      const res = await fetch("/api/whatsapp/link", { method: "POST", headers: { Authorization: `Bearer ${idToken}` } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? res.statusText);
-      setFullProfile((prev) => ({ ...(prev ?? ({} as UserProfile)), whatsappPhone: data.phone }));
-      setWhatsappPhoneInput("");
+      setLinkCode({ code: data.code, botNumber: data.botNumber ?? null });
     } catch (err) {
       setWhatsappError(String(err instanceof Error ? err.message : err));
     } finally {
       setWhatsappBusy(false);
     }
   }
+
+  // While a code is showing, watch for the link to land (the user sends it from WhatsApp, the server links the number).
+  useEffect(() => {
+    if (!user || !linkCode) return;
+    const timer = setInterval(() => {
+      getFullProfile(user.uid).then((p) => {
+        if (p?.whatsappPhone) {
+          setFullProfile(p);
+          setLinkCode(null);
+        }
+      });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [user, linkCode]);
 
   async function unlinkWhatsapp() {
     if (!user || !fullProfile?.whatsappPhone) return;
@@ -674,17 +683,26 @@ export default function Profile() {
             </button>
           </div>
         ) : (
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={whatsappPhoneInput}
-              onChange={(e) => setWhatsappPhoneInput(e.target.value)}
-              placeholder={t("whatsappPhonePlaceholder")}
-              style={{ flex: 1, padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
-            />
-            <button onClick={linkWhatsapp} disabled={whatsappBusy || !whatsappPhoneInput.trim()}>
-              {whatsappBusy ? t("working") : t("whatsappLinkButton")}
-            </button>
-          </div>
+          linkCode ? (
+            <div style={{ display: "grid", gap: 8 }}>
+              <span style={{ fontSize: 13 }}>{t("whatsappCodeInstructions")}</span>
+              <bdi dir="ltr" style={{ fontSize: 28, fontWeight: 600, letterSpacing: 4 }}>
+                {linkCode.code}
+              </bdi>
+              {linkCode.botNumber && (
+                <a href={`https://wa.me/${linkCode.botNumber}?text=${linkCode.code}`} target="_blank" rel="noreferrer">
+                  {t("whatsappOpenChatButton")}
+                </a>
+              )}
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("whatsappWaitingForCode")}</span>
+            </div>
+          ) : (
+            <div>
+              <button onClick={linkWhatsapp} disabled={whatsappBusy}>
+                {whatsappBusy ? t("working") : t("whatsappGetCodeButton")}
+              </button>
+            </div>
+          )
         )}
         {whatsappError && <p style={{ color: "#ff6b6b", fontSize: 12, margin: 0 }}>{whatsappError}</p>}
       </div>

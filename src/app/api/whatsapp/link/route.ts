@@ -1,6 +1,6 @@
 /**
- * POST /api/whatsapp/link
- * Body: { phone: string }
+ * POST /api/whatsapp/link   (no body) → { code, expiresInMin, botNumber }: a one-time code the user
+ *   sends to the bot from their own WhatsApp to prove the number is theirs and link it.
  * DELETE /api/whatsapp/link
  * Body: { phone: string }
  * Auth: Firebase ID token (Bearer) on both.
@@ -11,7 +11,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getUidFromRequest } from "@/lib/auth";
-import { linkPhoneToUid, normalizePhone, unlinkPhone } from "@/lib/whatsapp/link";
+import { normalizePhone, unlinkPhone } from "@/lib/whatsapp/link";
+import { createLinkCode, getBotNumber } from "@/lib/whatsapp/linkCode";
 
 const bodySchema = z.object({ phone: z.string().min(6) });
 
@@ -20,22 +21,9 @@ export async function POST(req: Request) {
   if (!uid) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const parsedBody = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsedBody.success) {
-    return NextResponse.json({ error: "Invalid request", details: parsedBody.error.flatten() }, { status: 400 });
-  }
-
-  const phone = normalizePhone(parsedBody.data.phone);
-  if (phone.length < 8) {
-    return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
-  }
-
-  const result = await linkPhoneToUid(uid, phone);
-  if (!result.ok) {
-    return NextResponse.json({ error: "This number is already linked to another account" }, { status: 409 });
-  }
-  return NextResponse.json({ ok: true, phone });
+  // No phone in the body anymore: the number is proven by sending the code from it (see linkCode.ts).
+  const { code, expiresInMin } = await createLinkCode(uid);
+  return NextResponse.json({ ok: true, code, expiresInMin, botNumber: await getBotNumber() });
 }
 
 export async function DELETE(req: Request) {

@@ -114,6 +114,13 @@ export const strings = {
   },
   whatsappPhonePlaceholder: { en: "Phone number (e.g. +972501234567)", he: "מספר טלפון (למשל 972501234567+)" },
   whatsappLinkButton: { en: "Link", he: "קשר" },
+  whatsappGetCodeButton: { en: "Get a link code", he: "קבל קוד קישור" },
+  whatsappCodeInstructions: {
+    en: "Send this code to the bot from the WhatsApp number you want to link (valid for 15 minutes):",
+    he: "שלחו את הקוד הזה לבוט מהמספר שרוצים לקשר (תקף ל-15 דקות):",
+  },
+  whatsappOpenChatButton: { en: "Open WhatsApp with the code", he: "פתח את WhatsApp עם הקוד" },
+  whatsappWaitingForCode: { en: "Waiting for your message…", he: "ממתין להודעה שלכם…" },
   whatsappUnlinkButton: { en: "Unlink", he: "בטל קישור" },
 
   whatsappRemindersTitle: { en: "WhatsApp reminders", he: "תזכורות WhatsApp" },
