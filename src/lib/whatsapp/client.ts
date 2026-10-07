@@ -42,7 +42,7 @@ function forceRtlLines(body: string): string {
 }
 
 /** Best-effort — a failed send just means the user doesn't get a reply, not worth throwing and failing the whole webhook. */
-export async function sendWhatsAppText(to: string, body: string): Promise<string | null> {
+export async function sendWhatsAppText(to: string, body: string, replyToId?: string): Promise<string | null> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_TOKEN;
   if (!phoneNumberId || !token) {
@@ -52,7 +52,7 @@ export async function sendWhatsAppText(to: string, body: string): Promise<string
   const res = await fetch(graphUrl(`${phoneNumberId}/messages`), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: forceRtlLines(body) } }),
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: forceRtlLines(body) }, ...(replyToId ? { context: { message_id: replyToId } } : {}) }),
   }).catch((err) => {
     console.error("[whatsapp] send request failed:", err);
     return null;

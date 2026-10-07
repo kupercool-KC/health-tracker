@@ -232,7 +232,24 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 
   const whatsappMetaRef = adminDb.collection("users").doc(uid).collection("meta").doc("whatsapp");
   const sessionId = ((await whatsappMetaRef.get()).data() as { sessionId?: string } | undefined)?.sessionId;
-  const lang = await detectLang(uid, sessionId, text, profileLang);
+  const lang = await detectLang(uid, sessionId, text, profileLang, message.context?.id);
+
+  // Buttons are tied to one specific proposal message. If the user taps one on a proposal that has since been replaced (they corrected something, so a newer message holds the current version), acting on the newest proposal would confirm or cancel something they didn't tap — so say so and point at the current one instead.
+  if (sessionId && message.type === "interactive" && ["confirm", "cancel"].includes(message.interactive?.button_reply?.id ?? "") && message.context?.id) {
+    const session = (await adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId).get()).data() as ChatSession | undefined;
+    const tapped = session?.messages.find((m) => m.waId === message.context!.id);
+    const current = locateOpenProposal(session);
+    if (tapped && !hasOpenProposal(tapped) && current >= 0) {
+      await sendWhatsAppText(
+        from,
+        lang === "he"
+          ? "ההצעה הזו כבר עודכנה, אז לא עשיתי כלום. ההצעה הנוכחית היא ההודעה שמצוטטת כאן, והכפתורים שלה בתוקף."
+          : "That proposal was already updated, so I didn't do anything. The current one is the message quoted here — use its buttons.",
+        session!.messages[current].waId,
+      );
+      return;
+    }
+  }
 
   if (sessionId && isAffirmativeReply(message)) {
     const targetWaId = message.type === "reaction" ? message.reaction?.message_id : message.context?.id;
@@ -291,10 +308,13 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
 const HEBREW = /[\u0590-\u05FF]/;
 
 /** The profile language follows the web app's toggle (it can sit on "en" while the user chats in Hebrew), so for WhatsApp the language the user is actually writing in wins; photos/reactions inherit it from their last text message. */
-async function detectLang(uid: string, sessionId: string | undefined, text: string | undefined, profileLang: "en" | "he"): Promise<"en" | "he"> {
+async function detectLang(uid: string, sessionId: string | undefined, text: string | undefined, profileLang: "en" | "he", contextWaId?: string): Promise<"en" | "he"> {
   if (text) return HEBREW.test(text) ? "he" : /[A-Za-z]{3}/.test(text) ? "en" : profileLang;
   if (!sessionId) return profileLang;
   const session = (await adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId).get()).data() as ChatSession | undefined;
+  // A button tap or reaction carries no text: the message it answers tells us the conversation language.
+  const replied = contextWaId ? session?.messages.find((m) => m.waId === contextWaId) : undefined;
+  if (replied && /[A-Za-z\u0590-\u05FF]{3}/.test(replied.content)) return HEBREW.test(replied.content) ? "he" : "en";
   const lastText = [...(session?.messages ?? [])].reverse().find((m) => m.role === "user" && /[A-Za-z\u0590-\u05FF]{3}/.test(m.content) && !/^\[(photos?|תמונות?)\]$/.test(m.content));
   return lastText ? (HEBREW.test(lastText.content) ? "he" : "en") : profileLang;
 }
