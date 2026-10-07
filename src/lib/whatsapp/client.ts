@@ -65,6 +65,43 @@ export async function sendWhatsAppText(to: string, body: string): Promise<string
   return json?.messages?.[0]?.id ?? null;
 }
 
+export interface WhatsAppButton {
+  id: string;
+  title: string; // max 20 chars
+}
+
+/** A message with up to 3 quick-reply buttons (only valid inside the 24h window — always true for replies). Returns null when it can't be sent as buttons (too long / failed) so the caller can fall back to plain text. */
+export async function sendWhatsAppButtons(to: string, body: string, buttons: readonly WhatsAppButton[]): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) return null;
+  const text = forceRtlLines(body);
+  if (text.length > 1024) return null;
+  const res = await fetch(graphUrl(`${phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text },
+        action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+      },
+    }),
+  }).catch((err) => {
+    console.error("[whatsapp] buttons request failed:", err);
+    return null;
+  });
+  if (!res || !res.ok) {
+    console.error("[whatsapp] buttons send failed:", res?.status, await res?.text().catch(() => ""));
+    return null;
+  }
+  const json = (await res.json().catch(() => null)) as { messages?: { id?: string }[] } | null;
+  return json?.messages?.[0]?.id ?? null;
+}
+
 /**
  * Marks the incoming message read and shows the "typing…" indicator in the
  * user's WhatsApp thread — the only feedback WhatsApp offers while we're

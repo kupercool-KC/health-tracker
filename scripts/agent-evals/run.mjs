@@ -159,6 +159,16 @@ const cases = [
     check: (o) => [["workout update proposed 55 min", o.draft.actions?.some((x) => x.type === "workout_update" && x.id === "w1" && x.changes.duration === 3300)]],
   },
   {
+    name: "quick_balance",
+    state: { calorieGoal: 2000, proteinGoal: 160, workouts: [], meals: [{ date: TODAY, entries: [{ id: "m1", name: "ארוחה", calories: 1500, protein: 100 }], totalCalories: 1500, totalProtein: 100 }] },
+    message: "מה המאזן שלי היום?",
+    check: (o) => [
+      ["says 500 calories left", /500/.test(o.replyContent)],
+      ["says 60g protein to go", /60/.test(o.replyContent)],
+      ["short answer", o.replyContent.length < 320],
+    ],
+  },
+  {
     name: "delete_steps_yesterday",
     message: "תמחק את הצעדים של אתמול",
     check: (o) => [["steps delete proposed for yesterday", o.draft.actions?.some((x) => x.type === "steps_delete" && x.date === YESTERDAY)]],

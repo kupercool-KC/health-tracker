@@ -24,7 +24,7 @@ import crypto from "node:crypto";
 import { adminDb } from "@/lib/firebase/admin";
 import { runChatTurn } from "@/lib/chat/runChatTurn";
 import { getUidForPhone } from "@/lib/whatsapp/link";
-import { sendWhatsAppText, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
+import { sendWhatsAppText, sendWhatsAppButtons, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import { transcribeAudio } from "@/lib/openai/transcribe";
 import { applyPendingActions } from "@/lib/chat/applyActions";
@@ -70,12 +70,26 @@ const THUMBS_UP_RE = /\u{1F44D}/u; // 👍, with or without a skin-tone modifier
 /** True for a 👍 emoji reaction on any message, or a text reply that's a thumbs-up or one of AFFIRMATIVE_RE's words — the two ways WhatsApp users can confirm an open proposal (there's no Confirm button like the web chat has). */
 function isAffirmativeReply(message: IncomingMessage): boolean {
   if (message.type === "reaction") return !!message.reaction?.emoji && THUMBS_UP_RE.test(message.reaction.emoji);
+  if (message.type === "interactive") return message.interactive?.button_reply?.id === "confirm";
   const text = message.text?.body?.trim();
   if (!text) return false;
   return THUMBS_UP_RE.test(text) || AFFIRMATIVE_RE.test(text) || APPROVE_PHRASE_RE.test(text);
 }
 
 const CONFIRM_LOOKBACK_MESSAGES = 8;
+
+const CONFIRM_BUTTONS = {
+  he: [
+    { id: "confirm", title: "✅ אשר" },
+    { id: "fix", title: "✏️ תקן" },
+    { id: "cancel", title: "🗑️ בטל" },
+  ],
+  en: [
+    { id: "confirm", title: "✅ Confirm" },
+    { id: "fix", title: "✏️ Edit" },
+    { id: "cancel", title: "🗑️ Cancel" },
+  ],
+} as const;
 
 const CONFIRM_HINT = {
   he: '\n\n👍 (תגובת אמוג׳י) או "כן" כדי לשמור.',
@@ -139,6 +153,7 @@ interface IncomingMessage {
   image?: { id?: string; caption?: string };
   audio?: { id?: string; mime_type?: string };
   reaction?: { message_id?: string; emoji?: string };
+  interactive?: { type?: string; button_reply?: { id?: string; title?: string } };
   context?: { id?: string };
 }
 
@@ -210,7 +225,7 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
     const targetWaId = message.type === "reaction" ? message.reaction?.message_id : message.context?.id;
     const confirmed = await tryConfirmPending(uid, sessionId, lang, from, targetWaId);
     if (confirmed) return;
-    if (message.type === "reaction") {
+    if (message.type === "reaction" || message.type === "interactive") {
       await sendWhatsAppText(
         from,
         lang === "he"
@@ -219,6 +234,16 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
       );
       return;
     }
+  }
+
+  if (message.type === "interactive") {
+    const buttonId = message.interactive?.button_reply?.id;
+    if (buttonId === "cancel" && sessionId) {
+      await cancelPending(uid, sessionId, lang, from, message.context?.id);
+    } else if (buttonId === "fix") {
+      await sendWhatsAppText(from, lang === "he" ? "בטח, מה לתקן? כתוב או הקלט לי את התיקון." : "Sure — what should I change? Type or voice-note the fix.");
+    }
+    return;
   }
 
   if (!text && !imageUrls?.length) return; // unsupported message type (sticker, video, reaction to something else, …) — nothing to act on
@@ -243,7 +268,10 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
     result.reply.pendingSteps ||
     result.reply.pendingBodyMetrics
   );
-  const sentId = await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content);
+  // A proposal waiting for OK goes out with tap-to-answer buttons (typing "כן" / reacting 👍 still works); plain text is the fallback when buttons can't be sent (too long, API refusal).
+  const sentId =
+    (hasPending ? await sendWhatsAppButtons(from, result.reply.content, CONFIRM_BUTTONS[lang]) : null) ??
+    (await sendWhatsAppText(from, hasPending ? `${result.reply.content}${CONFIRM_HINT[lang]}` : result.reply.content));
   if (sentId) await tagLastAssistantMessage(uid, result.sessionId, sentId);
 }
 
@@ -271,6 +299,39 @@ async function tagLastAssistantMessage(uid: string, sessionId: string, waId: str
   });
 }
 
+const hasOpenProposal = (m: ChatMessage) =>
+  m.role === "assistant" &&
+  !!(m.pendingMeal || m.pendingMealAction || m.pendingActions?.length || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
+
+/** Index of the open proposal a confirm/cancel refers to: the exact message a 👍/quote/button targeted if it still holds one, else the most recent open one within the lookback (the user may answer after a few more messages). -1 when nothing is open. */
+function locateOpenProposal(session: ChatSession | undefined, targetWaId?: string): number {
+  const total = session?.messages.length ?? 0;
+  const targetIndex = targetWaId ? (session?.messages.findIndex((m) => m.waId === targetWaId) ?? -1) : -1;
+  // An open proposal moves forward into the newest reply, so a target that no longer holds it falls through to the lookback.
+  if (targetIndex >= 0 && hasOpenProposal(session!.messages[targetIndex])) return targetIndex;
+  for (let i = total - 1; i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
+    if (hasOpenProposal(session!.messages[i])) return i;
+  }
+  return -1;
+}
+
+/** "🗑️ בטל" button — drops the open proposal without saving anything. */
+async function cancelPending(uid: string, sessionId: string, lang: "en" | "he", from: string, targetWaId?: string): Promise<void> {
+  const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
+  const session = (await ref.get()).data() as ChatSession | undefined;
+  const idx = locateOpenProposal(session, targetWaId);
+  if (idx < 0) {
+    await sendWhatsAppText(from, lang === "he" ? "אין כרגע הצעה פתוחה לביטול." : "There's no open proposal to cancel.");
+    return;
+  }
+  const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, pendingActions, ...rest } = session!.messages[idx];
+  void pendingMeal; void pendingMealAction; void pendingWorkout; void pendingSteps; void pendingBodyMetrics; void pendingActions;
+  const messages = [...session!.messages];
+  messages[idx] = rest as ChatMessage;
+  await ref.update({ messages });
+  await sendWhatsAppText(from, lang === "he" ? "🗑️ בוטל, לא נשמר כלום." : "🗑️ Cancelled — nothing was saved.");
+}
+
 /** Returns true if the last assistant message in this session had a pendingX that got saved (and a "✅ Saved" reply was sent) — false means there was nothing open to confirm, so the caller should fall through to treating the message as new input. */
 async function tryConfirmPending(
   uid: string,
@@ -281,23 +342,7 @@ async function tryConfirmPending(
 ): Promise<boolean> {
   const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
   const session = (await ref.get()).data() as ChatSession | undefined;
-  const hasOpenProposal = (m: ChatMessage) =>
-    m.role === "assistant" &&
-    !!(m.pendingMeal || m.pendingMealAction || m.pendingActions?.length || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
-  // The user may confirm after a few more messages (e.g. asked a question in between), so look back
-  // for the most recent open proposal instead of only checking the very last message.
-  let lastIndex = -1;
-  const total = session?.messages.length ?? 0;
-  // A 👍 or quote-reply aimed at a specific message confirms exactly that one.
-  const targetIndex = targetWaId ? (session?.messages.findIndex((m) => m.waId === targetWaId) ?? -1) : -1;
-  // An open proposal moves forward into the newest reply, so a 👍 on an older message that no longer holds it falls through to the lookback below.
-  if (targetIndex >= 0 && hasOpenProposal(session!.messages[targetIndex])) lastIndex = targetIndex;
-  for (let i = total - 1; lastIndex < 0 && i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
-    if (hasOpenProposal(session!.messages[i])) {
-      lastIndex = i;
-      break;
-    }
-  }
+  const lastIndex = locateOpenProposal(session, targetWaId);
   if (lastIndex < 0) return false;
   const last = session!.messages[lastIndex];
 

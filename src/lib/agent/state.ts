@@ -165,6 +165,19 @@ export function renderState(state: AgentState, draft: Draft): string {
   }
   if (state.stepsToday != null) lines.push(`  Steps today: ${state.stepsToday}`);
 
+  const todayMeals = state.meals.find((d) => d.date === state.today);
+  const eaten = todayMeals?.totalCalories ?? 0;
+  const proteinEaten = Math.round(todayMeals?.totalProtein ?? 0);
+  const burnFactor = (state.profile?.netCalorieBurnFactor ?? 50) / 100;
+  const burned = Math.round(state.workouts.filter((w) => w.date === state.today).reduce((sum, w) => sum + (w.calories ?? 0), 0) * burnFactor);
+  const net = eaten - burned;
+  const goalBits = [
+    state.calorieGoal != null ? `calories: ${eaten}/${state.calorieGoal} eaten${burned ? `, ${burned} credited from workouts` : ""} → net ${net}, ${state.calorieGoal - net >= 0 ? `${state.calorieGoal - net} left` : `${net - state.calorieGoal} over`}` : null,
+    state.proteinGoal != null ? `protein: ${proteinEaten}/${state.proteinGoal}g → ${state.proteinGoal - proteinEaten > 0 ? `${state.proteinGoal - proteinEaten}g to go` : "goal reached"}` : null,
+    state.stepsToday != null ? `steps: ${state.stepsToday}${state.profile?.stepGoal ? `/${state.profile.stepGoal}` : ""}` : null,
+  ].filter(Boolean);
+  if (goalBits.length) lines.push(`\nTODAY'S BALANCE (saved entries only, NOT counting the draft; net = eaten − workout burn × ${Math.round(burnFactor * 100)}%): ${goalBits.join(" | ")}`);
+
   lines.push("\nDRAFT (proposed, NOT saved yet — waiting for the user's confirmation):");
   const draftLines = renderDraft(draft);
   lines.push(draftLines.length ? draftLines.map((l) => `  ${l}`).join("\n") : "  (empty)");
