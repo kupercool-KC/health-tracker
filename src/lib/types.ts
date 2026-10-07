@@ -346,6 +346,8 @@ export interface ChatMessage {
   createdAt: string;
   /** WhatsApp message id (wamid) — lets a quote-reply or 👍 reaction on an old message be matched back to this one. */
   waId?: string;
+  /** The proposal this message made, kept after a newer message took over the draft so a tap on its buttons can still confirm/cancel just its own part. */
+  proposalSnapshot?: Pick<ChatMessage, "pendingMeal" | "pendingWorkout" | "pendingSteps" | "pendingBodyMetrics">;
   /** Set when this message's proposal was confirmed and saved (WhatsApp 👍/כן or web Confirm). Lets the agent's history show it's no longer a draft. */
   confirmedAt?: string;
   /** Present on an assistant message that's proposing meal(s) to log — not yet saved. `date` is the resolved target day (defaults to today, but a message like "add this for Monday" resolves elsewhere). */

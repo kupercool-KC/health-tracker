@@ -234,21 +234,10 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
   const sessionId = ((await whatsappMetaRef.get()).data() as { sessionId?: string } | undefined)?.sessionId;
   const lang = await detectLang(uid, sessionId, text, profileLang, message.context?.id);
 
-  // Buttons are tied to one specific proposal message. If the user taps one on a proposal that has since been replaced (they corrected something, so a newer message holds the current version), acting on the newest proposal would confirm or cancel something they didn't tap — so say so and point at the current one instead.
+  // Buttons belong to one specific proposal message. When that message's draft has since moved into a newer message (the user kept logging: meals, then a workout…), a tap still means "just this part": confirm or cancel the pieces it proposed that are still unchanged in the current draft and leave the rest waiting. If nothing of it survives (it was corrected), do nothing and point at the current proposal.
   if (sessionId && message.type === "interactive" && ["confirm", "cancel"].includes(message.interactive?.button_reply?.id ?? "") && message.context?.id) {
-    const session = (await adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId).get()).data() as ChatSession | undefined;
-    const tapped = session?.messages.find((m) => m.waId === message.context!.id);
-    const current = locateOpenProposal(session);
-    if (tapped && !hasOpenProposal(tapped) && current >= 0) {
-      await sendWhatsAppText(
-        from,
-        lang === "he"
-          ? "ההצעה הזו כבר עודכנה, אז לא עשיתי כלום. ההצעה הנוכחית היא ההודעה שמצוטטת כאן, והכפתורים שלה בתוקף."
-          : "That proposal was already updated, so I didn't do anything. The current one is the message quoted here — use its buttons.",
-        session!.messages[current].waId,
-      );
-      return;
-    }
+    const handled = await handleSupersededTap(uid, sessionId, lang, from, message.context.id, message.interactive?.button_reply?.id === "confirm");
+    if (handled) return;
   }
 
   if (sessionId && isAffirmativeReply(message)) {
@@ -337,15 +326,92 @@ const hasOpenProposal = (m: ChatMessage) =>
   !!(m.pendingMeal || m.pendingMealAction || m.pendingActions?.length || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics);
 
 /** Index of the open proposal a confirm/cancel refers to: the exact message a 👍/quote/button targeted if it still holds one, else the most recent open one within the lookback (the user may answer after a few more messages). -1 when nothing is open. */
-function locateOpenProposal(session: ChatSession | undefined, targetWaId?: string): number {
+function locateOpenProposal(session: ChatSession | undefined, targetWaId?: string, lookback = CONFIRM_LOOKBACK_MESSAGES): number {
   const total = session?.messages.length ?? 0;
   const targetIndex = targetWaId ? (session?.messages.findIndex((m) => m.waId === targetWaId) ?? -1) : -1;
   // An open proposal moves forward into the newest reply, so a target that no longer holds it falls through to the lookback.
   if (targetIndex >= 0 && hasOpenProposal(session!.messages[targetIndex])) return targetIndex;
-  for (let i = total - 1; i >= Math.max(0, total - CONFIRM_LOOKBACK_MESSAGES); i--) {
+  for (let i = total - 1; i >= Math.max(0, total - lookback); i--) {
     if (hasOpenProposal(session!.messages[i])) return i;
   }
   return -1;
+}
+
+const norm = (v: string) => v.toLowerCase().replace(/\s+/g, " ").trim();
+const mealKey = (i: { description: string; calories: number; protein: number }) => `${norm(i.description)}|${Math.round(i.calories)}|${Math.round(i.protein * 10)}`;
+
+/**
+ * Splits the current open proposal into the part that a tapped (older) message had proposed and is still unchanged,
+ * and the rest. Meals match item by item; a workout / steps / weigh-in matches only if identical.
+ */
+function splitByOldProposal(
+  old: NonNullable<ChatMessage["proposalSnapshot"]>,
+  current: ChatMessage,
+): { matched: Pick<ChatMessage, "pendingMeal" | "pendingWorkout" | "pendingSteps" | "pendingBodyMetrics">; remaining: ChatMessage } | null {
+  const matched: Pick<ChatMessage, "pendingMeal" | "pendingWorkout" | "pendingSteps" | "pendingBodyMetrics"> = {};
+  const remaining: ChatMessage = { ...current };
+
+  if (old.pendingMeal && current.pendingMeal && (old.pendingMeal.date ?? "") === (current.pendingMeal.date ?? "")) {
+    const oldKeys = new Set(old.pendingMeal.items.map(mealKey));
+    const hit = current.pendingMeal.items.filter((i) => oldKeys.has(mealKey(i)));
+    if (hit.length) {
+      matched.pendingMeal = { ...current.pendingMeal, items: hit };
+      const rest = current.pendingMeal.items.filter((i) => !oldKeys.has(mealKey(i)));
+      if (rest.length) remaining.pendingMeal = { ...current.pendingMeal, items: rest };
+      else delete remaining.pendingMeal;
+    }
+  }
+  for (const key of ["pendingWorkout", "pendingSteps", "pendingBodyMetrics"] as const) {
+    if (old[key] && current[key] && JSON.stringify(old[key]) === JSON.stringify(current[key])) {
+      (matched as Record<string, unknown>)[key] = current[key];
+      delete remaining[key];
+    }
+  }
+  return Object.keys(matched).length ? { matched, remaining } : null;
+}
+
+/** Returns true when it replied (acted, or explained why it didn't); false to fall through to the normal handling. */
+async function handleSupersededTap(uid: string, sessionId: string, lang: "en" | "he", from: string, tappedWaId: string, confirm: boolean): Promise<boolean> {
+  const ref = adminDb.collection("users").doc(uid).collection("chatSessions").doc(sessionId);
+  const session = (await ref.get()).data() as ChatSession | undefined;
+  const tapped = session?.messages.find((m) => m.waId === tappedWaId);
+  if (!session || !tapped || hasOpenProposal(tapped)) return false; // the tapped message still holds its own proposal: normal flow
+  const currentIdx = locateOpenProposal(session, undefined, 24);
+  if (currentIdx < 0) return false; // nothing open at all: normal flow explains
+
+  const split = tapped.proposalSnapshot ? splitByOldProposal(tapped.proposalSnapshot, session.messages[currentIdx]) : null;
+  if (!split) {
+    await sendWhatsAppText(
+      from,
+      lang === "he"
+        ? "ההצעה הזו כבר עודכנה, אז לא עשיתי כלום. ההצעה הנוכחית היא ההודעה שמצוטטת כאן, והכפתורים שלה בתוקף."
+        : "That proposal was already updated, so I didn't do anything. The current one is the message quoted here — use its buttons.",
+      session.messages[currentIdx].waId,
+    );
+    return true;
+  }
+
+  if (confirm) {
+    if (split.matched.pendingMeal) await saveMealFromPending(uid, split.matched.pendingMeal);
+    if (split.matched.pendingWorkout) await saveWorkoutFromPending(uid, split.matched.pendingWorkout);
+    if (split.matched.pendingSteps) await saveStepsFromPending(uid, split.matched.pendingSteps);
+    if (split.matched.pendingBodyMetrics) await saveBodyMetricsFromPending(uid, split.matched.pendingBodyMetrics);
+  }
+  const messages = [...session.messages];
+  messages[currentIdx] = hasOpenProposal(split.remaining) ? split.remaining : { ...split.remaining, confirmedAt: confirm ? new Date().toISOString() : undefined };
+  if (!hasOpenProposal(split.remaining) && !confirm) delete messages[currentIdx].confirmedAt;
+  await ref.update({ messages: JSON.parse(JSON.stringify(messages)) });
+
+  const stillOpen = hasOpenProposal(split.remaining);
+  const what = [
+    split.matched.pendingMeal && (lang === "he" ? "הארוחה" : "the meal"),
+    split.matched.pendingWorkout && (lang === "he" ? "האימון" : "the workout"),
+    split.matched.pendingSteps && (lang === "he" ? "הצעדים" : "the steps"),
+    split.matched.pendingBodyMetrics && (lang === "he" ? "השקילה" : "the weigh-in"),
+  ].filter(Boolean).join(lang === "he" ? " ו" : " and ");
+  const left = stillOpen ? (lang === "he" ? " שאר ההצעות עדיין ממתינות לאישור." : " The rest is still waiting for your OK.") : "";
+  await sendWhatsAppText(from, (confirm ? (lang === "he" ? `✅ נשמר: ${what}.` : `✅ Saved: ${what}.`) : lang === "he" ? `🗑️ בוטל: ${what}.` : `🗑️ Cancelled: ${what}.`) + left);
+  return true;
 }
 
 /** "🗑️ בטל" button — drops the open proposal without saving anything. */

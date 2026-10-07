@@ -49,8 +49,8 @@ export interface AgentState {
   frequentMeals: FrequentMealForChat[];
 }
 
-/** An open proposal this recent is still "live" for confirmation — matches the WhatsApp confirm lookback. */
-export const OPEN_PROPOSAL_LOOKBACK = 8;
+/** An open proposal this recent is still "live" — the draft survives this many messages (a forgotten confirmation can still be tapped later via its buttons; a typed "כן" is stricter, see CONFIRM_LOOKBACK_MESSAGES in the WhatsApp route). */
+export const OPEN_PROPOSAL_LOOKBACK = 24;
 
 export function hasPending(m: ChatMessage): boolean {
   return !!(m.pendingMeal || m.pendingMealAction || m.pendingWorkout || m.pendingSteps || m.pendingBodyMetrics || m.pendingActions?.length);

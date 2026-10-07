@@ -38,13 +38,13 @@ export async function isAgentEnabled(): Promise<boolean> {
 function stripPending(m: ChatMessage): ChatMessage {
   const { pendingMeal, pendingMealAction, pendingWorkout, pendingSteps, pendingBodyMetrics, pendingActions, ...rest } = m;
   void pendingActions;
-  void pendingMeal;
   void pendingMealAction;
-  void pendingWorkout;
-  void pendingSteps;
-  void pendingBodyMetrics;
-  return rest as ChatMessage;
+  // The draft moves forward into the newest reply, but the old message keeps a snapshot of what it proposed so the user can still confirm just that part from its buttons (e.g. meals and a workout logged in separate messages).
+  const snapshot = { ...(pendingMeal ? { pendingMeal } : {}), ...(pendingWorkout ? { pendingWorkout } : {}), ...(pendingSteps ? { pendingSteps } : {}), ...(pendingBodyMetrics ? { pendingBodyMetrics } : {}) };
+  return (Object.keys(snapshot).length ? { ...rest, proposalSnapshot: snapshot } : rest) as ChatMessage;
 }
+
+const SNAPSHOT_MESSAGES = 40;
 
 export async function runAgentChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
   const { uid, email, sessionId, message: rawMessage, imageUrls, lang, date, overrideCalories, overrideProtein, waMessageId, quotedWaId } = input;
@@ -78,7 +78,13 @@ export async function runAgentChatTurn(input: ChatTurnInput): Promise<ChatTurnRe
   // All older messages lose their pending fields — the open one (if any) is carried into the new reply's draft.
   const openIdx = safety.flagged ? -1 : findOpenProposalIndex(prior);
   const carried = openIdx >= 0 ? draftFromMessage(prior[openIdx]) : {};
-  const cleaned = prior.map((m) => (hasPending(m) ? stripPending(m) : m));
+  const cleaned = prior.map((m, i) => {
+    const next = hasPending(m) ? stripPending(m) : m;
+    if (!next.proposalSnapshot || i >= prior.length - SNAPSHOT_MESSAGES) return next;
+    const { proposalSnapshot, ...rest } = next;
+    void proposalSnapshot;
+    return rest as ChatMessage;
+  });
 
   if (safety.flagged) {
     replyContent = securityReply(lang);
