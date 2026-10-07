@@ -114,6 +114,18 @@ export const strings = {
   },
   whatsappPhonePlaceholder: { en: "Phone number (e.g. +972501234567)", he: "מספר טלפון (למשל 972501234567+)" },
   whatsappLinkButton: { en: "Link", he: "קשר" },
+  deleteAccountTitle: { en: "Delete account", he: "מחיקת חשבון" },
+  deleteAccountHint: {
+    en: "Permanently deletes your account and all your data (meals, workouts, chats, photos, WhatsApp link). This can't be undone. An active subscription is not cancelled by this — cancel it in your Apple ID subscriptions first.",
+    he: "מוחק לצמיתות את החשבון וכל הנתונים שלכם (ארוחות, אימונים, שיחות, תמונות וקישור ה-WhatsApp). אי אפשר לבטל. מנוי פעיל לא מתבטל בעקבות המחיקה — בטלו אותו קודם במנויים של Apple ID.",
+  },
+  deleteAccountButton: { en: "Delete my account", he: "מחק את החשבון שלי" },
+  deleteAccountConfirm: {
+    en: "Delete your account and ALL your data permanently? This cannot be undone.",
+    he: "למחוק את החשבון וכל הנתונים שלכם לצמיתות? אי אפשר לבטל.",
+  },
+  privacyPolicyLink: { en: "Privacy policy", he: "מדיניות פרטיות" },
+  termsLink: { en: "Terms of use", he: "תנאי שימוש" },
   whatsappGetCodeButton: { en: "Get a link code", he: "קבל קוד קישור" },
   whatsappCodeInstructions: {
     en: "Send this code to the bot from the WhatsApp number you want to link (valid for 15 minutes):",

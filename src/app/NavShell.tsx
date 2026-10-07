@@ -60,7 +60,7 @@ const TABS = [
 
 // Routes that don't require onboarding — /share is public/unauthenticated,
 // /onboarding is the destination itself (redirecting into it would loop).
-const ONBOARDING_EXEMPT_PREFIXES = ["/onboarding", "/share"];
+const ONBOARDING_EXEMPT_PREFIXES = ["/onboarding", "/share", "/privacy", "/terms"];
 
 export default function NavShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
@@ -83,7 +83,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
     window.setTimeout(() => setChatRender(false), 260);
   }
 
-  const onShare = pathname?.startsWith("/share") ?? false;
+  const onShare = ["/share", "/privacy", "/terms"].some((p) => pathname?.startsWith(p));
   const showChrome = !onShare;
 
   useEffect(() => {

@@ -284,6 +284,27 @@ export default function Profile() {
     return () => clearInterval(timer);
   }, [user, linkCode]);
 
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  async function deleteMyAccount() {
+    if (!user || !window.confirm(t("deleteAccountConfirm"))) return;
+    setDeleteBusy(true);
+    setError(null);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not signed in");
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+      await signOutUser();
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+      setDeleteBusy(false);
+    }
+  }
+
   async function unlinkWhatsapp() {
     if (!user || !fullProfile?.whatsappPhone) return;
     setWhatsappBusy(true);
@@ -1027,8 +1048,19 @@ export default function Profile() {
         </div>
       )}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <p style={{ color: "var(--muted)", margin: 0 }}>{t("comingLater")}</p>
+      <div className="card" style={{ marginTop: 16, display: "flex", gap: 16 }}>
+        <Link href="/privacy" style={{ color: "var(--muted)" }}>{t("privacyPolicyLink")}</Link>
+        <Link href="/terms" style={{ color: "var(--muted)" }}>{t("termsLink")}</Link>
+      </div>
+
+      <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("deleteAccountTitle")}</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("deleteAccountHint")}</p>
+        <div>
+          <button onClick={deleteMyAccount} disabled={deleteBusy} style={{ color: "#ff6b6b" }}>
+            {deleteBusy ? t("working") : t("deleteAccountButton")}
+          </button>
+        </div>
       </div>
     </main>
   );
