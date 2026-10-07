@@ -124,8 +124,13 @@ const logFood: Tool = {
     const protein = num(args.protein);
     const name = str(args.name);
 
+    // A regular food named exactly as stored (the model is told to use the stored name) takes its stored values — no re-estimation that can drift (108/16.9 instead of the usual 120/20).
+    const regular = calories == null && protein == null && name ? ctx.state.frequentMeals.find((m) => norm(m.name) === norm(name)) : undefined;
+
     let items: ParsedNutritionItem[];
-    if (calories != null && protein != null) {
+    if (regular) {
+      items = [{ description: regular.name, calories: regular.calories, protein: regular.protein, ...(regular.grams != null ? { grams: regular.grams } : {}), nutritionSource: "explicit", nutritionNote: strings.nutritionSourceManual[ctx.lang] }];
+    } else if (calories != null && protein != null) {
       items = [{ description: name ?? description, calories, protein, nutritionSource: "explicit", nutritionNote: strings.nutritionSourceManual[ctx.lang] }];
     } else {
       const text =

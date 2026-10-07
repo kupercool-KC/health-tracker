@@ -16,7 +16,7 @@ import type { ChatMessage } from "@/lib/types";
 export const AGENT_MODEL = "gpt-4.1";
 const FALLBACK_MODEL = "gpt-4.1-mini"; // separate rate-limit bucket from gpt-4.1
 const MAX_TOOL_ROUNDS = 8;
-const CLAIMS_ACTION = /רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
+const CLAIMS_ACTION = /הכנסתי|רשמתי|הוספתי|תיעדתי|שמרתי|הכנתי|שמתי|עדכנתי|מחקתי|תיקנתי|סימנתי|סידרתי|הפעלתי|כיביתי|הגדרתי|קבעתי|מתקנ|אתקן|אעדכן|מעביר|מעדכנ|שיניתי|משנ|מוסיפ|\b(fixed|corrected|changed|logged|added|recorded|saved|updated|deleted)\b/i;
 // The agent can never save anything itself, so a reply saying it did (while a draft is open) is a hallucination — seen live: "הפריטים נשמרו!" for items that were still waiting.
 const CLAIMS_SAVED = /(?<!לא )(?<!עדיין לא )נשמר|(has|have) been saved|saved (it|them|those)/i;
 const HISTORY_MESSAGES = 16;
@@ -174,7 +174,14 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
       const tool = TOOL_BY_NAME.get(call.function.name);
       let result: unknown;
       try {
-        result = tool ? await tool.run(args, ctx) : { error: `Unknown tool ${call.function.name}` };
+        try {
+          result = tool ? await tool.run(args, ctx) : { error: `Unknown tool ${call.function.name}` };
+        } catch (first) {
+          // Tools lean on OpenAI/search calls that fail transiently (rate limits, blips) — seen live as "הייתה תקלה" three messages in a row. One quiet retry before admitting defeat.
+          console.error(`[agent] tool ${call.function.name} failed, retrying once:`, first);
+          await sleep(2000);
+          result = await tool!.run(args, ctx);
+        }
       } catch (err) {
         console.error(`[agent] tool ${call.function.name} failed:`, err);
         result = { error: `Tool failed: ${err instanceof Error ? err.message : String(err)}. Tell the user honestly it didn't work and offer to try again.` };
