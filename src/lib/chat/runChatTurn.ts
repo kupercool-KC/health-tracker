@@ -16,6 +16,7 @@ import { parseNutrition } from "@/lib/nutrition/parser";
 import { getFrequentMealsForChat } from "@/lib/nutrition/frequentMeals";
 import { isAgentEnabled, runAgentChatTurn } from "@/lib/agent/runAgentChatTurn";
 import { getEntitlement, paywallMessage } from "@/lib/billing/entitlement";
+import { hasAiConsent, needConsentMessage } from "@/lib/consent";
 import { parseWorkout } from "@/lib/workout/parser";
 import { parseSteps } from "@/lib/steps/parser";
 import { parseBodyMetrics } from "@/lib/bodyMetrics/parser";
@@ -69,6 +70,15 @@ export interface ChatTurnResult {
 }
 
 export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
+  // AI-processing consent gate (a no-op until appConfig/consent.enforce is on): nothing the user sends may reach the AI provider before they agreed.
+  if (!(await hasAiConsent(input.uid).catch(() => true))) {
+    return {
+      sessionId: input.sessionId ?? adminDb.collection("users").doc(input.uid).collection("chatSessions").doc().id,
+      reply: { role: "assistant", content: needConsentMessage(input.lang), createdAt: new Date().toISOString() },
+      title: input.lang === "he" ? "הסכמה" : "Consent",
+    };
+  }
+
   // Billing gate (a no-op until appConfig/billing.enforce is switched on). Confirming an already-open proposal never reaches here, so nobody loses something they were mid-way through saving.
   const entitlement = await getEntitlement(input.uid).catch(() => ({ active: true }) as const);
   if (!entitlement.active) {

@@ -124,6 +124,38 @@ export const strings = {
     en: "Delete your account and ALL your data permanently? This cannot be undone.",
     he: "למחוק את החשבון וכל הנתונים שלכם לצמיתות? אי אפשר לבטל.",
   },
+  consentTitle: { en: "Before we start: AI and your data", he: "לפני שמתחילים: בינה מלאכותית והנתונים שלכם" },
+  consentIntro: {
+    en: "Lilly is powered by an AI service. To answer you, your entries are sent to it. Please read and agree.",
+    he: "לילי מופעלת על ידי שירות בינה מלאכותית. כדי לענות לכם, מה שאתם מזינים נשלח אליו. נא לקרוא ולאשר.",
+  },
+  consentWhat: {
+    en: "What is sent: your chat messages, meal/workout photos, voice recordings, and the health entries Lilly needs to answer (meals, workouts, steps, weight, goals).",
+    he: "מה נשלח: הודעות הצ'אט שלכם, תמונות של ארוחות ואימונים, הקלטות קוליות, והנתונים הבריאותיים שלילי צריכה כדי לענות (ארוחות, אימונים, צעדים, משקל ויעדים).",
+  },
+  consentWho: {
+    en: "Who receives it: OpenAI (USA), our AI provider.",
+    he: "מי מקבל: OpenAI (ארה״ב), ספק הבינה המלאכותית שלנו.",
+  },
+  consentWhy: {
+    en: "Why: only to understand your messages and reply. We don't sell your data or use it for advertising.",
+    he: "למה: רק כדי להבין את ההודעות שלכם ולענות. אנחנו לא מוכרים את הנתונים ולא משתמשים בהם לפרסום.",
+  },
+  consentRetention: {
+    en: "OpenAI states that data sent through its API is not used to train its models by default, and may be kept for up to 30 days for abuse monitoring.",
+    he: "OpenAI מצהירה שנתונים שנשלחים דרך ה-API שלה לא משמשים לאימון המודלים כברירת מחדל, ועשויים להישמר עד 30 יום לצורך זיהוי שימוש לרעה.",
+  },
+  consentWithdraw: {
+    en: "You can say no now (you won't be able to use Lilly's AI), and you can delete your account and data any time from Profile.",
+    he: "אפשר לסרב עכשיו (אז לא תוכלו להשתמש בלילי), ואפשר למחוק את החשבון והנתונים בכל רגע מהפרופיל.",
+  },
+  consentCheckbox: {
+    en: "I agree to send my data to OpenAI for processing, as described above.",
+    he: "אני מסכים/ה לשליחת הנתונים שלי ל-OpenAI לעיבוד, כמתואר למעלה.",
+  },
+  consentAccept: { en: "Agree and continue", he: "מסכים/ה והמשך" },
+  consentDecline: { en: "Don't agree, sign out", he: "לא מסכים/ה, התנתקות" },
+  supportLink: { en: "Support", he: "תמיכה" },
   privacyPolicyLink: { en: "Privacy policy", he: "מדיניות פרטיות" },
   termsLink: { en: "Terms of use", he: "תנאי שימוש" },
   whatsappGetCodeButton: { en: "Get a link code", he: "קבל קוד קישור" },

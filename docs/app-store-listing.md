@@ -13,7 +13,7 @@
 | Keywords | `calorie,protein,macros,meal,diet,nutrition,food log,weight,AI coach,workout,steps,tracker` | 89 | 100 |
 | Category | Health & Fitness (משני: Lifestyle) | | |
 
-"Lily" לבד כנראה תפוס בחנות, ולכן יש תוספת. הזמינות נקבעת רק בעת יצירת הרשומה ב-App Store Connect.
+**אסטרטגיית שם:** קודם מנסים `Lily` לבד בשדה Name ב-App Store Connect. אם כתוב שהשם תפוס, עוברים לאפשרות השלישית מרשימת השמות ("מנה · Mana"), ואם גם היא תפוסה, ל-`Lily Nutrition Coach`. הזמינות נקבעת רק בעת יצירת הרשומה.
 
 ## Promotional text (עד 170 תווים)
 
@@ -60,7 +60,7 @@ Lily is an AI. She can make mistakes, and she is not a dietitian, nutritionist o
 | שדה | ערך |
 |---|---|
 | Privacy Policy URL | `https://health-tracker-sepia.vercel.app/privacy` |
-| Support URL | `https://health-tracker-sepia.vercel.app/privacy` (זמני, כדאי עמוד תמיכה ייעודי) |
+| Support URL | `https://health-tracker-sepia.vercel.app/support` |
 | Terms of Use (EULA) | `https://health-tracker-sepia.vercel.app/terms` |
 | Support email | kupercool@gmail.com |
 

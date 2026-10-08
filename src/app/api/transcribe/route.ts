@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { getUidFromRequest } from "@/lib/auth";
 import { transcribeAudio } from "@/lib/openai/transcribe";
+import { hasAiConsent } from "@/lib/consent";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 export async function POST(req: Request) {
   const uid = await getUidFromRequest(req);
   if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasAiConsent(uid))) return NextResponse.json({ error: "AI processing consent required" }, { status: 403 });
 
   let form: FormData;
   try {
