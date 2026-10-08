@@ -5,6 +5,7 @@
  * this becomes the chat FAB's "log a meal" mode in a later phase), and a
  * workouts section synced from Apple Health via Health Auto Export.
  */
+import AppleSignInButton from "@/app/AppleSignInButton";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -848,6 +849,7 @@ export default function Today() {
         <button className="btn-primary" onClick={() => signIn()} style={{ marginTop: 8 }}>
           {t("signInWithGoogle")}
         </button>
+        <AppleSignInButton className="btn-primary" />
         {authError && (
           <p style={{ color: "var(--danger)", fontSize: 13 }}>
             {t("signInFailed")}: {authError}

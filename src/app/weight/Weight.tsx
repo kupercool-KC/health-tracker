@@ -6,6 +6,7 @@
  * through the same global chat FAB (NavShell renders it on every page) —
  * this screen is just the graphs, moved here from History.
  */
+import AppleSignInButton from "@/app/AppleSignInButton";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
@@ -147,6 +148,7 @@ export default function Weight() {
         <h1>{t("navWeight")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        <AppleSignInButton />
         {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );

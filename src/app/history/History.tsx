@@ -8,6 +8,7 @@
  * Charts are hand-rolled inline SVG rather than a charting library — simple
  * gradient-filled bars, no new dependency needed for this.
  */
+import AppleSignInButton from "@/app/AppleSignInButton";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -754,6 +755,7 @@ export default function History() {
         <h1>{t("navHistory")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        <AppleSignInButton />
         {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );

@@ -8,6 +8,7 @@
  * placeholder. The full onboarding wizard (BMR/TDEE calculation) is still a
  * separate follow-up — this is a stopgap that lets you just type numbers in.
  */
+import AppleSignInButton from "@/app/AppleSignInButton";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { doc, setDoc } from "firebase/firestore";
@@ -517,6 +518,7 @@ export default function Profile() {
         <h1>{t("navProfile")}</h1>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        <AppleSignInButton />
         {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );

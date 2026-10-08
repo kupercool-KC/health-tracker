@@ -24,13 +24,17 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   GoogleAuthProvider,
+  OAuthProvider,
   indexedDBLocalPersistence,
   onAuthStateChanged,
   setPersistence,
+  signInWithCredential,
   signInWithPopup,
   signOut,
   type User,
 } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { auth } from "@/lib/firebase/client";
 
 /** Firebase SDK errors always carry a `.code` (e.g. "auth/popup-blocked") — narrower and more useful than the generic message. */
@@ -46,6 +50,10 @@ export interface UseAuthResult {
   loading: boolean;
   authError: string | null;
   signIn: () => Promise<void>;
+  /** Native iOS app only (App Store guideline 4.8 requires it next to Google). */
+  signInWithApple: () => Promise<void>;
+  /** True inside the iOS app shell. */
+  isNativeApp: boolean;
   signOutUser: () => Promise<void>;
 }
 
@@ -65,11 +73,28 @@ export function useAuth(): UseAuthResult {
 
   const signIn = useCallback(async () => {
     setAuthError(null);
-    const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      if (Capacitor.isNativePlatform()) {
+        // Google blocks its web popup inside an app webview, so sign in natively and hand the token to the web SDK.
+        const result = await FirebaseAuthentication.signInWithGoogle({ skipNativeAuth: true });
+        await signInWithCredential(auth, GoogleAuthProvider.credential(result.credential?.idToken ?? null, result.credential?.accessToken ?? null));
+      } else {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+      }
     } catch (err) {
       console.error("[auth] sign-in failed:", err);
+      setAuthError(authErrorCode(err));
+    }
+  }, []);
+
+  const signInWithApple = useCallback(async () => {
+    setAuthError(null);
+    try {
+      const result = await FirebaseAuthentication.signInWithApple({ skipNativeAuth: true, scopes: ["email", "name"] });
+      const credential = new OAuthProvider("apple.com").credential({ idToken: result.credential?.idToken ?? undefined, rawNonce: result.credential?.nonce });
+      await signInWithCredential(auth, credential);
+    } catch (err) {
+      console.error("[auth] apple sign-in failed:", err);
       setAuthError(authErrorCode(err));
     }
   }, []);
@@ -78,5 +103,5 @@ export function useAuth(): UseAuthResult {
     await signOut(auth);
   }, []);
 
-  return { user, loading, authError, signIn, signOutUser };
+  return { user, loading, authError, signIn, signInWithApple, isNativeApp: Capacitor.isNativePlatform(), signOutUser };
 }

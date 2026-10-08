@@ -10,6 +10,7 @@
  * implies (see calculateGoals) and just displayed on the final screen,
  * rather than asked as a separate input.
  */
+import AppleSignInButton from "@/app/AppleSignInButton";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
@@ -279,6 +280,7 @@ export default function Onboarding() {
       <main>
         <p style={{ color: "var(--muted)" }}>{t("signInPrompt")}</p>
         <button onClick={() => signIn()}>{t("signInWithGoogle")}</button>
+        <AppleSignInButton />
         {authError && <p style={{ color: "#ff6b6b", fontSize: 13 }}>{t("signInFailed")}: {authError}</p>}
       </main>
     );
