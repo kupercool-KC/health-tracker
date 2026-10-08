@@ -1053,6 +1053,7 @@ export default function Profile() {
       <div className="card" style={{ marginTop: 16, display: "flex", gap: 16 }}>
         <Link href="/privacy" style={{ color: "var(--muted)" }}>{t("privacyPolicyLink")}</Link>
         <Link href="/terms" style={{ color: "var(--muted)" }}>{t("termsLink")}</Link>
+        <Link href="/support" style={{ color: "var(--muted)" }}>{t("supportLink")}</Link>
       </div>
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

@@ -25,6 +25,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { runChatTurn } from "@/lib/chat/runChatTurn";
 import { getUidForPhone } from "@/lib/whatsapp/link";
 import { consumeLinkCode } from "@/lib/whatsapp/linkCode";
+import { hasAiConsent, needConsentMessage } from "@/lib/consent";
 import { sendWhatsAppText, sendWhatsAppButtons, downloadWhatsAppMedia, showTypingIndicator } from "@/lib/whatsapp/client";
 import { uploadWhatsAppImage } from "@/lib/whatsapp/media";
 import { transcribeAudio } from "@/lib/openai/transcribe";
@@ -208,6 +209,11 @@ async function handleIncomingMessage(message: IncomingMessage): Promise<void> {
       console.error("[whatsapp] media download failed:", err);
     }
   } else if (message.type === "audio" && message.audio?.id) {
+    // The recording goes to the AI provider for transcription, so consent must come first.
+    if (!(await hasAiConsent(uid))) {
+      await sendWhatsAppText(from, needConsentMessage(profileLang));
+      return;
+    }
     try {
       const { buffer, contentType } = await downloadWhatsAppMedia(message.audio.id);
       // No forced language: the profile can say "en" while the user speaks Hebrew, and a forced language makes the model translate/mangle the speech.

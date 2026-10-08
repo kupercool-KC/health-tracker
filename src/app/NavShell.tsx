@@ -5,6 +5,7 @@
  * thumb-reachable bottom tab bar (Today / History / Profile). The chat FAB
  * floats just above the tab bar and toggles the full-screen ChatPanel.
  */
+import ConsentGate from "@/app/ConsentGate";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -60,7 +61,7 @@ const TABS = [
 
 // Routes that don't require onboarding — /share is public/unauthenticated,
 // /onboarding is the destination itself (redirecting into it would loop).
-const ONBOARDING_EXEMPT_PREFIXES = ["/onboarding", "/share", "/privacy", "/terms"];
+const ONBOARDING_EXEMPT_PREFIXES = ["/onboarding", "/share", "/privacy", "/terms", "/support"];
 
 export default function NavShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
@@ -70,6 +71,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
 
   // Two flags so the panel can slide out before it unmounts: `chatRender`
   // keeps it in the tree, `chatShown` drives the open/closed transform.
+  const [needsConsent, setNeedsConsent] = useState(false);
   const [chatRender, setChatRender] = useState(false);
   const [chatShown, setChatShown] = useState(false);
 
@@ -83,7 +85,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
     window.setTimeout(() => setChatRender(false), 260);
   }
 
-  const onShare = ["/share", "/privacy", "/terms"].some((p) => pathname?.startsWith(p));
+  const onShare = ["/share", "/privacy", "/terms", "/support"].some((p) => pathname?.startsWith(p));
   const showChrome = !onShare;
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
 
     const ref = doc(db, "users", user.uid, "meta", "profile");
     const unsubscribe = onSnapshot(ref, (snap) => {
+      setNeedsConsent(!snap.data()?.aiConsentAt);
       if (snap.data()?.onboarded !== true) {
         router.push("/onboarding");
       }
@@ -120,6 +123,8 @@ export default function NavShell({ children }: { children: ReactNode }) {
       )}
 
       <div id="page-content">{children}</div>
+
+      {user && needsConsent && showChrome && <ConsentGate onDone={() => setNeedsConsent(false)} />}
 
       {showChrome && user && (
         <>
