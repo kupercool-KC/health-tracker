@@ -28,3 +28,6 @@ firebase-debug.log
 .vercel
 .env*
 !.env.example
+
+# iOS build output
+build/

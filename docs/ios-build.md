@@ -13,3 +13,9 @@
    - הוספת ה-`REVERSED_CLIENT_ID` מהקובץ כ-URL Scheme (Target ← Info ← URL Types).
 4. **אייקון:** תמונה 1024×1024 אל `ios/App/App/Assets.xcassets/AppIcon.appiconset`.
 5. הרצה בסימולטור (▶), ואז Product ← Archive ← Distribute App ← App Store Connect.
+
+## בניית קובץ IPA והעלאה
+1. קביעת Bundle ID ושם (חייבים להיות זהים לרשומה של האפליקציה ב-App Store Connect):
+   `scripts/set-bundle-id.sh <bundle id> "<שם>" <team id>`
+2. בנייה: `scripts/build-ipa.sh <team id>` ← מייצר `build/export/*.ipa` (דורש Xcode ו-Apple ID של הצוות ב-Xcode ← Settings ← Accounts).
+3. העלאה: אפליקציית **Transporter** (חינם מה-App Store) ← גרירת קובץ ה-IPA ← Deliver. אחר כך ב-App Store Connect ← TestFlight.
