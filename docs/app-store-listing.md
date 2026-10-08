@@ -6,11 +6,11 @@
 
 | שדה | הצעה | אורך | מגבלה |
 |---|---|---|---|
-| Name (EN) | `Lily Nutrition Coach` | 20 | 30 |
-| Subtitle (EN) | `Nutrition coach in your chat` | 28 | 30 |
-| Name (HE) | `לילי - מאמנת תזונה` | 19 | 30 |
-| Subtitle (HE) | `מאמנת תזונה בצ'אט` | 17 | 30 |
-| Keywords | `calorie,protein,macros,meal,diet,nutrition,food log,weight,AI coach,workout,steps,tracker` | 89 | 100 |
+| Name (EN) | `Lily: Daily Nutrition Coach` (השם שנבחר) | 27 | 30 |
+| Subtitle (EN) | `Meals by chat, voice or photo` | 29 | 30 |
+| Name (HE) | `לילי: מאמנת תזונה יומית` | 23 | 30 |
+| Subtitle (HE) | `ארוחות בצ'אט, בקול או בתמונה` | 28 | 30 |
+| Keywords | `calorie,protein,macros,meal,diet,food log,weight loss,tracker,workout,steps,counter,photo,voice` | 95 | 100 |
 | Category | Health & Fitness (משני: Lifestyle) | | |
 
 **אסטרטגיית שם:** קודם מנסים `Lily` לבד בשדה Name ב-App Store Connect. אם כתוב שהשם תפוס, עוברים לאפשרות השלישית מרשימת השמות ("מנה · Mana"), ואם גם היא תפוסה, ל-`Lily Nutrition Coach`. הזמינות נקבעת רק בעת יצירת הרשומה.
