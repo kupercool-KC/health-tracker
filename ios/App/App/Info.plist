@@ -28,6 +28,10 @@
 	<string>Lilly uses your photos so you can send a picture of a meal, a workout summary or your scale.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Lilly uses the microphone so you can log meals and workouts by voice.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Lily reads your daily steps and weight from Apple Health so you do not have to type them. The data is used only for your own tracking.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Lily does not write to Apple Health.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

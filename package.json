@@ -13,6 +13,7 @@
     "@capacitor-firebase/authentication": "^8.5.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@capgo/capacitor-health": "^8.11.7",
     "firebase": "^12.19.0",
     "firebase-admin": "^13.0.0",
     "next": "^15.1.0",

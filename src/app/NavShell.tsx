@@ -6,6 +6,7 @@
  * floats just above the tab bar and toggles the full-screen ChatPanel.
  */
 import ConsentGate from "@/app/ConsentGate";
+import AppleHealthAutoSync from "@/app/AppleHealthAutoSync";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -123,6 +124,8 @@ export default function NavShell({ children }: { children: ReactNode }) {
       )}
 
       <div id="page-content">{children}</div>
+
+      {user && !needsConsent && <AppleHealthAutoSync />}
 
       {user && needsConsent && showChrome && <ConsentGate onDone={() => setNeedsConsent(false)} />}
 

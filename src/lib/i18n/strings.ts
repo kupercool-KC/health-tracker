@@ -108,6 +108,21 @@ export const strings = {
   saved: { en: "Saved.", he: "נשמר." },
   recalculateGoals: { en: "Recalculate goals from formula", he: "חשב מטרות מחדש מנוסחה" },
 
+  appleHealthTitle: { en: "Apple Health", he: "Apple Health" },
+  appleHealthHint: {
+    en: "Read your daily steps and latest weight from Apple Health so you don't have to type them. Lily only reads, never writes, and uses this data only for your own tracking.",
+    he: "קריאת הצעדים היומיים והשקילה האחרונה מ-Apple Health, בלי להקליד. לילי רק קוראת, לא כותבת, ומשתמשת בנתונים רק למעקב האישי שלכם.",
+  },
+  appleHealthConnect: { en: "Connect Apple Health", he: "חיבור Apple Health" },
+  appleHealthSyncNow: { en: "Sync now", he: "סנכרון עכשיו" },
+  appleHealthDisconnect: { en: "Disconnect", he: "ניתוק" },
+  appleHealthConnected: { en: "Connected. Syncs when you open the app.", he: "מחובר. מסתנכרן בכל פתיחה של האפליקציה." },
+  appleHealthSynced: { en: "Synced", he: "סונכרן" },
+  appleHealthUnavailable: { en: "Apple Health isn't available on this device.", he: "Apple Health לא זמין במכשיר הזה." },
+  appleHealthDisconnectNote: {
+    en: "To also revoke access: iPhone Settings → Health → Data Access & Devices → Lily.",
+    he: "לביטול ההרשאה גם ב-iOS: הגדרות ← בריאות ← גישה לנתונים ומכשירים ← Lily.",
+  },
   whatsappLinkTitle: { en: "WhatsApp bot", he: "בוט WhatsApp" },
   whatsappLinkHint: {
     en: "Link your WhatsApp number to log meals, workouts, and weigh-ins by messaging the bot directly, the same way you'd use the chat here.",

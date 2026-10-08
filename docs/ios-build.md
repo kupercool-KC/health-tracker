@@ -7,6 +7,7 @@
 2. **Xcode** ← פתיחת `ios/App/App.xcodeproj` ← Target "App" ← **Signing & Capabilities**:
    - Team: הצוות של החבר.
    - **+ Capability** ← **Sign in with Apple**.
+   - **+ Capability** ← **HealthKit** (השאר את "Clinical Health Records" ו-"Background Delivery" כבויים). נדרש כדי שסנכרון Apple Health (צעדים ומשקל, קריאה בלבד) יעבוד.
 3. **Firebase** (console.firebase.google.com ← health-tracker-new ← Project settings ← Add app ← iOS):
    - Bundle ID זהה. הורדת `GoogleService-Info.plist` ← גרירה לתוך `ios/App/App` ב-Xcode.
    - Authentication ← Sign-in method ← הפעלת **Apple**.

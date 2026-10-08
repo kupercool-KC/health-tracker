@@ -14,6 +14,13 @@ import Link from "next/link";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
+import {
+  connectAppleHealth,
+  isAppleHealthEnabled,
+  isAppleHealthSupported,
+  setAppleHealthEnabled,
+  syncAppleHealth,
+} from "@/lib/health/appleHealth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
 import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
@@ -167,6 +174,44 @@ export default function Profile() {
   const [customGoalsBusy, setCustomGoalsBusy] = useState(false);
 
   const [linkCode, setLinkCode] = useState<{ code: string; botNumber: string | null } | null>(null);
+  const [healthOn, setHealthOn] = useState(false);
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [healthMsg, setHealthMsg] = useState<string | null>(null);
+  useEffect(() => setHealthOn(isAppleHealthEnabled()), []);
+  async function connectHealth() {
+    setHealthBusy(true);
+    setHealthMsg(null);
+    try {
+      if (!(await connectAppleHealth())) {
+        setHealthMsg(t("appleHealthUnavailable"));
+        return;
+      }
+      setHealthOn(true);
+      await syncAppleHealth();
+      setHealthMsg(t("appleHealthSynced"));
+    } catch (err) {
+      setHealthMsg(String(err instanceof Error ? err.message : err));
+    } finally {
+      setHealthBusy(false);
+    }
+  }
+  async function syncHealthNow() {
+    setHealthBusy(true);
+    setHealthMsg(null);
+    try {
+      await syncAppleHealth();
+      setHealthMsg(t("appleHealthSynced"));
+    } catch (err) {
+      setHealthMsg(String(err instanceof Error ? err.message : err));
+    } finally {
+      setHealthBusy(false);
+    }
+  }
+  function disconnectHealth() {
+    setAppleHealthEnabled(false);
+    setHealthOn(false);
+    setHealthMsg(t("appleHealthDisconnectNote"));
+  }
   const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
 
@@ -691,6 +736,33 @@ export default function Profile() {
         {infoSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
         {!fullProfile && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("yourInfoNone")}</p>}
       </div>
+
+      {isAppleHealthSupported() && (
+        <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
+          <h2 style={{ margin: 0 }}>{t("appleHealthTitle")}</h2>
+          <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("appleHealthHint")}</p>
+          {healthOn ? (
+            <>
+              <span style={{ fontSize: 13 }}>{t("appleHealthConnected")}</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={syncHealthNow} disabled={healthBusy}>
+                  {healthBusy ? t("working") : t("appleHealthSyncNow")}
+                </button>
+                <button onClick={disconnectHealth} disabled={healthBusy}>
+                  {t("appleHealthDisconnect")}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div>
+              <button onClick={connectHealth} disabled={healthBusy}>
+                {healthBusy ? t("working") : t("appleHealthConnect")}
+              </button>
+            </div>
+          )}
+          {healthMsg && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{healthMsg}</p>}
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>
         <h2 style={{ margin: 0 }}>{t("whatsappLinkTitle")}</h2>

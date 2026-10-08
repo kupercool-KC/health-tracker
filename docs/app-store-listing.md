@@ -81,7 +81,7 @@ Lily is an AI. She can make mistakes, and she is not a dietitian, nutritionist o
 | סוג נתון | נאסף? | מטרה |
 |---|---|---|
 | Contact info: Name, Email | כן | App functionality, Account management |
-| Health & Fitness: Health, Fitness | כן (ארוחות, אימונים, צעדים, משקל) | App functionality |
+| Health & Fitness: Health, Fitness | כן (ארוחות, אימונים, צעדים, משקל, כולל נתונים מ-Apple Health אם חוברו) | App functionality |
 | User content: Photos or videos | כן (תמונות ארוחה) | App functionality |
 | User content: Audio data | כן (הקלטות קוליות, מתומללות) | App functionality |
 | User content: Other (הודעות צ'אט) | כן | App functionality |
@@ -97,6 +97,8 @@ Lily is an AI. She can make mistakes, and she is not a dietitian, nutritionist o
 > **Sign in:** please use **Sign in with Apple**. No demo account is needed.
 >
 > **WhatsApp** (Profile → WhatsApp bot) is an optional extra channel for the same chat. All features are available in the app without it, so it does not need to be tested.
+>
+> **Apple Health** (Profile → Apple Health → Connect) is optional and read-only: Lily reads daily steps and weight to save typing. The data is used only for the user's own tracking, never for advertising, and is not stored in iCloud.
 >
 > **Microphone and camera** are used only when the user taps the mic button or attaches a meal photo.
 >
