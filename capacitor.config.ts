@@ -11,7 +11,9 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   ios: {
-    contentInset: "always",
+    // "never": the web layout handles the notch / home-indicator itself via env(safe-area-inset-*); "always" left a white native strip at the bottom.
+    contentInset: "never",
+    backgroundColor: "#fbfaf7",
   },
   plugins: {
     FirebaseAuthentication: {

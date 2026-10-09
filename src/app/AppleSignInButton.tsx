@@ -9,7 +9,7 @@ export default function AppleSignInButton({ className, style }: { className?: st
   const { t } = useI18n();
   if (!isNativeApp) return null;
   return (
-    <button className={className} onClick={() => signInWithApple()} style={{ marginTop: 8, ...style }}>
+    <button className={className} onClick={() => signInWithApple()} style={{ display: "block", marginTop: 10, ...style }}>
       {t("signInWithApple")}
     </button>
   );

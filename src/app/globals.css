@@ -63,6 +63,7 @@
   --header-h: 52px;
   --tabbar-h: 60px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
 }
 
 * {
@@ -585,8 +586,8 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: var(--header-h);
-  padding: 0 16px;
+  height: calc(var(--header-h) + var(--safe-top));
+  padding: var(--safe-top) 16px 0;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(8px);
   -webkit-backdrop-filter: saturate(1.4) blur(8px);
