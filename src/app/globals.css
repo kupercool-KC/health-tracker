@@ -755,7 +755,8 @@ select {
   max-width: 100%;
   display: flex;
   z-index: 50;
-  padding: 0;
+  /* keep the header/composer clear of the notch and home indicator in the iOS app */
+  padding: var(--safe-top) 0 var(--safe-bottom);
   overflow: hidden;
   border-radius: 0;
   border: none;
