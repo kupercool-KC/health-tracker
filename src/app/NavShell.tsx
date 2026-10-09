@@ -7,6 +7,7 @@
  */
 import ConsentGate from "@/app/ConsentGate";
 import AppleHealthAutoSync from "@/app/AppleHealthAutoSync";
+import NativeVersionReporter from "@/app/NativeVersionReporter";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -126,6 +127,7 @@ export default function NavShell({ children }: { children: ReactNode }) {
       <div id="page-content">{children}</div>
 
       {user && !needsConsent && <AppleHealthAutoSync />}
+      {user && <NativeVersionReporter />}
 
       {user && needsConsent && showChrome && <ConsentGate onDone={() => setNeedsConsent(false)} />}
 

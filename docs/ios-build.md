@@ -20,3 +20,6 @@
    `scripts/set-bundle-id.sh <bundle id> "<שם>" <team id>`
 2. בנייה: `scripts/build-ipa.sh <team id>` ← מייצר `build/export/*.ipa` (דורש Xcode ו-Apple ID של הצוות ב-Xcode ← Settings ← Accounts).
 3. העלאה: אפליקציית **Transporter** (חינם מה-App Store) ← גרירת קובץ ה-IPA ← Deliver. אחר כך ב-App Store Connect ← TestFlight.
+
+## איך יודעים איזה build באוויר
+האפליקציה מדווחת בכל פתיחה את הגרסה ומספר ה-build (`/api/app/version`). הנתונים נשמרים ב-Firestore תחת `appBuilds/ios-<version>-<build>` (`firstSeenAt`, `lastSeenAt`, `opens`, `uids`), ובמסמך `users/{uid}/meta/client` לכל משתמש. כך רואים שה-build החדש נפתח בפועל, בלי לשאול את מי שהעלה אותו. נדרש build אחד שכולל את התוסף `@capacitor/app` (נוסף ב-2026-10-09).
