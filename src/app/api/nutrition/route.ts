@@ -35,6 +35,7 @@ import { parseNutrition } from "@/lib/nutrition/parser";
 import { adminDb } from "@/lib/firebase/admin";
 import { guardFreeText } from "@/lib/security/guardInput";
 import { strings } from "@/lib/i18n/strings";
+import { fillMissingNutrients } from "@/lib/nutrition/extras";
 import type { MealDay, MealEntry, ParsedNutrition } from "@/lib/types";
 
 const itemSchema = z.object({
@@ -44,6 +45,10 @@ const itemSchema = z.object({
   carbs: z.number().nonnegative().optional(),
   fat: z.number().nonnegative().optional(),
   fiber: z.number().nonnegative().optional(),
+  sugar: z.number().nonnegative().optional(),
+  saturatedFat: z.number().nonnegative().optional(),
+  sodium: z.number().nonnegative().optional(),
+  nutrientsEstimated: z.boolean().optional(),
   confidence: z.number().min(0).max(1).optional(),
   grams: z.number().nonnegative().optional(),
   // Same tolerance as parser.ts's itemSchema — a client-submitted `parsed`
@@ -184,6 +189,9 @@ export async function POST(req: Request) {
     };
   }
 
+  // Hand-typed or picker-built items carry no extra nutrients — estimate them (calories/protein stay as given).
+  parsed = { items: await fillMissingNutrients(parsed.items) };
+
   const now = new Date().toISOString();
   const dateStr = date ?? now.slice(0, 10);
 
@@ -196,6 +204,10 @@ export async function POST(req: Request) {
     carbs: item.carbs,
     fat: item.fat,
     fiber: item.fiber,
+    sugar: item.sugar,
+    saturatedFat: item.saturatedFat,
+    sodium: item.sodium,
+    nutrientsEstimated: item.nutrientsEstimated,
     grams: item.grams,
     ingredients: item.ingredients,
     source: imageUrls?.length ? "photo" : "text",
@@ -267,6 +279,9 @@ const patchBodySchema = z.object({
       carbs: z.number().nonnegative().optional(),
       fat: z.number().nonnegative().optional(),
       fiber: z.number().nonnegative().optional(),
+      sugar: z.number().nonnegative().optional(),
+      saturatedFat: z.number().nonnegative().optional(),
+      sodium: z.number().nonnegative().optional(),
     })
     .refine((c) => Object.keys(c).length > 0, { message: "Provide at least one change" }),
 });

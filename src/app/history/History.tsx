@@ -25,6 +25,7 @@ import { computeNetCalories } from "@/lib/goals/netCalories";
 import { getGoalHistory, goalChangeDatesInRange, goalValueOnDate, type GoalHistoryEntry } from "@/lib/goals/goalHistory";
 import { dayLabel, weekdayLabel } from "@/lib/dateLabels";
 import type { StringKey } from "@/lib/i18n/strings";
+import NutrientAverages from "@/app/history/NutrientAverages";
 import type { MealDay, UserProfile, Workout } from "@/lib/types";
 
 interface DayInfo {
@@ -509,7 +510,7 @@ export default function History() {
 
   const [days, setDays] = useState<DayInfo[]>([]);
   const [goals, setGoals] = useState<
-    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal">
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">
   >({
     calorieGoal: 1950,
     proteinGoal: 145,
@@ -969,6 +970,7 @@ export default function History() {
             unit=" kcal"
             yStep={200}
           />
+          {goals && <NutrientAverages days={days} goals={goals} />}
         </>
       )}
 

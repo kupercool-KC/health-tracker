@@ -14,6 +14,7 @@ import Link from "next/link";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
+import NutrientTargetsCard from "@/app/profile/NutrientTargetsCard";
 import {
   connectAppleHealth,
   isAppleHealthEnabled,
@@ -736,6 +737,8 @@ export default function Profile() {
         {infoSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
         {!fullProfile && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("yourInfoNone")}</p>}
       </div>
+
+      <NutrientTargetsCard />
 
       {isAppleHealthSupported() && (
         <div className="card" style={{ marginTop: 16, display: "grid", gap: 8 }}>

@@ -15,6 +15,12 @@ const VERIFY_MODEL = "gpt-4o-mini";
 /** USDA FDC nutrient IDs (stable across their API, not configurable). */
 const NUTRIENT_ID_ENERGY_KCAL = 1008;
 const NUTRIENT_ID_PROTEIN_G = 1003;
+const NUTRIENT_ID_CARBS_G = 1005;
+const NUTRIENT_ID_FAT_G = 1004;
+const NUTRIENT_ID_FIBER_G = 1079;
+const NUTRIENT_ID_SUGARS_G = 2000;
+const NUTRIENT_ID_SAT_FAT_G = 1258;
+const NUTRIENT_ID_SODIUM_MG = 1093;
 
 interface UsdaFoodNutrient {
   nutrientId: number;
@@ -31,6 +37,13 @@ export interface UsdaMatch {
   caloriesPer100g: number;
   proteinPer100g: number;
   matchedName: string;
+  /** Extra per-100g values, present only when USDA reports them for this entry (sodium in mg, the rest in g). */
+  carbsPer100g?: number;
+  fatPer100g?: number;
+  fiberPer100g?: number;
+  sugarPer100g?: number;
+  satFatPer100g?: number;
+  sodiumMgPer100g?: number;
 }
 
 /**
@@ -68,7 +81,18 @@ function toMatch(food: UsdaFood): UsdaMatch | null {
   const energy = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_ENERGY_KCAL)?.value;
   const protein = food.foodNutrients.find((n) => n.nutrientId === NUTRIENT_ID_PROTEIN_G)?.value;
   if (energy == null || protein == null) return null;
-  return { caloriesPer100g: energy, proteinPer100g: protein, matchedName: food.description };
+  const pick = (id: number) => food.foodNutrients.find((n) => n.nutrientId === id)?.value;
+  return {
+    caloriesPer100g: energy,
+    proteinPer100g: protein,
+    matchedName: food.description,
+    carbsPer100g: pick(NUTRIENT_ID_CARBS_G),
+    fatPer100g: pick(NUTRIENT_ID_FAT_G),
+    fiberPer100g: pick(NUTRIENT_ID_FIBER_G),
+    sugarPer100g: pick(NUTRIENT_ID_SUGARS_G),
+    satFatPer100g: pick(NUTRIENT_ID_SAT_FAT_G),
+    sodiumMgPer100g: pick(NUTRIENT_ID_SODIUM_MG),
+  };
 }
 
 /** Up to `limit` non-disqualified candidates, best-match first (USDA's own relevance order). */

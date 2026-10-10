@@ -22,6 +22,7 @@ import { strings } from "@/lib/i18n/strings";
 import { addFact, logMistake, removeFact } from "./memory";
 import type { AgentState, Draft } from "./state";
 import { pickWritableProfile } from "@/lib/chat/applyActions";
+import { fillMissingNutrients } from "@/lib/nutrition/extras";
 import type { ChatMessage, CustomGoalDef, CustomReminder, DailyGoalEntry, DailyGoals, MealDay, ParsedNutritionItem, PendingAction, UserProfile, WhatsAppReminderSettings, Workout } from "@/lib/types";
 
 export interface TurnContext {
@@ -146,6 +147,8 @@ const logFood: Tool = {
       items = parsed.items;
       if (name && items.length === 1) items = [{ ...items[0], description: name }];
     }
+
+    items = await fillMissingNutrients(items);
 
     const existing = ctx.draft.meal?.items ?? [];
     const added: ParsedNutritionItem[] = [];

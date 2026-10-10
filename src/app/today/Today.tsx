@@ -6,6 +6,7 @@
  * workouts section synced from Apple Health via Health Auto Export.
  */
 import AppleSignInButton from "@/app/AppleSignInButton";
+import NutrientBreakdown from "@/app/today/NutrientBreakdown";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -167,7 +168,7 @@ export default function Today() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [steps, setSteps] = useState<DailySteps | null>(null);
   const [goals, setGoals] = useState<
-    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals">
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">
   >({
     calorieGoal: 1950,
     proteinGoal: 145,
@@ -1005,6 +1006,8 @@ export default function Today() {
             </div>
           </section>
 
+          <NutrientBreakdown entries={mealDay?.entries ?? []} goals={goals} />
+
           <section style={{ marginTop: 28 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
               <h2 style={{ margin: 0 }}>{t("meals")}</h2>
@@ -1334,6 +1337,10 @@ export default function Today() {
                             {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
                             {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
                             {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
+                            {entry.sugar != null && `${t("nutrientSugar")} ${Math.round(entry.sugar)}${t("unitG")} · `}
+                            {entry.saturatedFat != null && `${t("nutrientSatFat")} ${Math.round(entry.saturatedFat)}${t("unitG")} · `}
+                            {entry.sodium != null && `${t("nutrientSodium")} ${Math.round(entry.sodium)}${t("unitMg")} · `}
+                            {entry.nutrientsEstimated && entry.sodium != null && `(${t("nutrientEstimateTag")}) · `}
                             {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
                           </bdi>
                           {entry.ingredients && entry.ingredients.length > 0 && (
@@ -1488,6 +1495,10 @@ export default function Today() {
                           {entry.carbs != null && `${t("carbs")} ${Math.round(entry.carbs)}${t("unitG")} · `}
                           {entry.fat != null && `${t("fat")} ${Math.round(entry.fat)}${t("unitG")} · `}
                           {entry.fiber != null && `${t("fiber")} ${Math.round(entry.fiber)}${t("unitG")} · `}
+                            {entry.sugar != null && `${t("nutrientSugar")} ${Math.round(entry.sugar)}${t("unitG")} · `}
+                            {entry.saturatedFat != null && `${t("nutrientSatFat")} ${Math.round(entry.saturatedFat)}${t("unitG")} · `}
+                            {entry.sodium != null && `${t("nutrientSodium")} ${Math.round(entry.sodium)}${t("unitMg")} · `}
+                            {entry.nutrientsEstimated && entry.sodium != null && `(${t("nutrientEstimateTag")}) · `}
                           {entry.confidence != null && `${Math.round(entry.confidence * 100)}% ${t("confidence")}`}
                         </bdi>
                         {entry.ingredients && entry.ingredients.length > 0 && (

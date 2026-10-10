@@ -17,6 +17,14 @@ export interface MealEntry {
   carbs?: number;
   fat?: number;
   fiber?: number;
+  /** grams — total sugars (estimate). New meals only; older entries don't have it. */
+  sugar?: number;
+  /** grams */
+  saturatedFat?: number;
+  /** milligrams */
+  sodium?: number;
+  /** True when sugar/saturatedFat/sodium/etc. are model-only guesses (no USDA/label/user-stated source). */
+  nutrientsEstimated?: boolean;
   /** Estimated portion weight in grams, when known — used for USDA grounding and the frequent-meals picker. */
   grams?: number;
   /** Individual ingredients the user mentioned, when this entry is a composite dish (e.g. a salad) rather than a single named food — shown on expand. */
@@ -115,6 +123,10 @@ export interface ParsedNutritionItem {
   carbs?: number;
   fat?: number;
   fiber?: number;
+  sugar?: number;
+  saturatedFat?: number;
+  sodium?: number;
+  nutrientsEstimated?: boolean;
   confidence?: number;
   /** Estimated portion weight in grams, when known. */
   grams?: number;
@@ -141,6 +153,16 @@ export interface ParsedNutrition {
 export type Goal = "buildMuscle" | "cut" | "loseWeight" | "maintain";
 export type ActivityLevel = "sedentary" | "light" | "moderate" | "intense" | "veryIntense";
 export type WorkoutType = "strength" | "running" | "walking" | "cycling" | "swimming" | "yoga" | "padel" | "hiit" | "other";
+export type DietStyle = "balanced" | "lowCarb" | "highProtein" | "mediterranean" | "keto" | "custom";
+export interface NutrientTargets {
+  carbsG: number;
+  fatG: number;
+  fiberG: number;
+  sugarMaxG: number;
+  satFatMaxG: number;
+  sodiumMaxMg: number;
+  source: "auto" | "manual";
+}
 export type DietaryPref = "everything" | "vegetarian" | "vegan" | "glutenFree" | "lactoseFree" | "other";
 
 /** A user-defined daily goal template (e.g. "Drink water", "Read"), stored on the profile — tracked per-day in users/{uid}/dailyGoals/{date}. */
@@ -203,6 +225,10 @@ export interface UserProfile {
   showCarbs?: boolean;
   showFat?: boolean;
   showFiber?: boolean;
+  /** Eating style the user chose — drives the automatic nutrient targets (src/lib/nutrition/nutrients.ts). */
+  dietStyle?: DietStyle;
+  /** Daily targets for the nutrient breakdown. "auto" values are recalculated from calories/weight/dietStyle; any manual edit flips source to "manual". */
+  nutrientTargets?: NutrientTargets;
   language: "en" | "he";
   units: "metric" | "imperial";
   onboarded: boolean;
@@ -317,7 +343,7 @@ export interface PendingMealAction {
   /** Human-readable name of the target entry, for the confirm UI. */
   entryName: string;
   /** Only present for action "update". */
-  changes?: Partial<Pick<MealEntry, "name" | "calories" | "protein" | "carbs" | "fat" | "fiber">>;
+  changes?: Partial<Pick<MealEntry, "name" | "calories" | "protein" | "carbs" | "fat" | "fiber" | "sugar" | "saturatedFat" | "sodium">>;
 }
 
 /**

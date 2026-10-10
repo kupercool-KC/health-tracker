@@ -15,6 +15,8 @@ import { getNutritionParserConfig } from "./config";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { lookupUsdaNutrients, webSearchNutrition } from "./usda";
 import { searchWeb } from "@/lib/chat/webSearch";
+import { adminDb } from "@/lib/firebase/admin";
+import { validateNutrients, type NutrientKey } from "./nutrients";
 
 // estimatedGrams/explicitCalories/explicitProtein are internal to this
 // module (used for USDA grounding below) and stripped before returning —
@@ -26,6 +28,9 @@ const itemSchema = z.object({
   carbs: z.number().nonnegative().optional(),
   fat: z.number().nonnegative().optional(),
   fiber: z.number().nonnegative().optional(),
+  sugar: z.number().nonnegative().optional(),
+  saturatedFat: z.number().nonnegative().optional(),
+  sodium: z.number().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
   estimatedGrams: z.number().nonnegative().optional(),
   explicitCalories: z.boolean().optional(),
@@ -105,6 +110,10 @@ const EXPLICIT_VALUE_INSTRUCTION =
   " Group ingredients of ONE composite dish into a SINGLE item, not one item per ingredient — e.g. \"salad with red bell pepper, a bit of salt and pepper, olive oil, and a bit of parsley\" is ONE item named after the dish (\"salad\"), with its total calories/protein covering everything in it, and an \"ingredients\" field listing each ingredient the user actually mentioned (in the same language as \"description\"). Only split into separate items when the user is clearly describing distinct, separately-eaten foods (e.g. \"rice and grilled chicken\" is 2 items) — components of a single dish are never split out individually. Omit \"ingredients\" entirely for a plain single-food item with nothing to list (e.g. \"an apple\")." +
   " The \"description\" MUST be the specific food/dish name the user actually used (e.g. \"half a protein shake\", \"חצי משקה חלבון\") — never replace it with a generic word like \"meal\"/\"ארוחה\" or \"dish\"/\"מנה\" just because the user also gave explicit calorie/protein numbers. Only use a generic \"meal\"/\"ארוחה\" (or \"portion\"/\"מנה\") as the description when the user explicitly logged it that way without naming any specific food (e.g. \"log a meal, 600 calories 40g protein\", \"תרשום ארוחה של 600 קלוריות ו-40 גרם חלבון\").";
 
+/** Appended at call time (not in the admin-editable stored prompt) so the full nutrient set is always requested. */
+const NUTRIENTS_INSTRUCTION =
+  "\n\nFor EVERY item also return your best estimate of: carbs, fat, fiber, sugar (total sugars) and saturatedFat in grams, and sodium in MILLIGRAMS — plain numbers, never omitted, rounded sensibly (no false precision). They must be consistent with each other and with calories: protein*4 + carbs*4 + fat*9 should be within about 15% of calories (alcohol aside); sugar <= carbs; saturatedFat <= fat; fiber <= carbs. If the user or a label explicitly states one of these values for an item (e.g. \"800 mg sodium\"), use that exact number.";
+
 const SEARCH_MENU_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   type: "function",
   function: {
@@ -178,6 +187,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
         config.systemPrompt +
         languageInstruction +
         EXPLICIT_VALUE_INSTRUCTION +
+        NUTRIENTS_INSTRUCTION +
         multiImageInstruction +
         frequentMealsInstruction +
         (historyMessages.length > 0
@@ -266,7 +276,7 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
   // is zod-parsed output typed by itemSchema, which doesn't carry these
   // fields — so provenance stays index-aligned with parsed.items until the
   // final map below.
-  const provenance: { source: "explicit" | "usda" | "web" | "model"; note: string }[] = [];
+  const provenance: { source: "explicit" | "usda" | "web" | "model"; note: string; extrasGrounded?: boolean }[] = [];
   for (const item of parsed.items) {
     // Already estimated from the restaurant's own real menu/ingredients via
     // search_restaurant_menu above — trust that over a generic USDA/web
@@ -305,8 +315,54 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
     if (!item.explicitProtein) {
       item.protein = Math.round(((match.proteinPer100g * item.estimatedGrams) / 100) * 10) / 10;
     }
-    provenance.push({ source: usda ? "usda" : "web", note: nutritionNote(usda ? "usda" : "web", match, input.lang) });
+    // Extra nutrients: when USDA reports a value, it replaces the model's guess (scaled by portion).
+    const scale = item.estimatedGrams / 100;
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    let grounded = false;
+    if (match.carbsPer100g != null) { item.carbs = r1(match.carbsPer100g * scale); grounded = true; }
+    if (match.fatPer100g != null) { item.fat = r1(match.fatPer100g * scale); grounded = true; }
+    if (match.fiberPer100g != null) { item.fiber = r1(match.fiberPer100g * scale); grounded = true; }
+    if (match.sugarPer100g != null) { item.sugar = r1(match.sugarPer100g * scale); grounded = true; }
+    if (match.satFatPer100g != null) { item.saturatedFat = r1(match.satFatPer100g * scale); grounded = true; }
+    if (match.sodiumMgPer100g != null) { item.sodium = Math.round(match.sodiumMgPer100g * scale); grounded = true; }
+    provenance.push({ source: usda ? "usda" : "web", note: nutritionNote(usda ? "usda" : "web", match, input.lang), extrasGrounded: grounded });
   }
+
+  // Quality control on the extra nutrients: one silent repair attempt on an energy mismatch, then drop what
+  // still doesn't add up (kcal/protein are never touched). Rejections are logged for review.
+  const checked = await Promise.all(
+    parsed.items.map(async (item) => {
+      const hasAlcohol = /beer|wine|vodka|whisk|alcohol|בירה|יין|וודקה|ויסקי|אלכוהול/i.test(item.description);
+      let result = validateNutrients(item, { hasAlcohol });
+      if (result.energyMismatch) {
+        const repaired = await repairMacros(item);
+        if (repaired) {
+          result = validateNutrients({ ...item, ...repaired }, { hasAlcohol });
+        }
+        if (result.energyMismatch) {
+          for (const k of ["carbs", "fat", "fiber", "sugar", "saturatedFat"] as NutrientKey[]) {
+            (result.item as Record<string, unknown>)[k] = undefined;
+            if (!result.dropped.includes(k)) result.dropped.push(k);
+          }
+        }
+      }
+      if (result.dropped.length > 0) {
+        adminDb
+          .collection("nutrientRejections")
+          .add({
+            createdAt: new Date().toISOString(),
+            description: item.description,
+            calories: item.calories,
+            protein: item.protein,
+            raw: { carbs: item.carbs, fat: item.fat, fiber: item.fiber, sugar: item.sugar, saturatedFat: item.saturatedFat, sodium: item.sodium },
+            dropped: result.dropped,
+          })
+          .catch(() => {});
+      }
+      return result.item;
+    }),
+  );
+  parsed.items.splice(0, parsed.items.length, ...checked);
 
   return {
     items: parsed.items.map((item, i) => ({
@@ -316,6 +372,11 @@ export async function parseNutrition(input: ParseInput): Promise<ParsedNutrition
       carbs: item.carbs,
       fat: item.fat,
       fiber: item.fiber,
+      sugar: item.sugar,
+      saturatedFat: item.saturatedFat,
+      sodium: item.sodium,
+      // Model-only unless USDA grounded the extras or the user stated the numbers.
+      nutrientsEstimated: !(provenance[i]?.extrasGrounded || provenance[i]?.source === "explicit"),
       confidence: item.confidence,
       grams: item.estimatedGrams,
       ingredients: item.ingredients,
@@ -340,4 +401,30 @@ function nutritionNote(
     return lang === "he" ? `הותאם למאגר תזונה: ${match.matchedName}.` : `Matched to a nutrition database: ${match.matchedName}.`;
   }
   return lang === "he" ? "הערכת AI — לא נמצא מקור מאומת." : "AI estimate — no verified source matched.";
+}
+
+/** One cheap re-ask: make carbs/fat consistent with the stated calories and protein. Returns null on any failure. */
+async function repairMacros(item: { description: string; calories: number; protein: number; carbs?: number; fat?: number }): Promise<{ carbs: number; fat: number } | null> {
+  try {
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content:
+            'Given a food and its calories and protein, return realistic carbs and fat in grams so that protein*4 + carbs*4 + fat*9 is within 10% of the calories. Respond ONLY as JSON {"carbs": number, "fat": number}.',
+        },
+        { role: "user", content: `Food: ${item.description}\nCalories: ${item.calories}\nProtein g: ${item.protein}\nPrevious guess: carbs ${item.carbs}, fat ${item.fat}` },
+      ],
+    });
+    const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}") as { carbs?: number; fat?: number };
+    if (typeof parsed.carbs === "number" && typeof parsed.fat === "number" && parsed.carbs >= 0 && parsed.fat >= 0) {
+      return { carbs: parsed.carbs, fat: parsed.fat };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

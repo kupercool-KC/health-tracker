@@ -13,7 +13,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getFrequentMealsForChat, type FrequentMealForChat } from "@/lib/nutrition/frequentMeals";
 import { summarizeProfileForChat } from "@/lib/chat/chat";
 import { readFacts, type AgentFact } from "./memory";
-import type { ChatMessage, MealDay, PendingAction, UserProfile, Workout } from "@/lib/types";
+import { resolveTargets, sumDayNutrients, type NutrientKey } from "@/lib/nutrition/nutrients";
+import type { ChatMessage, MealDay, MealEntry, PendingAction, UserProfile, Workout } from "@/lib/types";
 
 export interface Draft {
   meal?: NonNullable<ChatMessage["pendingMeal"]>;
@@ -30,6 +31,12 @@ export interface SavedMealEntry {
   name: string;
   calories: number;
   protein: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
+  sugar?: number;
+  saturatedFat?: number;
+  sodium?: number;
 }
 
 export interface AgentState {
@@ -111,7 +118,7 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((d) => ({
       date: d.date,
-      entries: (d.entries ?? []).map((e) => ({ id: e.id, name: e.name, calories: Math.round(e.calories), protein: Math.round(e.protein * 10) / 10 })),
+      entries: (d.entries ?? []).map((e) => ({ id: e.id, name: e.name, calories: Math.round(e.calories), protein: Math.round(e.protein * 10) / 10, carbs: e.carbs, fat: e.fat, fiber: e.fiber, sugar: e.sugar, saturatedFat: e.saturatedFat, sodium: e.sodium })),
       totalCalories: Math.round(d.totals?.calories ?? 0),
       totalProtein: Math.round(d.totals?.protein ?? 0),
     }));
@@ -177,6 +184,16 @@ export function renderState(state: AgentState, draft: Draft): string {
     state.stepsToday != null ? `steps: ${state.stepsToday}${state.profile?.stepGoal ? `/${state.profile.stepGoal}` : ""}` : null,
   ].filter(Boolean);
   if (goalBits.length) lines.push(`\nTODAY'S BALANCE (saved entries only, NOT counting the draft; net = eaten − workout burn × ${Math.round(burnFactor * 100)}%): ${goalBits.join(" | ")}`);
+
+  if (todayMeals && todayMeals.entries.length && state.profile?.calorieGoal != null && state.profile?.proteinGoal != null) {
+    const nut = sumDayNutrients(todayMeals.entries as Pick<MealEntry, NutrientKey>[]);
+    const tg = resolveTargets(state.profile as Pick<UserProfile, "calorieGoal" | "proteinGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">);
+    const t = nut.totals;
+    lines.push(
+      `NUTRIENTS TODAY (saved entries; ${nut.coveredMeals}/${nut.totalMeals} meals have full data; sub-detail — mention ONLY when the user asks about these nutrients, never add them to confirmations or summaries): ` +
+        `carbs ${Math.round(t.carbs)}/${tg.carbsG}g | fat ${Math.round(t.fat)}/${tg.fatG}g | fiber ${Math.round(t.fiber)}/≥${tg.fiberG}g | sugar ${Math.round(t.sugar)}/≤${tg.sugarMaxG}g | sat. fat ${Math.round(t.saturatedFat)}/≤${tg.satFatMaxG}g | sodium ${Math.round(t.sodium)}/≤${tg.sodiumMaxMg}mg`,
+    );
+  }
 
   lines.push("\nDRAFT (proposed, NOT saved yet — waiting for the user's confirmation):");
   const draftLines = renderDraft(draft);
