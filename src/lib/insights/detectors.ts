@@ -18,6 +18,8 @@ export interface Candidate {
 }
 
 interface Ctx {
+  /** Feature flags already resolved for this user (e.g. water insights only once the water feature is on for them). */
+  features?: { water?: boolean };
   stats: DailyStats[]; // oldest → newest, last 28+ days, today last
   metrics: MetricsCurrent;
   profile: UserProfile;
@@ -31,7 +33,7 @@ const isWeekendIL = (date: string) => {
 };
 const r = (n: number) => Math.round(n);
 
-export function detect({ stats, metrics, profile }: Ctx): Candidate[] {
+export function detect({ stats, metrics, profile, features }: Ctx): Candidate[] {
   const out: Candidate[] = [];
   const l7 = logged(stats.slice(-7));
   const l28 = logged(stats.slice(-28));
@@ -163,7 +165,7 @@ export function detect({ stats, metrics, profile }: Ctx): Candidate[] {
   }
 
   // Water consistently low (only for people who actually track it: at least 3 days with an entry in the last 7).
-  {
+  if (features?.water) {
     const goalMl = profile.waterGoalMl ?? defaultWaterGoalMl(profile.weight);
     const tracked = stats.slice(-7).filter((d) => (d.waterMl ?? 0) > 0);
     const low = tracked.filter((d) => (d.waterMl ?? 0) < goalMl * 0.6).length;

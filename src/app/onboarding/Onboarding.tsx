@@ -23,6 +23,7 @@ import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
 import { recordGoalChange } from "@/lib/goals/goalHistory";
 import { DIET_STYLES, computeAutoTargets } from "@/lib/nutrition/nutrients";
 import { defaultWaterGoalMl } from "@/lib/water/water";
+import { useFlags } from "@/lib/flags/useFlags";
 import { INITIAL_IMPORT_DAYS, connectAppleHealth, importAppleHealth, isAppleHealthEnabled, isAppleHealthSupported } from "@/lib/health/appleHealth";
 import type { HealthSuggestions } from "@/lib/health/suggestions";
 import type {
@@ -79,6 +80,7 @@ const DIET_OPTIONS: Array<{ value: DietaryPref; labelKey: StringKey }> = [
 export default function Onboarding() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
+  const flags = useFlags();
   const router = useRouter();
 
   const [step, setStep] = useState(1);
@@ -266,7 +268,7 @@ export default function Onboarding() {
         fatGoal: calculated.fatGoal,
         averageDailySteps,
         stepGoal,
-        waterGoalMl: waterGoal ?? defaultWaterGoalMl(weight),
+        ...(flags.on("water") ? { waterGoalMl: waterGoal ?? defaultWaterGoalMl(weight) } : {}),
         dietStyle,
         nutrientTargets: computeAutoTargets(calculated.calorieGoal, calculated.proteinGoal, dietStyle),
         ...(targetWeight && Number(targetWeight) >= 30 ? { targetWeightKg: Number(targetWeight), targetDate: targetDate || undefined, startWeightKg: weight, targetSetAt: now } : {}),
@@ -592,6 +594,7 @@ export default function Onboarding() {
               style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
             />
           </label>
+          {flags.on("water") && (<>
           <h2 style={{ margin: "12px 0 0" }}>{t("onboardingWaterTitle")}</h2>
           <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("onboardingWaterHint")}</p>
           <label style={{ display: "grid", gap: 4 }}>
@@ -599,6 +602,7 @@ export default function Onboarding() {
             <input id="onb-water-goal" type="number" inputMode="numeric" min={500} max={8000} step={250} value={waterGoal ?? defaultWaterGoalMl(weight)} onChange={(e) => setWaterGoal(Number(e.target.value) || null)} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
             <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("waterGoalHint")}</span>
           </label>
+          </>)}
         </section>
       )}
 

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { DIET_STYLES, computeAutoTargets, resolveTargets } from "@/lib/nutrition/nutrients";
 import { defaultWaterGoalMl } from "@/lib/water/water";
+import { useFlags } from "@/lib/flags/useFlags";
 import type { DietStyle, NutrientTargets, UserProfile } from "@/lib/types";
 
 type ProfileSlice = Pick<UserProfile, "calorieGoal" | "proteinGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal" | "waterGoalMl" | "weight">;
@@ -24,6 +25,7 @@ const FIELDS: { key: keyof Omit<NutrientTargets, "source">; label: "carbs" | "fa
 export default function NutrientTargetsCard() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const flags = useFlags();
   const [profile, setProfile] = useState<ProfileSlice | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -86,6 +88,7 @@ export default function NutrientTargetsCard() {
         ))}
       </div>
 
+      {flags.on("water") && (
       <label style={{ display: "grid", gap: 4 }}>
         <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("waterGoalLabel")}</span>
         <input
@@ -105,6 +108,7 @@ export default function NutrientTargetsCard() {
         />
         <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("waterGoalHint")}</span>
       </label>
+      )}
 
       <h3 style={{ margin: "6px 0 0", fontSize: 14 }}>{t("nutrientTargetsTitle")}</h3>
       <span style={{ color: "var(--muted)", fontSize: 12 }}>

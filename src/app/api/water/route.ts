@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getUidFromRequest } from "@/lib/auth";
 import { addWater, undoLastWater } from "@/lib/water/server";
+import { flagOn } from "@/lib/flags/server";
 
 const bodySchema = z.object({
   ml: z.number().positive().max(5000).optional(),
@@ -16,6 +17,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const uid = await getUidFromRequest(req);
   if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await flagOn(uid, "water"))) return NextResponse.json({ error: "Not available yet" }, { status: 404 });
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || (!parsed.data.undo && parsed.data.ml == null)) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const date = parsed.data.date ?? new Date().toISOString().slice(0, 10);

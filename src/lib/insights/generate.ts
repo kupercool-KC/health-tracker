@@ -8,6 +8,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { israelDateKey } from "@/lib/metrics/compute";
 import { detect, goalWeight, type Candidate } from "./detectors";
+import { flagOn } from "@/lib/flags/server";
 import type { DailyStats, Insight, InsightText, InsightType, MetricsCurrent, UserProfile } from "@/lib/types";
 
 const DAY_MS = 86_400_000;
@@ -79,7 +80,7 @@ export async function generateDailyInsight(uid: string, metrics: MetricsCurrent,
 
   const stats = await loadStats(uid);
   if (stats.length < 7) return null;
-  const candidates = detect({ stats, metrics, profile });
+  const candidates = detect({ stats, metrics, profile, features: { water: await flagOn(uid, "water") } });
 
   const scored = candidates
     .map((c) => {

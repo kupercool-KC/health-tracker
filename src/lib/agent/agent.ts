@@ -74,8 +74,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The org's gpt-4.1 TPM cap (30k) is easy to hit when several WhatsApp messages land within a minute. Wait out a short 429 once; if still limited, use the mini model rather than dropping to the legacy pipeline. */
 async function createCompletion(
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  tools: OpenAI.Chat.Completions.ChatCompletionTool[],
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-  const call = (model: string) => getOpenAIClient().chat.completions.create({ model, temperature: 0.4, messages, tools: TOOL_DEFS });
+  const call = (model: string) => getOpenAIClient().chat.completions.create({ model, temperature: 0.4, messages, tools });
   try {
     return await call(AGENT_MODEL);
   } catch (err) {
@@ -121,19 +122,21 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   for (const url of input.imageUrls ?? []) userContent.push({ type: "image_url", image_url: { url } });
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt(input.lang, input.state.profile?.gender) },
+    { role: "system", content: buildSystemPrompt(input.lang, input.state.profile?.gender, { water: input.state.waterEnabled }) },
     { role: "system", content: `CURRENT STATE (authoritative, rebuilt this turn):\n${renderState(input.state, input.draft)}` },
     ...history,
     { role: "user", content: userContent },
   ];
 
+  // Features still behind a flag for this user are invisible to the model (no tool, no prompt rule, no state line).
+  const tools = input.state.waterEnabled ? TOOL_DEFS : TOOL_DEFS.filter((d) => !(d.type === "function" && d.function.name === "log_water"));
   const toolCalls: { name: string; args: unknown }[] = [];
   let finalText = "";
   let toolsRan = false;
   let retriedClaim = false;
   let retriedSaved = false;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const completion = await createCompletion(messages);
+    const completion = await createCompletion(messages, tools);
     const msg = completion.choices[0]?.message;
     if (!msg) break;
     const calls = msg.tool_calls?.filter((c) => c.type === "function") ?? [];

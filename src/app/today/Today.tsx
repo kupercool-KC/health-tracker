@@ -9,6 +9,7 @@ import AppleSignInButton from "@/app/AppleSignInButton";
 import NutrientBreakdown from "@/app/today/NutrientBreakdown";
 import InsightCard from "@/app/today/InsightCard";
 import WaterCard from "@/app/today/WaterCard";
+import { useFlags } from "@/lib/flags/useFlags";
 import { syncAppleHealth } from "@/lib/health/appleHealth";
 import { defaultWaterGoalMl } from "@/lib/water/water";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
@@ -167,6 +168,7 @@ function LabeledWheel({
 export default function Today() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t, lang } = useI18n();
+  const flags = useFlags();
 
   const [mealDay, setMealDay] = useState<MealDay | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -1025,7 +1027,7 @@ export default function Today() {
 
           <InsightCard calorieGoal={goals.calorieGoal} proteinGoal={goals.proteinGoal} />
 
-          <WaterCard goalMl={goals.waterGoalMl ?? defaultWaterGoalMl(goals.weight)} />
+          {flags.on("water") && <WaterCard goalMl={goals.waterGoalMl ?? defaultWaterGoalMl(goals.weight)} />}
 
           <NutrientBreakdown entries={mealDay?.entries ?? []} goals={goals} />
 
