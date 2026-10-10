@@ -11,6 +11,7 @@
  * rather than asked as a separate input.
  */
 import AppleSignInButton from "@/app/AppleSignInButton";
+import WhatsAppIntro from "@/app/onboarding/WhatsAppIntro";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
@@ -117,6 +118,16 @@ export default function Onboarding() {
   useEffect(() => {
     if (user && isAppleHealthSupported() && !isAppleHealthEnabled()) setHealthPhase("ask");
   }, [user]);
+
+  // WhatsApp intro + connect (behind the "whatsappOnboarding" flag): first thing in onboarding, skipped when the number is already linked.
+  const [showWa, setShowWa] = useState(false);
+  useEffect(() => {
+    if (!user || !flags.ready || !flags.on("whatsappOnboarding")) return;
+    getFullProfile(user.uid).then((p) => {
+      if (!p?.whatsappPhone) setShowWa(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, flags.ready]);
 
   async function startHealthImport() {
     setHealthPhase("importing");
@@ -357,6 +368,8 @@ export default function Onboarding() {
       </main>
     );
   }
+
+  if (showWa) return <WhatsAppIntro onDone={() => setShowWa(false)} />;
 
   if (healthPhase !== "done") {
     const fill = (tpl: string, c: HealthSuggestions["counts"]) => tpl.replace("{w}", String(c.workouts)).replace("{s}", String(c.sleepNights)).replace("{d}", String(c.stepDays));

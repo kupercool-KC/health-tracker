@@ -8,12 +8,13 @@
  */
 import { ADMIN_UID } from "@/lib/admin";
 
-export type FlagKey = "water";
+export type FlagKey = "water" | "whatsappOnboarding";
 export type FlagState = "off" | "preview" | "on";
 
 /** State of each flag until appConfig/flags says otherwise. New features start in "preview". */
 export const DEFAULT_FLAGS: Record<FlagKey, FlagState> = {
   water: "preview",
+  whatsappOnboarding: "preview",
 };
 
 export interface FlagConfig {
