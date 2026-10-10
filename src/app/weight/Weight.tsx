@@ -119,7 +119,7 @@ const BODY_METRIC_FIELDS = [
   { key: "proteinPercent", labelKey: "proteinPercentLabel", color: "var(--net)", unit: "%" },
 ] as const;
 
-export default function Weight() {
+export default function Weight({ embedded = false }: { embedded?: boolean } = {}) {
   const { user, loading: authLoading, authError, signIn } = useAuth();
   const { t } = useI18n();
   const [entries, setEntries] = useState<BodyMetricsEntry[]>([]);
@@ -160,9 +160,10 @@ export default function Weight() {
     return { field, points };
   }).filter((c) => c.points.length > 0);
 
+  const Shell = embedded ? "div" : "main";
   return (
-    <main>
-      <h1>{t("navWeight")}</h1>
+    <Shell>
+      {!embedded && <h1>{t("navWeight")}</h1>}
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>{t("weighInHint")}</p>
 
       {loading ? (
@@ -185,6 +186,6 @@ export default function Weight() {
           ))}
         </div>
       )}
-    </main>
+    </Shell>
   );
 }

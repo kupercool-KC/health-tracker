@@ -1,8 +1,6 @@
-import Weight from "./Weight";
+import { redirect } from "next/navigation";
 
-// Per-user authenticated data — never statically prerendered.
-export const dynamic = "force-dynamic";
-
+// The Weight tab became Progress (weigh-ins live inside it).
 export default function WeightPage() {
-  return <Weight />;
+  redirect("/progress");
 }

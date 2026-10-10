@@ -57,7 +57,7 @@ function WeightIcon() {
 const TABS = [
   { href: "/today", labelKey: "navToday" as const, Icon: TodayIcon },
   { href: "/history", labelKey: "navHistory" as const, Icon: HistoryIcon },
-  { href: "/weight", labelKey: "navWeight" as const, Icon: WeightIcon },
+  { href: "/progress", labelKey: "navProgress" as const, Icon: WeightIcon },
   { href: "/profile", labelKey: "navProfile" as const, Icon: ProfileIcon },
 ];
 

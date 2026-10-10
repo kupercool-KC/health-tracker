@@ -54,6 +54,9 @@ export interface AgentState {
   userName?: string;
   facts: AgentFact[];
   frequentMeals: FrequentMealForChat[];
+  /** Apple Health import status (iOS app only) and the native build the user last opened — for troubleshooting. */
+  healthSync?: { lastSyncAt: string; workouts: number; sleepNights: number; stepDays: number };
+  client?: { platform: string; version: string; build: string; lastSeenAt: string };
 }
 
 /** An open proposal this recent is still "live" — the draft survives this many messages (a forgotten confirmation can still be tapped later via its buttons; a typed "כן" is stricter, see CONFIRM_LOOKBACK_MESSAGES in the WhatsApp route). */
@@ -102,13 +105,15 @@ export function localClock(nowIso: string): { hm: string } {
 export async function buildAgentState(uid: string, today: string, nowIso: string): Promise<AgentState> {
   const u = adminDb.collection("users").doc(uid);
   const since = addDays(today, -2);
-  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals] = await Promise.all([
+  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals, healthSyncSnap, clientSnap] = await Promise.all([
     u.collection("meta").doc("profile").get(),
     u.collection("meals").where(FieldPath.documentId(), ">=", since).get(),
     u.collection("workouts").where("date", ">=", since).get(),
     u.collection("steps").doc(today).get(),
     readFacts(uid),
     getFrequentMealsForChat(uid),
+    u.collection("meta").doc("healthSync").get(),
+    u.collection("meta").doc("client").get(),
   ]);
   const profile = profileSnap.data() as UserProfile | undefined;
 
@@ -153,6 +158,8 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     userName: profile?.name,
     facts,
     frequentMeals,
+    healthSync: healthSyncSnap.data() as AgentState["healthSync"],
+    client: clientSnap.data() as AgentState["client"],
   };
 }
 
@@ -195,6 +202,14 @@ export function renderState(state: AgentState, draft: Draft): string {
         `carbs ${Math.round(t.carbs)}/${tg.carbsG}g | fat ${Math.round(t.fat)}/${tg.fatG}g | fiber ${Math.round(t.fiber)}/≥${tg.fiberG}g | sugar ${Math.round(t.sugar)}/≤${tg.sugarMaxG}g | sat. fat ${Math.round(t.saturatedFat)}/≤${tg.satFatMaxG}g | sodium ${Math.round(t.sodium)}/≤${tg.sodiumMaxMg}mg`,
     );
   }
+
+  lines.push(
+    `\nAPPLE HEALTH / APP (for troubleshooting only): ${
+      state.healthSync
+        ? `last import ${state.healthSync.lastSyncAt} — ${state.healthSync.workouts} workouts, ${state.healthSync.sleepNights} sleep nights, ${state.healthSync.stepDays} step days`
+        : "never imported (not connected, or permission not granted)"
+    }${state.client ? ` | app ${state.client.platform} ${state.client.version} (build ${state.client.build}), last opened ${state.client.lastSeenAt}` : " | native app build unknown (web or old build)"}`,
+  );
 
   lines.push("\nDRAFT (proposed, NOT saved yet — waiting for the user's confirmation):");
   const draftLines = renderDraft(draft);

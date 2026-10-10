@@ -27,7 +27,7 @@ Build order: **A → B → C → D** (D depends on A–C data).
 | Q3 | Diet style | Ask; targets always follow the user's answer |
 | Q4 | Backfill old meals' nutrients | **No** — old meals stay without the new nutrients |
 | Q5 | Weekly review | Sunday 20:00 (Israel), app + WhatsApp |
-| Q6 | Proactive frequency | Max one insight per day in the app; WhatsApp gets only the weekly review unprompted |
+| Q6 | Proactive frequency | Max one insight per day in the app. **Update 2026-10-11:** the daily insight is also sent on WhatsApp, ON by default, with a toggle to turn it off (Profile, new reminder type `dailyInsight`); the weekly review is also on by default |
 | — | WhatsApp nutrients | Do **not** show the extra nutrients in WhatsApp confirmations/summaries for now |
 
 ---

@@ -231,6 +231,13 @@ export interface UserProfile {
   showCarbs?: boolean;
   showFat?: boolean;
   showFiber?: boolean;
+  /** Optional goal for the Progress screen: weight to reach and by when (yyyy-mm-dd). startWeightKg/targetSetAt are stamped when the target is saved. */
+  targetWeightKg?: number;
+  targetDate?: string;
+  startWeightKg?: number;
+  targetSetAt?: string;
+  /** Daily insight / weekly review on WhatsApp — both default ON; set false to turn off. */
+  insightPrefs?: { dailyInsightWhatsapp?: boolean; weeklyReviewWhatsapp?: boolean };
   /** Eating style the user chose — drives the automatic nutrient targets (src/lib/nutrition/nutrients.ts). */
   dietStyle?: DietStyle;
   /** Daily targets for the nutrient breakdown. "auto" values are recalculated from calories/weight/dietStyle; any manual edit flips source to "manual". */
@@ -434,4 +441,60 @@ export interface HealthSyncMeta {
   sleepNights: number;
   stepDays: number;
   autoFilledAt?: string;
+}
+
+/** users/{uid}/dailyStats/{date} — nightly rollup (also refreshed on demand). */
+export interface DailyStats {
+  date: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  sugar: number;
+  saturatedFat: number;
+  sodium: number;
+  mealsLogged: number;
+  nutrientCoveredMeals: number;
+  burned: number;
+  netCalories: number;
+  workoutCount: number;
+  workoutMinutes: number;
+  steps?: number;
+  weightKg?: number;
+  sleepAsleepMin?: number;
+  restingHr?: number;
+  computedAt: string;
+}
+
+/** users/{uid}/metrics/current — everything the Progress screen and the insight detectors read. */
+export interface MetricsCurrent {
+  computedAt: string;
+  today: string;
+  /** Days with at least 2 meals logged in the last 7 / 28 days. */
+  logging: { days7: number; days28: number; streak: number };
+  avg7: { calories: number; protein: number; net: number; steps?: number; sleepMin?: number };
+  avg28: { calories: number; protein: number; net: number; steps?: number; sleepMin?: number };
+  adherence: { calorieDays7: number; calorieDays28: number; proteinDays7: number; proteinDays28: number; loggedDays7: number; loggedDays28: number };
+  weight?: {
+    startKg?: number;
+    latestKg: number;
+    trendKg: number;
+    /** kg per week, from a regression over the last 28 days of the smoothed trend. */
+    weeklyRateKg?: number;
+    series: { date: string; kg: number; trend: number }[];
+    targetKg?: number;
+    targetDate?: string;
+    etaDate?: string;
+    requiredDailyBalanceKcal?: number;
+    /** What the logged balance predicts for the last 28 days vs what the scale shows. */
+    expectedChange28Kg?: number;
+    actualChange28Kg?: number;
+    progressPct?: number;
+    status: "ahead" | "onTrack" | "behind" | "notEnoughData";
+  };
+  workouts7: { count: number; minutes: number };
+  workoutsPrev28: { perWeek: number };
+  /** Number of days of data the screen can rely on. */
+  daysWithData: number;
 }
