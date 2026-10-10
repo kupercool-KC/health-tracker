@@ -27,7 +27,9 @@ export default function AppleHealthAutoSync() {
     if (Capacitor.isNativePlatform()) {
       App.addListener("appStateChange", ({ isActive }) => {
         if (isActive) run();
-      }).then((h) => (remove = () => h.remove()));
+      })
+        .then((h) => (remove = () => h.remove()))
+        .catch(() => {}); // older builds without the App plugin
     }
     return () => {
       document.removeEventListener("visibilitychange", run);
