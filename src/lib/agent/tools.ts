@@ -23,6 +23,8 @@ import { addFact, logMistake, removeFact } from "./memory";
 import type { AgentState, Draft } from "./state";
 import { pickWritableProfile } from "@/lib/chat/applyActions";
 import { fillMissingNutrients } from "@/lib/nutrition/extras";
+import { addWater, undoLastWater } from "@/lib/water/server";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import type { ChatMessage, CustomGoalDef, CustomReminder, DailyGoalEntry, DailyGoals, MealDay, ParsedNutritionItem, PendingAction, UserProfile, WhatsAppReminderSettings, Workout } from "@/lib/types";
 
 export interface TurnContext {
@@ -566,6 +568,27 @@ const manageReminders: Tool = {
   },
 };
 
+const logWater: Tool = {
+  def: fn("log_water", "Save water the user drank — saved IMMEDIATELY (no draft or confirmation needed: it is small and easy to undo). Convert what they said to millilitres (a glass/כוס = 250, a bottle/בקבוק = 500 unless they say the size, a litre = 1000). Use negative-free amounts only; to take back the last one use undo.", {
+    ml: { type: "number", description: "Millilitres to add (omit when undo is true)." },
+    undo: { type: "boolean", description: "True to remove the last water entry instead of adding." },
+    date: { type: "string", description: "yyyy-mm-dd; defaults to today." },
+  }),
+  async run(args, ctx) {
+    const date = str(args.date) ?? ctx.state.today;
+    if (args.undo === true) {
+      if (ctx.dryRun) return { undone: true, dryRun: true };
+      const day = await undoLastWater(ctx.uid, date);
+      return day ? { undone: true, totalMl: day.ml, goalMl: ctx.state.profile?.waterGoalMl ?? defaultWaterGoalMl(ctx.state.profile?.weight) } : { error: "No water entries to undo." };
+    }
+    const ml = num(args.ml);
+    if (ml == null || ml <= 0 || ml > 5000) return { error: "ml must be between 1 and 5000." };
+    if (ctx.dryRun) return { added: { ml }, totalMl: ml, dryRun: true };
+    const day = await addWater(ctx.uid, date, ml);
+    return { added: { ml }, totalMl: day.ml, goalMl: ctx.state.profile?.waterGoalMl ?? defaultWaterGoalMl(ctx.state.profile?.weight) };
+  },
+};
+
 const remember: Tool = {
   def: fn("remember", "Save a short durable fact about the user for future conversations (a preference, a regular food's values, a constraint, a correction they gave you). Not for one-off trivia or anything already in the profile/log.", {
     fact: { type: "string", description: "One short sentence, in the user's language." },
@@ -853,6 +876,7 @@ export const TOOLS: Tool[] = [
   lookupNutrition,
   searchWebTool,
   manageReminders,
+  logWater,
   remember,
   forget,
   flagMistake,

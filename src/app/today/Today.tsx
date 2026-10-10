@@ -8,6 +8,9 @@
 import AppleSignInButton from "@/app/AppleSignInButton";
 import NutrientBreakdown from "@/app/today/NutrientBreakdown";
 import InsightCard from "@/app/today/InsightCard";
+import WaterCard from "@/app/today/WaterCard";
+import { syncAppleHealth } from "@/lib/health/appleHealth";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -169,7 +172,7 @@ export default function Today() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [steps, setSteps] = useState<DailySteps | null>(null);
   const [goals, setGoals] = useState<
-    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">
+    Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal" | "waterGoalMl" | "weight">
   >({
     calorieGoal: 1950,
     proteinGoal: 145,
@@ -286,6 +289,17 @@ export default function Today() {
     }
   }, []);
 
+  // A background Apple Health sync finished: reload today's numbers.
+  const userRef = useRef<string | null>(null);
+  userRef.current = user?.uid ?? null;
+  useEffect(() => {
+    const onSynced = () => {
+      if (userRef.current) refresh(userRef.current);
+    };
+    window.addEventListener("health:synced", onSynced);
+    return () => window.removeEventListener("health:synced", onSynced);
+  }, [refresh]);
+
   const load = useCallback(
     async (uid: string) => {
       setLoading(true);
@@ -351,6 +365,8 @@ export default function Today() {
       if (pulled > PULL_THRESHOLD && user) {
         setPullRefreshing(true);
         setPullDistance(PULL_THRESHOLD);
+        // Apple Health first (iOS app only), so the reload below already shows the fresh steps and workouts.
+        await syncAppleHealth({ force: true }).catch(() => {});
         await refresh(user.uid);
         setPullRefreshing(false);
       }
@@ -1008,6 +1024,8 @@ export default function Today() {
           </section>
 
           <InsightCard calorieGoal={goals.calorieGoal} proteinGoal={goals.proteinGoal} />
+
+          <WaterCard goalMl={goals.waterGoalMl ?? defaultWaterGoalMl(goals.weight)} />
 
           <NutrientBreakdown entries={mealDay?.entries ?? []} goals={goals} />
 

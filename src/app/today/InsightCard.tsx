@@ -11,7 +11,7 @@ import type { Insight } from "@/lib/types";
 /** One insight at a time on Today: this week's review if there is one, otherwise today's insight. */
 export default function InsightCard({ calorieGoal, proteinGoal }: { calorieGoal: number; proteinGoal: number }) {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [insight, setInsight] = useState<Insight | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -32,6 +32,7 @@ export default function InsightCard({ calorieGoal, proteinGoal }: { calorieGoal:
 
   if (!user || !insight) return notice ? <p style={{ color: "var(--muted)", fontSize: 13 }}>{notice}</p> : null;
 
+  const text = insight.i18n?.[lang] ?? { title: insight.title, body: insight.body, actionLabel: insight.action?.label, keepLabel: insight.action?.kind === "applyCalorieGoal" ? insight.action.keepLabel : undefined, prompt: insight.action?.kind === "askLily" ? insight.action.prompt : undefined };
   const mark = (status: Insight["status"]) => setDoc(doc(db, "users", user.uid, "insights", insight.id), { status }, { merge: true });
 
   async function act() {
@@ -39,7 +40,7 @@ export default function InsightCard({ calorieGoal, proteinGoal }: { calorieGoal:
     if (!a) return;
     if (a.kind === "askLily") {
       try {
-        sessionStorage.setItem("lily:prefill", a.prompt);
+        sessionStorage.setItem("lily:prefill", text.prompt ?? a.prompt);
       } catch {
         /* prefill is a convenience only */
       }
@@ -64,14 +65,14 @@ export default function InsightCard({ calorieGoal, proteinGoal }: { calorieGoal:
     <section style={{ marginTop: 16 }}>
       <div className="card" style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-          <strong>{insight.title}</strong>
+          <strong>{text.title}</strong>
           {insight.kind === "weekly" && <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("insightWeeklyBadge")}</span>}
         </div>
-        <p style={{ margin: 0, fontSize: 14, whiteSpace: "pre-line" }}>{insight.body}</p>
+        <p style={{ margin: 0, fontSize: 14, whiteSpace: "pre-line" }}>{text.body}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {insight.action && <button onClick={act}>{insight.action.label}</button>}
+          {insight.action && <button onClick={act}>{text.actionLabel ?? insight.action.label}</button>}
           <button onClick={dismiss} style={{ background: "none", color: "var(--muted)" }}>
-            {insight.action?.kind === "applyCalorieGoal" ? insight.action.keepLabel : t("insightNotUseful")}
+            {insight.action?.kind === "applyCalorieGoal" ? (text.keepLabel ?? insight.action.keepLabel) : t("insightNotUseful")}
           </button>
         </div>
       </div>

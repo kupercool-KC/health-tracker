@@ -12,23 +12,24 @@ import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
-import { dayLabel } from "@/lib/dateLabels";
 import type { MetricsCurrent } from "@/lib/types";
 
 type WeightBlock = NonNullable<MetricsCurrent["weight"]>;
 const DAY_MS = 86_400_000;
 const ts = (d: string) => new Date(`${d}T12:00:00Z`).getTime();
 const dateKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+/** Short localized date ("17 Apr" / "17 באפר׳"), unlike the app-wide MM/DD helper which reads wrong in Hebrew. */
+const fmtDate = (d: string, lang: "en" | "he") => new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" }).format(new Date(`${d}T12:00:00`));
 const fill = (tpl: string, vars: Record<string, string | number>) => Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), tpl);
 
 function statusColor(s: WeightBlock["status"]) {
   return s === "behind" ? "var(--danger)" : s === "notEnoughData" ? "var(--muted)" : "var(--burned)";
 }
 
-function TimelineChart({ w, startDate, t }: { w: WeightBlock; startDate: string; t: (k: "progressLegendTrend" | "progressLegendPlan") => string }) {
+function TimelineChart({ w, startDate, t, lang }: { w: WeightBlock; startDate: string; t: (k: "progressLegendTrend" | "progressLegendPlan") => string; lang: "en" | "he" }) {
   const W = 340, H = 170, padL = 34, padR = 12, padT = 12, padB = 24;
   const today = dateKey(Date.now());
-  const endDate = [w.targetDate, w.etaDate, today].filter(Boolean).sort().at(-1)!;
+  const endDate = [w.targetDate, today].filter(Boolean).sort().at(-1)!;
   const t0 = ts(startDate), t1 = Math.max(ts(endDate), t0 + 7 * DAY_MS);
   const values = [w.startKg ?? w.latestKg, w.targetKg, ...w.series.flatMap((p) => [p.kg, p.trend])].filter((v): v is number => v != null);
   const lo = Math.floor(Math.min(...values) - 1), hi = Math.ceil(Math.max(...values) + 1);
@@ -38,7 +39,7 @@ function TimelineChart({ w, startDate, t }: { w: WeightBlock; startDate: string;
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="weight timeline" style={{ display: "block" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="weight timeline" style={{ display: "block", direction: "ltr" }}>
         {ticks.map((v) => (
           <g key={v}>
             <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeWidth="0.5" />
@@ -57,8 +58,8 @@ function TimelineChart({ w, startDate, t }: { w: WeightBlock; startDate: string;
         ))}
         <polyline points={trendPts} fill="none" stroke="var(--calories)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         {w.series.length > 0 && <circle cx={x(w.series.at(-1)!.date)} cy={y(w.series.at(-1)!.trend)} r="4" fill="var(--calories)" />}
-        <text x={padL} y={H - 6} fontSize="9" fill="var(--muted)">{dayLabel(startDate)}</text>
-        <text x={W - padR} y={H - 6} fontSize="9" fill="var(--muted)" textAnchor="end">{dayLabel(endDate)}</text>
+        <text x={padL} y={H - 6} fontSize="9" fill="var(--muted)">{fmtDate(startDate, lang)}</text>
+        <text x={W - padR} y={H - 6} fontSize="9" fill="var(--muted)" textAnchor="end">{fmtDate(endDate, lang)}</text>
       </svg>
       <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--muted)" }}>
         <span><span style={{ color: "var(--calories)" }}>■</span> {t("progressLegendTrend")}</span>
@@ -70,7 +71,7 @@ function TimelineChart({ w, startDate, t }: { w: WeightBlock; startDate: string;
 
 export default function Progress() {
   const { user, loading: authLoading, authError, signIn } = useAuth();
-  const { t } = useI18n();
+  const { t, lang, forwardArrow } = useI18n();
   const [metrics, setMetrics] = useState<MetricsCurrent | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -152,7 +153,7 @@ export default function Progress() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                   <strong style={{ fontSize: 18 }}>
                     <bdi dir="ltr">{w.trendKg} {t("unitKg")}</bdi>
-                    {w.targetKg != null && <span style={{ color: "var(--muted)", fontWeight: 400 }}> → <bdi dir="ltr">{w.targetKg} {t("unitKg")}</bdi></span>}
+                    {w.targetKg != null && <span style={{ color: "var(--muted)", fontWeight: 400 }}> {forwardArrow} <bdi dir="ltr">{w.targetKg} {t("unitKg")}</bdi></span>}
                   </strong>
                   {w.targetKg != null && (
                     <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 99, border: `1px solid ${statusColor(w.status)}`, color: statusColor(w.status) }}>
@@ -168,10 +169,10 @@ export default function Progress() {
                     <span style={{ color: "var(--muted)", fontSize: 12 }}>{fill(t("progressPercentDone"), { n: w.progressPct })}</span>
                   </>
                 )}
-                {w.etaDate && <span style={{ fontSize: 13 }}>{fill(t("progressEta"), { date: dayLabel(w.etaDate) })}</span>}
+                {w.etaDate && <span style={{ fontSize: 13 }}>{fill(t("progressEta"), { date: fmtDate(w.etaDate, lang) })}</span>}
                 {w.requiredDailyBalanceKcal != null && w.targetDate && Math.abs(w.requiredDailyBalanceKcal) > 0 && (
                   <span style={{ fontSize: 13, color: "var(--muted)" }}>
-                    {fill(t(w.requiredDailyBalanceKcal < 0 ? "progressNeeded" : "progressNeededUp"), { date: dayLabel(w.targetDate), n: Math.abs(w.requiredDailyBalanceKcal) })}
+                    {fill(t(w.requiredDailyBalanceKcal < 0 ? "progressNeeded" : "progressNeededUp"), { date: fmtDate(w.targetDate, lang), n: Math.abs(w.requiredDailyBalanceKcal) })}
                   </span>
                 )}
                 {w.targetKg == null && <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("progressNoTargetHint")}</span>}
@@ -208,7 +209,7 @@ export default function Progress() {
           {/* Timeline */}
           {w && w.series.length >= 2 && (
             <div className="card" style={{ marginTop: 12 }}>
-              <TimelineChart w={w} startDate={w.series[0].date} t={t} />
+              <TimelineChart w={w} startDate={w.series[0].date} t={t} lang={lang} />
             </div>
           )}
 

@@ -8,7 +8,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { israelDateKey } from "@/lib/metrics/compute";
 import { detect, goalWeight, type Candidate } from "./detectors";
-import type { DailyStats, Insight, InsightType, MetricsCurrent, UserProfile } from "@/lib/types";
+import type { DailyStats, Insight, InsightText, InsightType, MetricsCurrent, UserProfile } from "@/lib/types";
 
 const DAY_MS = 86_400_000;
 const THRESHOLD = 0.35;
@@ -26,6 +26,7 @@ const TITLES: Record<InsightType, { he: string; en: string }> = {
   streak: { he: "כל הכבוד", en: "Nice streak" },
   aheadOfPlan: { he: "לפני התוכנית", en: "Ahead of plan" },
   recalibrate: { he: "עדכון יעד קלוריות", en: "Calorie goal check" },
+  waterLow: { he: "שתייה", en: "Water" },
   weeklyReview: { he: "סיכום שבועי", en: "Weekly review" },
 };
 
@@ -94,8 +95,15 @@ export async function generateDailyInsight(uid: string, metrics: MetricsCurrent,
   const top = scored[0]?.c;
   if (!top) return null;
 
-  const body = await phrase(top, lang, profile);
+  const [bodyHe, bodyEn] = await Promise.all([phrase(top, "he", profile), phrase(top, "en", profile)]);
+  const body = lang === "he" ? bodyHe : bodyEn;
   const id = `${today}-${top.type}`;
+  const text = (l: "he" | "en", b: string): InsightText => ({
+    title: TITLES[top.type][l],
+    body: b,
+    ...(top.action?.kind === "askLily" ? { actionLabel: ACTION_LABEL.askLily[l], prompt: l === "he" ? top.action.promptHe : top.action.promptEn } : {}),
+    ...(top.action?.kind === "applyCalorieGoal" ? { actionLabel: ACTION_LABEL.accept[l], keepLabel: ACTION_LABEL.keep[l] } : {}),
+  });
   const action: Insight["action"] =
     top.action?.kind === "askLily"
       ? { kind: "askLily", label: ACTION_LABEL.askLily[lang], prompt: lang === "he" ? top.action.promptHe : top.action.promptEn }
@@ -108,6 +116,7 @@ export async function generateDailyInsight(uid: string, metrics: MetricsCurrent,
     kind: "daily",
     title: TITLES[top.type][lang],
     body,
+    i18n: { he: text("he", bodyHe), en: text("en", bodyEn) },
     ...(action ? { action } : {}),
     evidence: top.evidence,
     status: "new",
@@ -159,7 +168,11 @@ export async function createWeeklyReview(uid: string, metrics: MetricsCurrent, p
     type: "weeklyReview",
     kind: "weekly",
     title: TITLES.weeklyReview[lang],
-    body: weeklyReviewText(metrics, lang, latestDaily?.body),
+    body: weeklyReviewText(metrics, lang, latestDaily?.i18n?.[lang]?.body ?? latestDaily?.body),
+    i18n: {
+      he: { title: TITLES.weeklyReview.he, body: weeklyReviewText(metrics, "he", latestDaily?.i18n?.he.body ?? (lang === "he" ? latestDaily?.body : undefined)) },
+      en: { title: TITLES.weeklyReview.en, body: weeklyReviewText(metrics, "en", latestDaily?.i18n?.en.body ?? (lang === "en" ? latestDaily?.body : undefined)) },
+    },
     evidence: { loggedDays7: metrics.adherence.loggedDays7 },
     status: "new",
     createdAt: new Date().toISOString(),

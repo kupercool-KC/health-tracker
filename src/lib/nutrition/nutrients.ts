@@ -114,6 +114,8 @@ export function statusFor(kind: NutrientKind, value: number, target: number): Nu
 
 export interface DayNutrientTotals {
   totals: Record<NutrientKey, number>;
+  /** For each nutrient, how many meals of the day carry a value for it (older meals only have some of them). */
+  counts: Record<NutrientKey, number>;
   /** Meals that carry the new nutrients (sugar/saturatedFat/sodium present) vs all meals of the day. */
   coveredMeals: number;
   totalMeals: number;
@@ -121,10 +123,14 @@ export interface DayNutrientTotals {
 
 export function sumDayNutrients(entries: Pick<MealEntry, NutrientKey>[]): DayNutrientTotals {
   const totals: Record<NutrientKey, number> = { carbs: 0, fat: 0, fiber: 0, sugar: 0, saturatedFat: 0, sodium: 0 };
+  const counts: Record<NutrientKey, number> = { carbs: 0, fat: 0, fiber: 0, sugar: 0, saturatedFat: 0, sodium: 0 };
   let covered = 0;
   for (const e of entries) {
-    for (const { key } of NUTRIENTS) totals[key] += e[key] ?? 0;
+    for (const { key } of NUTRIENTS) {
+      totals[key] += e[key] ?? 0;
+      if (e[key] != null) counts[key]++;
+    }
     if (e.sodium != null && e.sugar != null && e.saturatedFat != null) covered++;
   }
-  return { totals, coveredMeals: covered, totalMeals: entries.length };
+  return { totals, counts, coveredMeals: covered, totalMeals: entries.length };
 }

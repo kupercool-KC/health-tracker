@@ -231,6 +231,8 @@ export interface UserProfile {
   showCarbs?: boolean;
   showFat?: boolean;
   showFiber?: boolean;
+  /** Daily water goal in millilitres (default derived from body weight, editable). */
+  waterGoalMl?: number;
   /** Optional goal for the Progress screen: weight to reach and by when (yyyy-mm-dd). startWeightKg/targetSetAt are stamped when the target is saved. */
   targetWeightKg?: number;
   targetDate?: string;
@@ -454,6 +456,8 @@ export interface DailyStats {
   sugar: number;
   saturatedFat: number;
   sodium: number;
+  /** Water drunk that day, millilitres. */
+  waterMl?: number;
   mealsLogged: number;
   nutrientCoveredMeals: number;
   burned: number;
@@ -511,16 +515,27 @@ export type InsightType =
   | "streak"
   | "aheadOfPlan"
   | "recalibrate"
+  | "waterLow"
   | "weeklyReview";
 
 /** users/{uid}/insights/{id} — a phrased insight shown on Today (and optionally sent on WhatsApp). */
+export interface InsightText {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  keepLabel?: string;
+  prompt?: string;
+}
+
 export interface Insight {
   id: string;
   type: InsightType;
   kind: "daily" | "weekly";
-  /** Already localized (the user's profile language). */
+  /** In the user's profile language (used where the UI language is unknown, e.g. WhatsApp fallback). */
   title: string;
   body: string;
+  /** Both languages, so the app shows the insight in whichever language its UI is set to. */
+  i18n?: { he: InsightText; en: InsightText };
   action?: { kind: "askLily"; label: string; prompt: string } | { kind: "applyCalorieGoal"; label: string; value: number; keepLabel: string };
   evidence: Record<string, number | string>;
   status: "new" | "shown" | "acted" | "dismissed";
@@ -529,4 +544,12 @@ export interface Insight {
   /** yyyy-mm-dd the insight was generated for (Israel date). */
   date: string;
   whatsappSentAt?: string;
+}
+
+/** users/{uid}/water/{date} — one doc per day; `ml` is the running total. */
+export interface WaterDay {
+  date: string;
+  ml: number;
+  entries: { time: string; ml: number }[];
+  updatedAt: string;
 }

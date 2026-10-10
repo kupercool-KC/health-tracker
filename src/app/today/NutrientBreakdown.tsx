@@ -35,7 +35,8 @@ export default function NutrientBreakdown({ entries, goals }: { entries: MealEnt
 
   const targets = resolveTargets(goals);
   const day = sumDayNutrients(entries);
-  if (day.coveredMeals === 0) {
+  const anyData = NUTRIENTS.some(({ key }) => day.counts[key] > 0);
+  if (!anyData) {
     return (
       <section style={{ marginTop: 16 }}>
         <div className="card" style={{ display: "grid", gap: 4 }}>
@@ -59,14 +60,16 @@ export default function NutrientBreakdown({ entries, goals }: { entries: MealEnt
     const target = targetOf[key];
     // Early in the day a "below" status for a floor/target nutrient is expected, so only over-limit values count as off-track in the chips.
     const status = statusFor(kind, value, target);
-    return { key, unit, kind, value, target, status, ratio: target > 0 ? value / target : 0 };
+    return { key, unit, kind, value, target, status, ratio: target > 0 ? value / target : 0, hasData: day.counts[key] > 0 };
   });
   const flagged = rows
+    .filter((r) => r.hasData)
     .filter((r) => r.status === "above" || (r.kind === "min" && r.status === "below" && day.totalMeals >= 3))
     .sort((a, b) => Math.abs(b.ratio - 1) - Math.abs(a.ratio - 1))
     .slice(0, 3);
 
-  const coverage = t("nutrientCoverage").replace("{n}", String(day.coveredMeals)).replace("{m}", String(day.totalMeals));
+  const fullyCovered = day.coveredMeals === day.totalMeals;
+  const coverage = fullyCovered ? null : t("nutrientCoverage").replace("{n}", String(day.coveredMeals)).replace("{m}", String(day.totalMeals));
 
   return (
     <section style={{ marginTop: 16 }}>
@@ -103,17 +106,21 @@ export default function NutrientBreakdown({ entries, goals }: { entries: MealEnt
               <div key={r.key} style={{ display: "grid", gap: 3 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 8 }}>
                   <span>{t(LABEL[r.key])}</span>
-                  <bdi dir="ltr" style={{ color: "var(--muted)" }}>
-                    {Math.round(r.value)} / {r.kind === "min" ? "≥" : r.kind === "max" ? "≤" : ""}
-                    {r.target} {r.unit === "mg" ? t("unitMg") : t("unitG")}
-                  </bdi>
+                  {r.hasData ? (
+                    <bdi dir="ltr" style={{ color: "var(--muted)" }}>
+                      {Math.round(r.value)} / {r.kind === "min" ? "≥" : r.kind === "max" ? "≤" : ""}
+                      {r.target} {r.unit === "mg" ? t("unitMg") : t("unitG")}
+                    </bdi>
+                  ) : (
+                    <span style={{ color: "var(--muted)" }}>{t("nutrientNoData")}</span>
+                  )}
                 </div>
                 <div style={{ height: 6, borderRadius: 3, background: "var(--line)", overflow: "hidden" }} role="presentation">
-                  <div style={{ width: `${Math.min(100, Math.round(r.ratio * 100))}%`, height: "100%", background: statusColor(r.status) }} />
+                  {r.hasData && <div style={{ width: `${Math.min(100, Math.round(r.ratio * 100))}%`, height: "100%", background: statusColor(r.status) }} />}
                 </div>
               </div>
             ))}
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>{coverage}</span>
+            {coverage && <span style={{ color: "var(--muted)", fontSize: 12 }}>{coverage}</span>}
           </div>
         )}
       </div>

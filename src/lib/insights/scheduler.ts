@@ -13,6 +13,7 @@ import { sendWhatsAppText } from "@/lib/whatsapp/client";
 import { computeMetrics } from "@/lib/metrics/compute";
 import { createWeeklyReview, generateDailyInsight } from "./generate";
 import { writePatterns } from "./patterns";
+import { whatsappLang } from "@/lib/whatsapp/lang";
 import type { Insight, UserProfile } from "@/lib/types";
 
 export interface IsraelNow {
@@ -76,7 +77,9 @@ export async function runInsightDeliveries(now: IsraelNow): Promise<number> {
         const snap = await user.collection("insights").where("date", "==", now.date).get();
         const insight = snap.docs.map((d) => d.data() as Insight).find((i) => i.kind === "daily" && i.status !== "dismissed" && !i.whatsappSentAt);
         if (insight) {
-          const msg = `${insight.title}\n${insight.body}`;
+          const l = await whatsappLang(uid, profile.language === "en" ? "en" : "he");
+          const t = insight.i18n?.[l] ?? insight;
+          const msg = `${t.title}\n${t.body}`;
           await sendWhatsAppText(phone, msg);
           await user.collection("insights").doc(insight.id).set({ whatsappSentAt: new Date().toISOString() }, { merge: true });
           await deliveryRef.set({ lastDailyDate: now.date }, { merge: true });
@@ -89,7 +92,8 @@ export async function runInsightDeliveries(now: IsraelNow): Promise<number> {
         const review = metrics ? await createWeeklyReview(uid, metrics, profile) : null;
         const weekly = review ?? ((await user.collection("insights").doc(`${now.date}-weekly`).get()).data() as Insight | undefined);
         if (weekly && !weekly.whatsappSentAt) {
-          await sendWhatsAppText(phone, weekly.body);
+          const l = await whatsappLang(uid, profile.language === "en" ? "en" : "he");
+          await sendWhatsAppText(phone, (weekly.i18n?.[l] ?? weekly).body);
           await user.collection("insights").doc(weekly.id).set({ whatsappSentAt: new Date().toISOString() }, { merge: true });
           await deliveryRef.set({ lastWeeklyDate: now.date }, { merge: true });
           sent++;

@@ -24,7 +24,7 @@ export async function computeMetrics(uid: string, now = new Date()): Promise<Met
   const today = israelDateKey(now);
   const from = shift(today, -(WINDOW - 1));
 
-  const [profileSnap, mealSnap, workoutSnap, stepSnap, sleepSnap, vitalSnap, bodySnap] = await Promise.all([
+  const [profileSnap, mealSnap, workoutSnap, stepSnap, sleepSnap, vitalSnap, bodySnap, waterSnap] = await Promise.all([
     user.collection("meta").doc("profile").get(),
     user.collection("meals").where("date", ">=", from).get(),
     user.collection("workouts").where("date", ">=", from).get(),
@@ -32,6 +32,7 @@ export async function computeMetrics(uid: string, now = new Date()): Promise<Met
     user.collection("sleep").where("date", ">=", from).get(),
     user.collection("vitals").where("date", ">=", from).get(),
     user.collection("bodyMetrics").where("date", ">=", from).get(),
+    user.collection("water").where("date", ">=", from).get(),
   ]);
   const profile = profileSnap.data() as UserProfile | undefined;
   if (!profile?.onboarded) return null;
@@ -44,6 +45,7 @@ export async function computeMetrics(uid: string, now = new Date()): Promise<Met
   }
   const steps = new Map(stepSnap.docs.map((d) => [d.id, (d.data() as { steps: number }).steps]));
   const sleep = new Map(sleepSnap.docs.map((d) => [d.id, (d.data() as { asleepMin: number }).asleepMin]));
+  const water = new Map(waterSnap.docs.map((d) => [d.id, (d.data() as { ml: number }).ml]));
   const hr = new Map(vitalSnap.docs.map((d) => [d.id, (d.data() as { restingHr?: number }).restingHr]));
   const body = bodySnap.docs.map((d) => d.data() as BodyMetricsEntry).filter((b) => b.weightKg != null).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -71,6 +73,7 @@ export async function computeMetrics(uid: string, now = new Date()): Promise<Met
       sugar: r1(nut.totals.sugar),
       saturatedFat: r1(nut.totals.saturatedFat),
       sodium: Math.round(nut.totals.sodium),
+      ...(water.has(date) ? { waterMl: water.get(date) } : {}),
       mealsLogged: entries.length,
       nutrientCoveredMeals: nut.coveredMeals,
       burned,

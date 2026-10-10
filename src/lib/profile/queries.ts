@@ -16,7 +16,7 @@ export async function getFullProfile(uid: string): Promise<UserProfile | undefin
 
 export async function getUserGoals(
   uid: string,
-): Promise<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">> {
+): Promise<Pick<UserProfile, "calorieGoal" | "proteinGoal" | "netCalorieBurnFactor" | "stepGoal" | "customGoals" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal" | "waterGoalMl" | "weight">> {
   const ref = doc(db, "users", uid, "meta", "profile");
   const snap = await getDoc(ref);
   const data = snap.data() as UserProfile | undefined;
@@ -30,5 +30,7 @@ export async function getUserGoals(
     nutrientTargets: data?.nutrientTargets,
     carbGoal: data?.carbGoal,
     fatGoal: data?.fatGoal,
+    waterGoalMl: data?.waterGoalMl,
+    weight: data?.weight,
   };
 }

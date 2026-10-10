@@ -22,6 +22,7 @@ import { calculateBmr, calculateGoals, calculateTdee } from "@/lib/goals/calcula
 import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
 import { recordGoalChange } from "@/lib/goals/goalHistory";
 import { DIET_STYLES, computeAutoTargets } from "@/lib/nutrition/nutrients";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import { INITIAL_IMPORT_DAYS, connectAppleHealth, importAppleHealth, isAppleHealthEnabled, isAppleHealthSupported } from "@/lib/health/appleHealth";
 import type { HealthSuggestions } from "@/lib/health/suggestions";
 import type {
@@ -83,6 +84,8 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [dietStyle, setDietStyle] = useState<DietStyle>("balanced");
+  // Daily water goal (ml); stays on the weight-based default until the user edits it.
+  const [waterGoal, setWaterGoal] = useState<number | null>(null);
   // Optional goal for the Progress timeline.
   const [targetWeight, setTargetWeight] = useState("");
   const [targetDate, setTargetDate] = useState("");
@@ -180,6 +183,7 @@ export default function Onboarding() {
       if (p.averageDailySteps != null) setAverageDailySteps(p.averageDailySteps);
       if (p.stepGoal != null) setStepGoal(p.stepGoal);
       if (p.dietStyle) setDietStyle(p.dietStyle);
+      if (p.waterGoalMl != null) setWaterGoal(p.waterGoalMl);
     });
   }, [user]);
 
@@ -262,6 +266,7 @@ export default function Onboarding() {
         fatGoal: calculated.fatGoal,
         averageDailySteps,
         stepGoal,
+        waterGoalMl: waterGoal ?? defaultWaterGoalMl(weight),
         dietStyle,
         nutrientTargets: computeAutoTargets(calculated.calorieGoal, calculated.proteinGoal, dietStyle),
         ...(targetWeight && Number(targetWeight) >= 30 ? { targetWeightKg: Number(targetWeight), targetDate: targetDate || undefined, startWeightKg: weight, targetSetAt: now } : {}),
@@ -586,6 +591,13 @@ export default function Onboarding() {
               onChange={(e) => setStepGoal(Number(e.target.value) || 0)}
               style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }}
             />
+          </label>
+          <h2 style={{ margin: "12px 0 0" }}>{t("onboardingWaterTitle")}</h2>
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("onboardingWaterHint")}</p>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("waterGoalLabel")}</span>
+            <input id="onb-water-goal" type="number" inputMode="numeric" min={500} max={8000} step={250} value={waterGoal ?? defaultWaterGoalMl(weight)} onChange={(e) => setWaterGoal(Number(e.target.value) || null)} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("waterGoalHint")}</span>
           </label>
         </section>
       )}

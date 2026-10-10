@@ -13,6 +13,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getFrequentMealsForChat, type FrequentMealForChat } from "@/lib/nutrition/frequentMeals";
 import { summarizeProfileForChat } from "@/lib/chat/chat";
 import { readFacts, type AgentFact } from "./memory";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import { resolveTargets, sumDayNutrients, type NutrientKey } from "@/lib/nutrition/nutrients";
 import type { ChatMessage, MealDay, MealEntry, MetricsCurrent, PendingAction, UserProfile, Workout } from "@/lib/types";
 
@@ -61,6 +62,7 @@ export interface AgentState {
   metrics?: MetricsCurrent;
   patterns?: { workoutPatterns?: string; eatingPatterns?: string };
   insights: { type: string; body: string; status: string; date: string }[];
+  waterTodayMl: number;
 }
 
 /** An open proposal this recent is still "live" — the draft survives this many messages (a forgotten confirmation can still be tapped later via its buttons; a typed "כן" is stricter, see CONFIRM_LOOKBACK_MESSAGES in the WhatsApp route). */
@@ -109,7 +111,7 @@ export function localClock(nowIso: string): { hm: string } {
 export async function buildAgentState(uid: string, today: string, nowIso: string): Promise<AgentState> {
   const u = adminDb.collection("users").doc(uid);
   const since = addDays(today, -2);
-  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals, healthSyncSnap, clientSnap, metricsSnap, patternsSnap, insightsSnap] = await Promise.all([
+  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals, healthSyncSnap, clientSnap, metricsSnap, patternsSnap, insightsSnap, waterSnap] = await Promise.all([
     u.collection("meta").doc("profile").get(),
     u.collection("meals").where(FieldPath.documentId(), ">=", since).get(),
     u.collection("workouts").where("date", ">=", since).get(),
@@ -121,6 +123,7 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     u.collection("metrics").doc("current").get(),
     u.collection("meta").doc("patterns").get(),
     u.collection("insights").orderBy("createdAt", "desc").limit(3).get(),
+    u.collection("water").doc(today).get(),
   ]);
   const profile = profileSnap.data() as UserProfile | undefined;
 
@@ -169,6 +172,7 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     client: clientSnap.data() as AgentState["client"],
     metrics: metricsSnap.data() as MetricsCurrent | undefined,
     patterns: patternsSnap.data() as AgentState["patterns"],
+    waterTodayMl: (waterSnap.data() as { ml?: number } | undefined)?.ml ?? 0,
     insights: insightsSnap.docs.map((d) => d.data() as { type: string; body: string; status: string; date: string }).filter((i) => i.status !== "dismissed"),
   };
 }
@@ -233,6 +237,11 @@ export function renderState(state: AgentState, draft: Draft): string {
     if (state.patterns?.workoutPatterns) lines.push(`  training pattern: ${state.patterns.workoutPatterns}`);
     if (state.patterns?.eatingPatterns) lines.push(`  eating pattern: ${state.patterns.eatingPatterns}`);
     for (const i of state.insights) lines.push(`  recent insight (${i.date}, ${i.type}): ${i.body.replace(/\n/g, " ")}`);
+  }
+
+  {
+    const goalMl = state.profile?.waterGoalMl ?? defaultWaterGoalMl(state.profile?.weight);
+    lines.push(`WATER TODAY (saved): ${state.waterTodayMl}/${goalMl} ml${state.waterTodayMl >= goalMl ? " — goal reached" : ` — ${goalMl - state.waterTodayMl} ml to go`}. Water is saved immediately with log_water (no confirmation).`);
   }
 
   lines.push("\nDRAFT (proposed, NOT saved yet — waiting for the user's confirmation):");

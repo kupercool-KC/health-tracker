@@ -54,3 +54,9 @@ Both must pass. Don't call a change fixed without them.
   (production, auto-deploys) when explicitly asked ("push to prod" / "deploy").
 - Solo project: no CI, no staging beyond the `dev` Vercel preview. Move fast,
   don't skip the typecheck/build gate.
+
+## Hebrew + RTL is mandatory for everything (standing rule)
+Every screen, string, notification, WhatsApp message and **generated content** (insights, summaries, LLM-written text) must work in Hebrew with correct RTL, not just English.
+- Every new UI string: `en` + `he` in `src/lib/i18n/strings.ts`. Dynamic/LLM text: generate or store both languages and pick by the UI language (see `Insight.i18n`); never ship English-only content.
+- Numbers, units, dates, arrows and `+250`-style tokens: wrap in `<bdi dir="ltr">`, use `forwardArrow` from `useI18n` (never a literal →), and format dates with `Intl.DateTimeFormat(lang, …)` (not the MM/DD helper) in new code. SVG charts: `direction: ltr`.
+- Before calling a UI change done, view it with the language toggle on **עב** (simulator or browser) and check order, alignment and truncation.

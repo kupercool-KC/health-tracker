@@ -6,9 +6,10 @@ import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { DIET_STYLES, computeAutoTargets, resolveTargets } from "@/lib/nutrition/nutrients";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import type { DietStyle, NutrientTargets, UserProfile } from "@/lib/types";
 
-type ProfileSlice = Pick<UserProfile, "calorieGoal" | "proteinGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">;
+type ProfileSlice = Pick<UserProfile, "calorieGoal" | "proteinGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal" | "waterGoalMl" | "weight">;
 
 const FIELDS: { key: keyof Omit<NutrientTargets, "source">; label: "carbs" | "fat" | "fiber" | "nutrientSugar" | "nutrientSatFat" | "nutrientSodium"; unit: "unitG" | "unitMg"; bound?: "nutrientAtLeast" | "nutrientAtMost" }[] = [
   { key: "carbsG", label: "carbs", unit: "unitG" },
@@ -30,7 +31,7 @@ export default function NutrientTargetsCard() {
     if (!user) return;
     const snap = await getDoc(doc(db, "users", user.uid, "meta", "profile"));
     const d = snap.data() as UserProfile | undefined;
-    if (d) setProfile({ calorieGoal: d.calorieGoal, proteinGoal: d.proteinGoal, dietStyle: d.dietStyle, nutrientTargets: d.nutrientTargets, carbGoal: d.carbGoal, fatGoal: d.fatGoal });
+    if (d) setProfile({ calorieGoal: d.calorieGoal, proteinGoal: d.proteinGoal, dietStyle: d.dietStyle, nutrientTargets: d.nutrientTargets, carbGoal: d.carbGoal, fatGoal: d.fatGoal, waterGoalMl: d.waterGoalMl, weight: d.weight });
   }, [user]);
   useEffect(() => {
     load().catch(() => {});
@@ -84,6 +85,26 @@ export default function NutrientTargetsCard() {
           </button>
         ))}
       </div>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("waterGoalLabel")}</span>
+        <input
+          id="profile-water-goal"
+          type="number"
+          inputMode="numeric"
+          min={500}
+          max={8000}
+          step={250}
+          key={`water-${profile.waterGoalMl ?? "auto"}`}
+          defaultValue={profile.waterGoalMl ?? defaultWaterGoalMl(profile.weight)}
+          onBlur={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v) && v >= 500 && v <= 8000 && v !== (profile.waterGoalMl ?? defaultWaterGoalMl(profile.weight))) save({ waterGoalMl: v });
+          }}
+          style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)", maxWidth: 160 }}
+        />
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>{t("waterGoalHint")}</span>
+      </label>
 
       <h3 style={{ margin: "6px 0 0", fontSize: 14 }}>{t("nutrientTargetsTitle")}</h3>
       <span style={{ color: "var(--muted)", fontSize: 12 }}>

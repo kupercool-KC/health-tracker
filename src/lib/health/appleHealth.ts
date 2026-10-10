@@ -151,13 +151,30 @@ export async function importAppleHealth(days: number, opts: { autoFill?: boolean
     autoFill: opts.autoFill,
   });
   if (days >= INITIAL_IMPORT_DAYS) writeFlag(LAST_FULL_KEY, String(Date.now()));
+  // Screens (Today) listen for this to reload their numbers.
+  window.dispatchEvent(new Event("health:synced"));
   return result;
 }
 
 /** Called on every app open: re-reads the last few days; once a week does a full 60-day pass that also refreshes the profile. */
-export async function syncAppleHealth(): Promise<ImportResult | null> {
+let lastSyncAt = 0;
+let syncing: Promise<ImportResult | null> | null = null;
+
+export async function syncAppleHealth(opts: { force?: boolean } = {}): Promise<ImportResult | null> {
   if (!isAppleHealthSupported() || !isAppleHealthEnabled() || !auth.currentUser) return null;
+  // Throttle automatic syncs to once a minute; a pull-to-refresh forces one. Overlapping calls share the same run.
+  if (syncing) return syncing;
+  if (!opts.force && Date.now() - lastSyncAt < 60_000) return null;
+  syncing = runSync().finally(() => {
+    syncing = null;
+  });
+  return syncing;
+}
+
+async function runSync(): Promise<ImportResult | null> {
   const lastFull = Number(readFlag(LAST_FULL_KEY) ?? 0);
   const full = Date.now() - lastFull > WEEK_MS;
-  return importAppleHealth(full ? INITIAL_IMPORT_DAYS : INCREMENTAL_DAYS, { autoFill: full });
+  const result = await importAppleHealth(full ? INITIAL_IMPORT_DAYS : INCREMENTAL_DAYS, { autoFill: full });
+  lastSyncAt = Date.now();
+  return result;
 }

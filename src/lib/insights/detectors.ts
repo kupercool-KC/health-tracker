@@ -4,6 +4,7 @@
  * of logged data before it may speak. Not implemented yet (needs per-meal clock times in dailyStats): late-evening eating.
  */
 import { resolveTargets } from "@/lib/nutrition/nutrients";
+import { defaultWaterGoalMl } from "@/lib/water/water";
 import type { DailyStats, InsightType, MetricsCurrent, UserProfile } from "@/lib/types";
 
 export interface Candidate {
@@ -161,6 +162,21 @@ export function detect({ stats, metrics, profile }: Ctx): Candidate[] {
     }
   }
 
+  // Water consistently low (only for people who actually track it: at least 3 days with an entry in the last 7).
+  {
+    const goalMl = profile.waterGoalMl ?? defaultWaterGoalMl(profile.weight);
+    const tracked = stats.slice(-7).filter((d) => (d.waterMl ?? 0) > 0);
+    const low = tracked.filter((d) => (d.waterMl ?? 0) < goalMl * 0.6).length;
+    if (tracked.length >= 3 && low >= 3 && l7.length >= 5) {
+      out.push({
+        type: "waterLow",
+        effect: 0.45,
+        evidence: { daysLow: low, daysTracked: tracked.length, avgMl: r(avg(tracked.map((d) => d.waterMl ?? 0))), goalMl },
+        action: { kind: "askLily", promptHe: "תעזרי לי לזכור לשתות יותר מים במהלך היום", promptEn: "Help me remember to drink more water during the day" },
+      });
+    }
+  }
+
   // Positives.
   if (l7.length === 7 && l7.every((d) => d.protein >= proteinGoal * 0.9)) {
     out.push({ type: "streak", effect: 0.6, positive: true, evidence: { kind: "protein7of7", days: 7 } });
@@ -203,6 +219,7 @@ export function goalWeight(type: InsightType, goals: UserProfile["goals"] | unde
     sodiumHigh: 0.8,
     fiberLow: 0.7,
     sleepIntake: 0.8,
+    waterLow: 0.8,
     streak: 0.7,
     aheadOfPlan: 0.8,
   };
