@@ -14,7 +14,7 @@ import { getFrequentMealsForChat, type FrequentMealForChat } from "@/lib/nutriti
 import { summarizeProfileForChat } from "@/lib/chat/chat";
 import { readFacts, type AgentFact } from "./memory";
 import { resolveTargets, sumDayNutrients, type NutrientKey } from "@/lib/nutrition/nutrients";
-import type { ChatMessage, MealDay, MealEntry, PendingAction, UserProfile, Workout } from "@/lib/types";
+import type { ChatMessage, MealDay, MealEntry, MetricsCurrent, PendingAction, UserProfile, Workout } from "@/lib/types";
 
 export interface Draft {
   meal?: NonNullable<ChatMessage["pendingMeal"]>;
@@ -57,6 +57,10 @@ export interface AgentState {
   /** Apple Health import status (iOS app only) and the native build the user last opened — for troubleshooting. */
   healthSync?: { lastSyncAt: string; workouts: number; sleepNights: number; stepDays: number };
   client?: { platform: string; version: string; build: string; lastSeenAt: string };
+  /** Nightly rollup + weekly patterns + the latest insights, so Lily can refer to them naturally. */
+  metrics?: MetricsCurrent;
+  patterns?: { workoutPatterns?: string; eatingPatterns?: string };
+  insights: { type: string; body: string; status: string; date: string }[];
 }
 
 /** An open proposal this recent is still "live" — the draft survives this many messages (a forgotten confirmation can still be tapped later via its buttons; a typed "כן" is stricter, see CONFIRM_LOOKBACK_MESSAGES in the WhatsApp route). */
@@ -105,7 +109,7 @@ export function localClock(nowIso: string): { hm: string } {
 export async function buildAgentState(uid: string, today: string, nowIso: string): Promise<AgentState> {
   const u = adminDb.collection("users").doc(uid);
   const since = addDays(today, -2);
-  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals, healthSyncSnap, clientSnap] = await Promise.all([
+  const [profileSnap, mealSnap, workoutSnap, stepsSnap, facts, frequentMeals, healthSyncSnap, clientSnap, metricsSnap, patternsSnap, insightsSnap] = await Promise.all([
     u.collection("meta").doc("profile").get(),
     u.collection("meals").where(FieldPath.documentId(), ">=", since).get(),
     u.collection("workouts").where("date", ">=", since).get(),
@@ -114,6 +118,9 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     getFrequentMealsForChat(uid),
     u.collection("meta").doc("healthSync").get(),
     u.collection("meta").doc("client").get(),
+    u.collection("metrics").doc("current").get(),
+    u.collection("meta").doc("patterns").get(),
+    u.collection("insights").orderBy("createdAt", "desc").limit(3).get(),
   ]);
   const profile = profileSnap.data() as UserProfile | undefined;
 
@@ -160,6 +167,9 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
     frequentMeals,
     healthSync: healthSyncSnap.data() as AgentState["healthSync"],
     client: clientSnap.data() as AgentState["client"],
+    metrics: metricsSnap.data() as MetricsCurrent | undefined,
+    patterns: patternsSnap.data() as AgentState["patterns"],
+    insights: insightsSnap.docs.map((d) => d.data() as { type: string; body: string; status: string; date: string }).filter((i) => i.status !== "dismissed"),
   };
 }
 
@@ -210,6 +220,20 @@ export function renderState(state: AgentState, draft: Draft): string {
         : "never imported (not connected, or permission not granted)"
     }${state.client ? ` | app ${state.client.platform} ${state.client.version} (build ${state.client.build}), last opened ${state.client.lastSeenAt}` : " | native app build unknown (web or old build)"}`,
   );
+
+  if (state.metrics || state.patterns?.workoutPatterns || state.patterns?.eatingPatterns || state.insights.length) {
+    const m = state.metrics;
+    lines.push("\nPROGRESS & PATTERNS (computed nightly; use naturally when relevant, don't recite; a goal-weight number may be mentioned if asked):");
+    if (m) {
+      lines.push(`  last 7 days: logged ${m.adherence.loggedDays7}/7, calorie-goal days ${m.adherence.calorieDays7}, protein-goal days ${m.adherence.proteinDays7}, workouts ${m.workouts7.count}; logging streak ${m.logging.streak} days`);
+      if (m.weight) {
+        lines.push(`  weight trend ${m.weight.trendKg} kg${m.weight.weeklyRateKg != null ? ` (${m.weight.weeklyRateKg > 0 ? "+" : ""}${m.weight.weeklyRateKg} kg/week)` : ""}${m.weight.targetKg ? `, target ${m.weight.targetKg} kg${m.weight.targetDate ? ` by ${m.weight.targetDate}` : ""}, status: ${m.weight.status}${m.weight.etaDate ? `, ETA ${m.weight.etaDate}` : ""}` : ""}`);
+      }
+    }
+    if (state.patterns?.workoutPatterns) lines.push(`  training pattern: ${state.patterns.workoutPatterns}`);
+    if (state.patterns?.eatingPatterns) lines.push(`  eating pattern: ${state.patterns.eatingPatterns}`);
+    for (const i of state.insights) lines.push(`  recent insight (${i.date}, ${i.type}): ${i.body.replace(/\n/g, " ")}`);
+  }
 
   lines.push("\nDRAFT (proposed, NOT saved yet — waiting for the user's confirmation):");
   const draftLines = renderDraft(draft);

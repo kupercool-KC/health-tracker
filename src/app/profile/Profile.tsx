@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import NutrientTargetsCard from "@/app/profile/NutrientTargetsCard";
+import InsightPrefsCard from "@/app/profile/InsightPrefsCard";
 import {
   INITIAL_IMPORT_DAYS,
   connectAppleHealth,
@@ -751,6 +752,8 @@ export default function Profile() {
         {infoSaved && <p style={{ color: "var(--burned)", margin: 0 }}>{t("saved")}</p>}
         {!fullProfile && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("yourInfoNone")}</p>}
       </div>
+
+      <InsightPrefsCard />
 
       <NutrientTargetsCard />
 

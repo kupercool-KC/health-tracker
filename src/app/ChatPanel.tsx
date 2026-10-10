@@ -163,6 +163,19 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [activeSession?.messages.length, pendingUserMessage, awaitingReply]);
 
+  // A prompt handed over by an insight card ("Ask Lily"): prefill the box, never auto-send.
+  useEffect(() => {
+    try {
+      const prefill = sessionStorage.getItem("lily:prefill");
+      if (prefill) {
+        setText(prefill);
+        sessionStorage.removeItem("lily:prefill");
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+
   async function send(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     if (!user || (!text.trim() && files.length === 0) || busy) return;

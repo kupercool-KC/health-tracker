@@ -203,6 +203,13 @@ export const strings = {
   progressLegendTrend: { en: "Trend", he: "מגמה" },
   progressLegendPlan: { en: "Plan", he: "תוכנית" },
   progressPercentDone: { en: "{n}% of the way", he: "{n}% מהדרך" },
+  insightNotUseful: { en: "Not useful", he: "לא מועיל" },
+  insightGoalUpdated: { en: "Goal updated", he: "היעד עודכן" },
+  insightWeeklyBadge: { en: "Weekly review", he: "סיכום שבועי" },
+  insightPrefsTitle: { en: "Insights and weekly review", he: "תובנות וסיכום שבועי" },
+  insightDailyWa: { en: "Send the daily insight on WhatsApp (12:30)", he: "לשלוח את התובנה היומית בווצאפ (12:30)" },
+  insightWeeklyWa: { en: "Send the weekly review on WhatsApp (Sunday 20:00)", he: "לשלוח את הסיכום השבועי בווצאפ (ראשון 20:00)" },
+  insightPrefsNeedsLink: { en: "Link WhatsApp to get these there. They always appear in the app.", he: "קשרו ווצאפ כדי לקבל אותם שם. באפליקציה הם תמיד מופיעים." },
   whatsappLinkTitle: { en: "WhatsApp bot", he: "בוט WhatsApp" },
   whatsappLinkHint: {
     en: "Link your WhatsApp number to log meals, workouts, and weigh-ins by messaging the bot directly, the same way you'd use the chat here.",

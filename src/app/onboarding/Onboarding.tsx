@@ -83,6 +83,26 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [dietStyle, setDietStyle] = useState<DietStyle>("balanced");
+  // Optional goal for the Progress timeline.
+  const [targetWeight, setTargetWeight] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [targetHint, setTargetHint] = useState<string | null>(null);
+  const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const quickWeeks = (n: number) => setTargetDate(dayKey(Date.now() + n * 7 * 86_400_000));
+  /** Safe pace: at most 1% of body weight a week. Returns false (and suggests a later date) when the chosen date is too soon. */
+  function targetIsSafe(): boolean {
+    const kg = Number(targetWeight);
+    if (!targetWeight || !Number.isFinite(kg)) return true;
+    const weeks = Math.ceil(Math.abs(kg - weight) / (weight * 0.01));
+    const earliest = dayKey(Date.now() + weeks * 7 * 86_400_000);
+    if (targetDate && targetDate < earliest && Math.abs(kg - weight) > 0.5) {
+      setTargetDate(earliest);
+      setTargetHint(t("progressSafePace").replace("{date}", earliest));
+      return false;
+    }
+    setTargetHint(null);
+    return true;
+  }
 
   // Apple Health pre-step (native iOS app only): ask → explain → import → summary, then the usual steps open pre-filled.
   type HealthPhase = "done" | "ask" | "explain" | "importing" | "summary" | "nothing";
@@ -244,6 +264,7 @@ export default function Onboarding() {
         stepGoal,
         dietStyle,
         nutrientTargets: computeAutoTargets(calculated.calorieGoal, calculated.proteinGoal, dietStyle),
+        ...(targetWeight && Number(targetWeight) >= 30 ? { targetWeightKg: Number(targetWeight), targetDate: targetDate || undefined, startWeightKg: weight, targetSetAt: now } : {}),
         onboarded: true,
         updatedAt: now,
       };
@@ -421,6 +442,22 @@ export default function Onboarding() {
               {t(opt.labelKey)}
             </OptionButton>
           ))}
+          <h2 style={{ margin: "12px 0 0" }}>{t("progressSetTarget")}</h2>
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("progressNoTargetHint")}</p>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("progressTargetWeight")}</span>
+            <input id="onb-target-kg" type="number" inputMode="decimal" min={30} max={250} value={targetWeight} onChange={(e) => setTargetWeight(e.target.value)} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("progressTargetDate")}</span>
+            <input id="onb-target-date" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} style={{ padding: 8, borderRadius: 8, border: "0.5px solid var(--border)" }} />
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[8, 12, 16].map((n) => (
+              <button key={n} type="button" onClick={() => quickWeeks(n)}>{t("progressQuickWeeks").replace("{n}", String(n))}</button>
+            ))}
+          </div>
+          {targetHint && <span style={{ color: "var(--warning, #b7791f)", fontSize: 13 }}>{targetHint}</span>}
         </section>
       )}
 
@@ -613,7 +650,7 @@ export default function Onboarding() {
           <button onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1} style={{ background: "none", color: "var(--muted)" }}>
             {t("back")}
           </button>
-          <button onClick={() => setStep((s) => Math.min(TOTAL_STEPS, s + 1))}>{t("next")}</button>
+          <button onClick={() => { if (step === 2 && !targetIsSafe()) return; setStep((s) => Math.min(TOTAL_STEPS, s + 1)); }}>{t("next")}</button>
         </div>
       )}
     </main>

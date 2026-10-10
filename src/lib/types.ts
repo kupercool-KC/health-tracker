@@ -498,3 +498,35 @@ export interface MetricsCurrent {
   /** Number of days of data the screen can rely on. */
   daysWithData: number;
 }
+
+export type InsightType =
+  | "proteinLow"
+  | "restDayProtein"
+  | "weekendGap"
+  | "plateau"
+  | "sodiumHigh"
+  | "fiberLow"
+  | "trainingDrop"
+  | "sleepIntake"
+  | "streak"
+  | "aheadOfPlan"
+  | "recalibrate"
+  | "weeklyReview";
+
+/** users/{uid}/insights/{id} — a phrased insight shown on Today (and optionally sent on WhatsApp). */
+export interface Insight {
+  id: string;
+  type: InsightType;
+  kind: "daily" | "weekly";
+  /** Already localized (the user's profile language). */
+  title: string;
+  body: string;
+  action?: { kind: "askLily"; label: string; prompt: string } | { kind: "applyCalorieGoal"; label: string; value: number; keepLabel: string };
+  evidence: Record<string, number | string>;
+  status: "new" | "shown" | "acted" | "dismissed";
+  createdAt: string;
+  expiresAt: string;
+  /** yyyy-mm-dd the insight was generated for (Israel date). */
+  date: string;
+  whatsappSentAt?: string;
+}

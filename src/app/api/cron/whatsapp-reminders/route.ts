@@ -14,7 +14,8 @@
  * WhatsApp message and records lastSent[type] = today. Also checks their
  * user-defined customReminders the same way (see src/lib/reminders/manage.ts).
  */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { runInsightDeliveries, runNightlyIfDue } from "@/lib/insights/scheduler";
 import { adminDb } from "@/lib/firebase/admin";
 import { sendWhatsAppText } from "@/lib/whatsapp/client";
 import { getOpenAIClient } from "@/lib/openai/client";
@@ -340,5 +341,17 @@ export async function GET(req: Request) {
     }
   }
 
+  // Metrics + insights automation rides on this same ping (no extra cron job). Runs after the response so a slow night never delays reminders.
+  after(async () => {
+    try {
+      await runNightlyIfDue(now);
+      await runInsightDeliveries(now);
+    } catch (err) {
+      console.error("[cron/whatsapp-reminders] insights scheduler failed:", err);
+    }
+  });
+
   return NextResponse.json({ ok: true, checked: snap.size, sent });
 }
+
+export const maxDuration = 300;

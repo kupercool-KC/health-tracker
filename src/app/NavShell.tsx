@@ -82,6 +82,13 @@ export default function NavShell({ children }: { children: ReactNode }) {
     // mount in the closed position, let it paint, then transition to open
     requestAnimationFrame(() => requestAnimationFrame(() => setChatShown(true)));
   }
+  // "Ask Lily" buttons on insight cards: open the chat; ChatPanel picks up the prefilled prompt.
+  useEffect(() => {
+    const onAsk = () => openChat();
+    window.addEventListener("lily:ask", onAsk);
+    return () => window.removeEventListener("lily:ask", onAsk);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function closeChat() {
     setChatShown(false);
     window.setTimeout(() => setChatRender(false), 260);

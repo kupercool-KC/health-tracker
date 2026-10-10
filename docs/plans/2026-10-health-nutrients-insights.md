@@ -1,6 +1,6 @@
 # Spec: Apple Health import, full nutrients, progress & proactive insights
 
-Status: **specified, not built** (2026-10-10). All decisions below were confirmed by Iddo on 2026-10-10. A fresh session can build from this document without re-asking; ask only if something here turns out to be impossible.
+Status: **built 2026-10-11 (A–D), see "Build status" at the bottom**. Originally specified 2026-10-10. All decisions below were confirmed by Iddo on 2026-10-10. A fresh session can build from this document without re-asking; ask only if something here turns out to be impossible.
 
 House rules for whoever builds this:
 - Iddo is non-technical: report in Hebrew, numbered steps, exact links.
@@ -192,3 +192,16 @@ No medical advice or diagnosis; calorie floor (never suggest below max(1200, BMR
 5. One insight appears on Today with a working action; dismiss works; it doesn't repeat within 7 days.
 6. Sunday 20:00 weekly review arrives on WhatsApp and in the app.
 7. All new strings en + he; light + dark; iPhone width; verified in the simulator.
+
+
+---
+
+## Build status (2026-10-11)
+
+Built and pushed to `main`: Phase A (nutrients), B (Apple Health import), C (metrics engine + Progress tab + target in onboarding), D (detectors, ranking, phrasing, Today insight card, weekly review, WhatsApp delivery with per-user opt-out, patterns in memory, agent awareness) and the Apple Health troubleshooting layer (`docs/apple-health-troubleshooting.md` + Lily's prompt rule + `meta/healthSync`/`meta/client` in agent state).
+
+Automation: the nightly job (metrics, daily insight, Sunday weekly review + patterns) and the WhatsApp deliveries (daily insight 12:30, weekly review Sunday 20:00) run from the existing 15-minute ping of `/api/cron/whatsapp-reminders` via `after()` — no new cron job. `/api/cron/nightly` exists as a manual trigger.
+
+**Verified:** TypeScript + production build; nutrient parsing with real model calls (`/api/dev/agent-eval`); detector logic on synthetic data; mapping/suggestion/target math; Lily's troubleshooting reply.
+**Not verified yet (needs a device/test user):** the HealthKit import end to end (needs build 4 with HealthKit on a real iPhone), the import endpoint with real data, a live nightly run and insight phrasing, and the Progress / insight / onboarding screens visually.
+**Known gaps:** late-evening-eating detector (needs per-meal clock times in `dailyStats`); lean body mass (not exposed by the plugin); incremental anchor sync (a 3-day re-read + weekly 60-day pass is used instead); background delivery (stage 2, needs a native build); nightly job runs inline for all users (fine for a handful, move to a queue when users grow).

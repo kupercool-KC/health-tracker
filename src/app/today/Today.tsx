@@ -7,6 +7,7 @@
  */
 import AppleSignInButton from "@/app/AppleSignInButton";
 import NutrientBreakdown from "@/app/today/NutrientBreakdown";
+import InsightCard from "@/app/today/InsightCard";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
@@ -1005,6 +1006,8 @@ export default function Today() {
             />
             </div>
           </section>
+
+          <InsightCard calorieGoal={goals.calorieGoal} proteinGoal={goals.proteinGoal} />
 
           <NutrientBreakdown entries={mealDay?.entries ?? []} goals={goals} />
 
