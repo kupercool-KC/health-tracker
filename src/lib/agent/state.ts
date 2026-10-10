@@ -45,7 +45,7 @@ export interface AgentState {
   yesterday: string;
   weekday: string;
   meals: { date: string; entries: SavedMealEntry[]; totalCalories: number; totalProtein: number }[];
-  workouts: { id: string; date: string; type: string; durationMin: number; distanceKm?: number; calories?: number }[];
+  workouts: { id: string; date: string; type: string; durationMin: number; distanceKm?: number; calories?: number; fromAppleHealth?: boolean; hkType?: string }[];
   stepsToday?: number;
   calorieGoal?: number;
   proteinGoal?: number;
@@ -133,6 +133,7 @@ export async function buildAgentState(uid: string, today: string, nowIso: string
       durationMin: Math.round(w.duration / 60),
       ...(w.distance != null ? { distanceKm: Math.round(w.distance / 100) / 10 } : {}),
       ...(w.calories != null ? { calories: Math.round(w.calories) } : {}),
+      ...(w.source === "appleHealth" ? { fromAppleHealth: true, hkType: w.hkType } : {}),
     }));
 
   const { hm } = localClock(nowIso);
@@ -168,7 +169,7 @@ export function renderState(state: AgentState, draft: Draft): string {
     for (const e of day.entries) lines.push(`    - [${e.id}] ${e.name}: ${e.calories} kcal, ${e.protein}g protein`);
   }
   for (const w of state.workouts) {
-    lines.push(`  Workout ${w.date} [${w.id}]: ${w.type}, ${w.durationMin} min${w.distanceKm != null ? `, ${w.distanceKm} km` : ""}${w.calories != null ? `, ${w.calories} kcal` : ""}`);
+    lines.push(`  Workout ${w.date} [${w.id}]: ${w.type}, ${w.durationMin} min${w.distanceKm != null ? `, ${w.distanceKm} km` : ""}${w.calories != null ? `, ${w.calories} kcal` : ""}${w.fromAppleHealth ? " (synced from Apple Health)" : ""}`);
   }
   if (state.stepsToday != null) lines.push(`  Steps today: ${state.stepsToday}`);
 

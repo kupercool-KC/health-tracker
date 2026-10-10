@@ -61,8 +61,9 @@ export function computeAutoTargets(calorieGoal: number, proteinGoal: number, sty
 export function resolveTargets(profile: Pick<UserProfile, "calorieGoal" | "proteinGoal" | "dietStyle" | "nutrientTargets" | "carbGoal" | "fatGoal">): NutrientTargets {
   if (profile.nutrientTargets?.source === "manual") return profile.nutrientTargets;
   const auto = computeAutoTargets(profile.calorieGoal, profile.proteinGoal, profile.dietStyle);
-  // Goals set explicitly during onboarding/profile (carbGoal/fatGoal) keep winning.
-  return { ...auto, carbsG: profile.carbGoal ?? auto.carbsG, fatG: profile.fatGoal ?? auto.fatG };
+  // With the default "balanced" style, carb/fat goals set during onboarding/profile keep winning; any other style defines them itself.
+  const styleDefines = profile.dietStyle != null && profile.dietStyle !== "balanced";
+  return styleDefines ? auto : { ...auto, carbsG: profile.carbGoal ?? auto.carbsG, fatG: profile.fatGoal ?? auto.fatG };
 }
 
 export interface NutrientItem {
@@ -90,9 +91,9 @@ export function validateNutrients<T extends NutrientItem>(item: T, opts: { hasAl
   if (out.sodium != null && (out.sodium < 0 || out.sodium > 5000)) drop("sodium");
   if (out.carbs != null && out.carbs > Math.max(5, (out.calories / 4) * 1.15)) drop("carbs");
   if (out.fat != null && out.fat > Math.max(3, (out.calories / 9) * 1.15)) drop("fat");
-  if (out.sugar != null && out.carbs != null && out.sugar > out.carbs * 1.05 + 1) drop("sugar");
+  if (out.sugar != null && item.carbs != null && out.sugar > item.carbs * 1.05 + 1) drop("sugar");
   if (out.saturatedFat != null && out.fat != null && out.saturatedFat > out.fat * 1.05 + 0.5) drop("saturatedFat");
-  if (out.fiber != null && out.carbs != null && out.fiber > out.carbs * 1.05 + 1) drop("fiber");
+  if (out.fiber != null && item.carbs != null && out.fiber > item.carbs * 1.05 + 1) drop("fiber");
   let energyMismatch = false;
   if (!opts.hasAlcohol && out.calories >= 50 && out.carbs != null && out.fat != null) {
     const macroKcal = out.protein * 4 + out.carbs * 4 + out.fat * 9;

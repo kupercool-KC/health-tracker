@@ -11,16 +11,17 @@
 import AppleSignInButton from "@/app/AppleSignInButton";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/firebase/useAuth";
 import NutrientTargetsCard from "@/app/profile/NutrientTargetsCard";
 import {
+  INITIAL_IMPORT_DAYS,
   connectAppleHealth,
+  importAppleHealth,
   isAppleHealthEnabled,
   isAppleHealthSupported,
   setAppleHealthEnabled,
-  syncAppleHealth,
 } from "@/lib/health/appleHealth";
 import { useI18n } from "@/lib/i18n/useI18n";
 import { isAdmin } from "@/lib/admin";
@@ -178,7 +179,17 @@ export default function Profile() {
   const [healthOn, setHealthOn] = useState(false);
   const [healthBusy, setHealthBusy] = useState(false);
   const [healthMsg, setHealthMsg] = useState<string | null>(null);
+  const [healthLast, setHealthLast] = useState<string | null>(null);
   useEffect(() => setHealthOn(isAppleHealthEnabled()), []);
+  useEffect(() => {
+    if (!user || !isAppleHealthSupported()) return;
+    getDoc(doc(db, "users", user.uid, "meta", "healthSync"))
+      .then((snap) => {
+        const at = (snap.data() as { lastSyncAt?: string } | undefined)?.lastSyncAt;
+        if (at) setHealthLast(new Date(at).toLocaleString());
+      })
+      .catch(() => {});
+  }, [user]);
   async function connectHealth() {
     setHealthBusy(true);
     setHealthMsg(null);
@@ -188,8 +199,10 @@ export default function Profile() {
         return;
       }
       setHealthOn(true);
-      await syncAppleHealth();
-      setHealthMsg(t("appleHealthSynced"));
+      const { suggestions } = await importAppleHealth(INITIAL_IMPORT_DAYS, { autoFill: true });
+      const c = suggestions.counts;
+      setHealthMsg(t("appleHealthSummary").replace("{w}", String(c.workouts)).replace("{s}", String(c.sleepNights)).replace("{d}", String(c.stepDays)));
+      setHealthLast(new Date().toLocaleString());
     } catch (err) {
       setHealthMsg(String(err instanceof Error ? err.message : err));
     } finally {
@@ -200,8 +213,9 @@ export default function Profile() {
     setHealthBusy(true);
     setHealthMsg(null);
     try {
-      await syncAppleHealth();
+      await importAppleHealth(7);
       setHealthMsg(t("appleHealthSynced"));
+      setHealthLast(new Date().toLocaleString());
     } catch (err) {
       setHealthMsg(String(err instanceof Error ? err.message : err));
     } finally {
@@ -747,6 +761,11 @@ export default function Profile() {
           {healthOn ? (
             <>
               <span style={{ fontSize: 13 }}>{t("appleHealthConnected")}</span>
+              {healthLast && (
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                  {t("appleHealthLastSync")}: <bdi dir="ltr">{healthLast}</bdi>
+                </span>
+              )}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={syncHealthNow} disabled={healthBusy}>
                   {healthBusy ? t("working") : t("appleHealthSyncNow")}

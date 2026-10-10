@@ -75,6 +75,12 @@ export interface Workout {
   calories?: number;
   /** meters */
   elevationGain?: number;
+  /** Apple's raw workout type (HealthKit), kept even when `type` is a friendlier label. Present for appleHealth workouts. */
+  hkType?: string;
+  /** Our category for the workout (profile workout types), derived from hkType / the typed name. */
+  category?: WorkoutType;
+  /** Recording device when known — "watch" or "phone". */
+  device?: string;
   source: "appleHealth" | "manual";
   /** Stable id from the exporting app, used to dedupe re-imports (also the doc id). */
   externalId: string;
@@ -85,7 +91,7 @@ export interface Workout {
 export interface DailySteps {
   date: string;
   steps: number;
-  source: "manual" | "photo";
+  source: "manual" | "photo" | "appleHealth";
   syncedAt: string;
 }
 
@@ -404,4 +410,28 @@ export interface SharedChat {
   title: string;
   messages: ChatMessage[];
   sharedAt: string;
+}
+
+/** users/{uid}/sleep/{date} — the night that ENDS on `date` (from Apple Health). */
+export interface SleepNight {
+  date: string;
+  asleepMin: number;
+  inBedMin?: number;
+  syncedAt: string;
+}
+
+/** users/{uid}/vitals/{date} (from Apple Health). */
+export interface VitalsDay {
+  date: string;
+  restingHr?: number;
+  syncedAt: string;
+}
+
+/** users/{uid}/meta/healthSync — last Apple Health import, for display and for Lily. */
+export interface HealthSyncMeta {
+  lastSyncAt: string;
+  workouts: number;
+  sleepNights: number;
+  stepDays: number;
+  autoFilledAt?: string;
 }

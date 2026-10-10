@@ -21,8 +21,12 @@ import type { StringKey } from "@/lib/i18n/strings";
 import { calculateBmr, calculateGoals, calculateTdee } from "@/lib/goals/calculate";
 import { getFullProfile, getUserGoals } from "@/lib/profile/queries";
 import { recordGoalChange } from "@/lib/goals/goalHistory";
+import { DIET_STYLES, computeAutoTargets } from "@/lib/nutrition/nutrients";
+import { INITIAL_IMPORT_DAYS, connectAppleHealth, importAppleHealth, isAppleHealthEnabled, isAppleHealthSupported } from "@/lib/health/appleHealth";
+import type { HealthSuggestions } from "@/lib/health/suggestions";
 import type {
   ActivityLevel,
+  DietStyle,
   DietaryPref,
   Goal,
   UserProfile,
@@ -78,6 +82,43 @@ export default function Onboarding() {
 
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [dietStyle, setDietStyle] = useState<DietStyle>("balanced");
+
+  // Apple Health pre-step (native iOS app only): ask → explain → import → summary, then the usual steps open pre-filled.
+  type HealthPhase = "done" | "ask" | "explain" | "importing" | "summary" | "nothing";
+  const [healthPhase, setHealthPhase] = useState<HealthPhase>("done");
+  const [healthSummary, setHealthSummary] = useState<HealthSuggestions | null>(null);
+  const [fromHealth, setFromHealth] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (user && isAppleHealthSupported() && !isAppleHealthEnabled()) setHealthPhase("ask");
+  }, [user]);
+
+  async function startHealthImport() {
+    setHealthPhase("importing");
+    try {
+      const ok = await connectAppleHealth();
+      if (!ok) return setHealthPhase("nothing");
+      const { suggestions } = await importAppleHealth(INITIAL_IMPORT_DAYS);
+      const c = suggestions.counts;
+      if (c.workouts + c.sleepNights + c.stepDays === 0 && !suggestions.weightKg) return setHealthPhase("nothing");
+      setHealthSummary(suggestions);
+      setHealthPhase("summary");
+    } catch {
+      setHealthPhase("nothing");
+    }
+  }
+
+  function applyHealthSuggestions(sg: HealthSuggestions) {
+    const used = new Set<string>();
+    if (sg.heightCm && sg.heightCm >= 100 && sg.heightCm <= 220) { setHeight(sg.heightCm); used.add("basic"); }
+    if (sg.weightKg && sg.weightKg >= 30 && sg.weightKg <= 200) { setWeight(Math.round(sg.weightKg)); used.add("basic"); }
+    if (sg.activityLevel) { setActivityLevel(sg.activityLevel); used.add("activity"); }
+    if (sg.workoutTypes.length) { setWorkoutTypes(sg.workoutTypes); used.add("workouts"); }
+    if (sg.averageDailySteps) { setAverageDailySteps(sg.averageDailySteps); used.add("steps"); }
+    if (sg.stepGoal) { setStepGoal(sg.stepGoal); used.add("steps"); }
+    setFromHealth(used);
+    setHealthPhase("done");
+  }
 
   const [age, setAge] = useState(30);
   const [gender, setGender] = useState<UserProfile["gender"]>("male");
@@ -118,6 +159,7 @@ export default function Onboarding() {
       if (p.dietaryPrefs) setDietaryPrefs(p.dietaryPrefs);
       if (p.averageDailySteps != null) setAverageDailySteps(p.averageDailySteps);
       if (p.stepGoal != null) setStepGoal(p.stepGoal);
+      if (p.dietStyle) setDietStyle(p.dietStyle);
     });
   }, [user]);
 
@@ -200,6 +242,8 @@ export default function Onboarding() {
         fatGoal: calculated.fatGoal,
         averageDailySteps,
         stepGoal,
+        dietStyle,
+        nutrientTargets: computeAutoTargets(calculated.calorieGoal, calculated.proteinGoal, dietStyle),
         onboarded: true,
         updatedAt: now,
       };
@@ -286,6 +330,56 @@ export default function Onboarding() {
     );
   }
 
+  if (healthPhase !== "done") {
+    const fill = (tpl: string, c: HealthSuggestions["counts"]) => tpl.replace("{w}", String(c.workouts)).replace("{s}", String(c.sleepNights)).replace("{d}", String(c.stepDays));
+    return (
+      <main>
+        {healthPhase === "ask" && (
+          <section style={{ display: "grid", gap: 12 }}>
+            <h1>{t("healthAskTitle")}</h1>
+            <p style={{ color: "var(--muted)" }}>{t("healthAskHint")}</p>
+            <OptionButton selected={false} onClick={() => setHealthPhase("explain")}>{t("healthAskYes")}</OptionButton>
+            <OptionButton selected={false} onClick={() => setHealthPhase("done")}>{t("healthAskNo")}</OptionButton>
+          </section>
+        )}
+        {healthPhase === "explain" && (
+          <section style={{ display: "grid", gap: 12 }}>
+            <h1>{t("healthExplainTitle")}</h1>
+            <ul style={{ display: "grid", gap: 8, paddingInlineStart: 20, margin: 0 }}>
+              <li>{t("healthExplain1")}</li>
+              <li>{t("healthExplain2")}</li>
+              <li>{t("healthExplain3")}</li>
+              <li>{t("healthExplain4")}</li>
+            </ul>
+            <button onClick={startHealthImport}>{t("healthExplainContinue")}</button>
+            <button onClick={() => setHealthPhase("done")} style={{ background: "none", color: "var(--muted)" }}>{t("healthContinueManual")}</button>
+          </section>
+        )}
+        {healthPhase === "importing" && (
+          <section style={{ display: "grid", gap: 12 }}>
+            <h1>{t("healthImporting")}</h1>
+          </section>
+        )}
+        {healthPhase === "summary" && healthSummary && (
+          <section style={{ display: "grid", gap: 12 }}>
+            <h1>{t("healthSummaryTitle")}</h1>
+            <div className="card">
+              <bdi dir="ltr">{fill(t("healthSummaryLine"), healthSummary.counts)}</bdi>
+            </div>
+            <button onClick={() => applyHealthSuggestions(healthSummary)}>{t("healthSummaryUse")}</button>
+            <button onClick={() => setHealthPhase("done")} style={{ background: "none", color: "var(--muted)" }}>{t("healthContinueManual")}</button>
+          </section>
+        )}
+        {healthPhase === "nothing" && (
+          <section style={{ display: "grid", gap: 12 }}>
+            <p>{t("healthNothing")}</p>
+            <button onClick={() => setHealthPhase("done")}>{t("healthContinueManual")}</button>
+          </section>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main>
       <div className="progress-track" style={{ marginBottom: 24 }}>
@@ -295,6 +389,7 @@ export default function Onboarding() {
       {step === 1 && (
         <section style={{ display: "grid", gap: 12 }}>
           <h1>{t("onboardingStep1Title")}</h1>
+          {fromHealth.has("basic") && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("healthFromTag")}</p>}
           <label style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("ageLabel")}</span>
             <NumberSelect value={age} onChange={setAge} options={AGE_OPTIONS} />
@@ -332,6 +427,7 @@ export default function Onboarding() {
       {step === 3 && (
         <section style={{ display: "grid", gap: 8 }}>
           <h1>{t("onboardingStep3Title")}</h1>
+          {fromHealth.has("activity") && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("healthFromTag")}</p>}
           {ACTIVITY_OPTIONS.map((opt) => (
             <OptionButton key={opt.value} selected={activityLevel === opt.value} onClick={() => setActivityLevel(opt.value)}>
               {t(opt.labelKey)}
@@ -343,6 +439,7 @@ export default function Onboarding() {
       {step === 4 && (
         <section style={{ display: "grid", gap: 8 }}>
           <h1>{t("onboardingStep4Title")}</h1>
+          {fromHealth.has("workouts") && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("healthFromTag")}</p>}
           <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("multiSelectHint")}</p>
           {WORKOUT_OPTIONS.map((opt) => (
             <OptionButton key={opt.value} selected={workoutTypes.includes(opt.value)} onClick={() => toggleWorkoutType(opt.value)}>
@@ -417,12 +514,22 @@ export default function Onboarding() {
               {otherDietMessage && <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{otherDietMessage}</p>}
             </div>
           )}
+          <h2 style={{ margin: "12px 0 0" }}>{t("dietStyleTitle")}</h2>
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("dietStyleHint")}</p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {DIET_STYLES.filter((d) => d !== "custom").map((d) => (
+              <OptionButton key={d} selected={dietStyle === d} onClick={() => setDietStyle(d)}>
+                {t(`dietStyle_${d}` as "dietStyle_balanced")}
+              </OptionButton>
+            ))}
+          </div>
         </section>
       )}
 
       {step === 6 && (
         <section style={{ display: "grid", gap: 12 }}>
           <h1>{t("onboardingStepsTitle")}</h1>
+          {fromHealth.has("steps") && <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{t("healthFromTag")}</p>}
           <label style={{ display: "grid", gap: 4 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>{t("averageDailyStepsLabel")}</span>
             <input
